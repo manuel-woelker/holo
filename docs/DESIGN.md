@@ -51,6 +51,26 @@ Holo is organized around a long-running daemon plus client interfaces.
 - Schedules work by priority (active file first, then dependents, then background validation).
 - Supports cancellation and restart of obsolete work when new edits arrive.
 
+# Why Should The Compiler Be Query Driven?
+
+The compiler should be query driven so every meaningful computation is modeled as a reusable, memoized query instead of a fixed pass over the entire program. This makes the system naturally incremental and aligns with Holo's always-on daemon model.
+
+In a query-driven design:
+
+- Compiler work is requested on demand by asking questions like "what is the type of this expression?" or "what diagnostics apply to this file?"
+- Query results are cached and reused until their tracked inputs change.
+- Invalidations are precise because dependencies are recorded at the query level.
+- Frontends and tools can request exactly the information they need without forcing unrelated work.
+
+# What Does Query Driven Mean For Compiler Architecture?
+
+- Stable query keys: each query must be keyed by deterministic identifiers (file ID, module ID, symbol ID, source revision).
+- Explicit dependency tracking: query execution records upstream queries and input reads for correct invalidation.
+- Pure query semantics: queries should behave like deterministic functions over compiler state to maximize cache correctness.
+- Layered query groups: syntax, name resolution, typing, lowering, codegen, and diagnostics should expose clear query APIs.
+- Demand-driven scheduling: background tasks and user-facing operations should be expressed as query requests with priorities.
+- Shared query runtime: parser, typechecker, lints, codegen, and test-impact analysis should run on the same dependency/caching substrate.
+
 # How Is The Language Experience Intended To Feel?
 
 - Errors should identify cause, impact, and likely fix in plain language.
@@ -69,10 +89,50 @@ The language targets a statically checked type system with strong local inferenc
 
 # What Is The Compilation And Execution Model?
 
-- Source files are incrementally compiled into executable artifacts.
-- Compile stages are designed to expose intermediate metadata for diagnostics and tooling.
+- Source files are incrementally compiled through query evaluation into executable artifacts.
+- Compile stages expose intermediate metadata through query interfaces for diagnostics and tooling.
 - Runtime behavior should align with compile-time reasoning as closely as possible.
 - Test execution is integrated into the same incremental graph to avoid duplicated work.
+
+# How Will Query-Driven Compilation Be Applied In Practice?
+
+- Parsing queries provide syntax trees and token maps per file revision.
+- Semantic queries provide scopes, symbol resolution, inferred/declared types, and constraint failures.
+- Codegen queries provide lowered IR and target artifacts for requested roots.
+- Diagnostic queries aggregate results from syntax/semantic/codegen queries and return stable diagnostic identities.
+- Test-selection queries map changed symbols and modules to impacted tests.
+
+This enables partial recomputation: a small edit should invalidate only affected queries and their transitive dependents, not the full project.
+
+# What Could A Query API Look Like?
+
+The exact implementation may change, but the compiler can expose a small set of typed query entry points with stable keys:
+
+```rust
+/// Stable context shared by all compiler queries.
+pub trait QueryContext {
+    fn source_text(&self, file: FileId, rev: SourceRevision) -> Arc<str>;
+    fn syntax_tree(&self, file: FileId, rev: SourceRevision) -> Arc<SyntaxTree>;
+    fn module_scope(&self, module: ModuleId, rev: SourceRevision) -> Arc<Scope>;
+    fn symbol_type(&self, symbol: SymbolId, rev: SourceRevision) -> Type;
+    fn lowered_ir(&self, item: ItemId, rev: SourceRevision) -> Arc<LoweredIr>;
+    fn diagnostics(&self, file: FileId, rev: SourceRevision) -> Arc<[Diagnostic]>;
+    fn impacted_tests(&self, changed: Arc<[ChangeKey]>, rev: SourceRevision) -> Arc<[TestId]>;
+}
+
+/// Engine contract for memoized query evaluation and invalidation.
+pub trait QueryEngine {
+    fn eval<Q: Query>(&self, key: Q::Key, rev: SourceRevision) -> Q::Value;
+    fn invalidate_file(&mut self, file: FileId, new_rev: SourceRevision);
+}
+```
+
+Design expectations for this API:
+
+- Query keys are deterministic and cheap to compare/hash.
+- Query values are immutable snapshots associated with a source revision.
+- Query execution records dependencies automatically so invalidation stays precise.
+- Frontends call high-level queries (`diagnostics`, `impacted_tests`) while compiler internals compose lower-level ones.
 
 # How Are Testing And Quality Integrated?
 
