@@ -3,7 +3,7 @@ use std::sync::Once;
 use tracing_subscriber::EnvFilter;
 
 use crate::error::Result;
-use crate::HoloError;
+use crate::{ErrorKind, HoloError};
 
 static LOGGING_INIT: Once = Once::new();
 
@@ -17,7 +17,12 @@ pub fn init_logging() -> Result<()> {
         init_result = tracing_subscriber::fmt()
             .with_env_filter(default_env_filter())
             .try_init()
-            .map_err(|error| HoloError::from(format!("failed to initialize logging: {error}")));
+            .map_err(|error| {
+                HoloError::new(ErrorKind::Message(
+                    "failed to initialize logging".to_owned(),
+                ))
+                .with_source(error)
+            });
     });
 
     init_result

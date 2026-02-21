@@ -3,4 +3,4 @@
 pub mod error;
 pub mod logging;
 
-pub use error::{HoloError, Result};
+pub use error::{ErrorKind, HoloError, Result};
