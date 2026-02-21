@@ -1,8 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
 
-use holo_base::{ErrorKind, HoloError, Result};
+use holo_base::{ErrorKind, HoloError, Mutex, Result};
 
 use crate::FileSystem;
 
@@ -19,10 +18,8 @@ pub struct InMemoryFileSystem {
 }
 
 impl InMemoryFileSystem {
-    fn lock_state(&self) -> Result<MutexGuard<'_, State>> {
-        self.state
-            .lock()
-            .map_err(|_| holo_base::holo_message_error!("in-memory filesystem state lock poisoned"))
+    fn lock_state(&self) -> impl std::ops::DerefMut<Target = State> + '_ {
+        self.state.lock()
     }
 
     fn not_found_error(path: &Path) -> HoloError {
@@ -34,7 +31,7 @@ impl InMemoryFileSystem {
 
 impl FileSystem for InMemoryFileSystem {
     fn read_to_string(&self, path: &Path) -> Result<String> {
-        let state = self.lock_state()?;
+        let state = self.lock_state();
         match state.files.get(path) {
             Some(contents) => Ok(contents.clone()),
             None => Err(Self::not_found_error(path)),
@@ -42,13 +39,13 @@ impl FileSystem for InMemoryFileSystem {
     }
 
     fn write_string(&self, path: &Path, contents: &str) -> Result<()> {
-        let mut state = self.lock_state()?;
+        let mut state = self.lock_state();
         state.files.insert(path.to_path_buf(), contents.to_owned());
         Ok(())
     }
 
     fn create_dir_all(&self, path: &Path) -> Result<()> {
-        let mut state = self.lock_state()?;
+        let mut state = self.lock_state();
         for ancestor in path.ancestors() {
             if ancestor.as_os_str().is_empty() {
                 continue;
@@ -59,10 +56,8 @@ impl FileSystem for InMemoryFileSystem {
     }
 
     fn exists(&self, path: &Path) -> bool {
-        match self.lock_state() {
-            Ok(state) => state.files.contains_key(path) || state.dirs.contains(path),
-            Err(_) => false,
-        }
+        let state = self.lock_state();
+        state.files.contains_key(path) || state.dirs.contains(path)
     }
 }
 
