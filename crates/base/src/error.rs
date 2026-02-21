@@ -8,6 +8,8 @@ pub enum ErrorKind {
     Message(String),
     /// I/O failure category.
     Io,
+    /// Generic wrapper around external standard errors.
+    Std(Box<dyn StdError + Send + Sync + 'static>),
 }
 
 impl Display for ErrorKind {
@@ -15,6 +17,7 @@ impl Display for ErrorKind {
         match self {
             Self::Message(message) => f.write_str(message),
             Self::Io => f.write_str("I/O error"),
+            Self::Std(error) => Display::fmt(error, f),
         }
     }
 }
@@ -23,7 +26,7 @@ impl Display for ErrorKind {
 #[derive(Debug)]
 pub struct HoloError {
     kind: ErrorKind,
-    source: Option<Box<dyn StdError + Send + Sync + 'static>>,
+    source: Option<Box<HoloError>>,
 }
 
 impl HoloError {
@@ -38,19 +41,27 @@ impl HoloError {
     }
 
     /// Attaches a source error as the cause of this error.
-    pub fn with_source(
-        mut self,
-        source: impl Into<Box<dyn StdError + Send + Sync + 'static>>,
-    ) -> Self {
+    pub fn with_source(mut self, source: impl Into<Box<HoloError>>) -> Self {
         self.source = Some(source.into());
         self
     }
 
+    /// Attaches any standard error as a generic chained source.
+    pub fn with_std_source(
+        self,
+        source: impl Into<Box<dyn StdError + Send + Sync + 'static>>,
+    ) -> Self {
+        self.with_source(HoloError::from_std_error(source))
+    }
+
+    /// Creates a [`HoloError`] from an external standard error.
+    pub fn from_std_error(error: impl Into<Box<dyn StdError + Send + Sync + 'static>>) -> Self {
+        Self::new(ErrorKind::Std(error.into()))
+    }
+
     /// Returns the chained source error, if one exists.
-    pub fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        self.source
-            .as_deref()
-            .map(|error| error as &(dyn StdError + 'static))
+    pub fn source(&self) -> Option<&HoloError> {
+        self.source.as_deref()
     }
 }
 
@@ -62,13 +73,14 @@ impl Display for HoloError {
 
 impl StdError for HoloError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        HoloError::source(self)
+        self.source()
+            .map(|error| error as &(dyn StdError + 'static))
     }
 }
 
 impl From<std::io::Error> for HoloError {
     fn from(value: std::io::Error) -> Self {
-        Self::new(ErrorKind::Io).with_source(value)
+        Self::new(ErrorKind::Io).with_std_source(value)
     }
 }
 
@@ -108,8 +120,14 @@ mod tests {
     #[test]
     fn supports_manual_cause_chaining() {
         let error = HoloError::new(ErrorKind::Message("top-level".to_owned()))
-            .with_source(std::io::Error::other("root cause"));
+            .with_std_source(std::io::Error::other("root cause"));
         assert!(matches!(error.kind(), ErrorKind::Message(message) if message == "top-level"));
         assert!(error.source().is_some());
+    }
+
+    #[test]
+    fn supports_generic_std_error_kind() {
+        let error = HoloError::from_std_error(std::io::Error::other("wrapped"));
+        assert!(matches!(error.kind(), ErrorKind::Std(_)));
     }
 }

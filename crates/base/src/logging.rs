@@ -21,7 +21,7 @@ pub fn init_logging() -> Result<()> {
                 HoloError::new(ErrorKind::Message(
                     "failed to initialize logging".to_owned(),
                 ))
-                .with_source(error)
+                .with_std_source(error)
             });
     });
 
