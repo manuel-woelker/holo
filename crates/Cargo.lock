@@ -33,6 +33,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "holo-db"
+version = "0.1.0"
+dependencies = [
+ "holo-base",
+]
+
+[[package]]
 name = "holo-fs"
 version = "0.1.0"
 dependencies = [
