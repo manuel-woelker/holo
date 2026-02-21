@@ -180,12 +180,13 @@ This aligns the database model with query memoization and precise invalidation.
 
 # What Storage Backends Should Be Supported?
 
-Start with two implementations:
+Start with RocksDB first:
 
-- In-memory backend for tests and fast local sessions.
-- Persistent embedded backend for daemon restart resilience.
+- Persistent embedded RocksDB for daemon restart resilience.
+- RocksDB in-memory environment mode for tests and fast local sessions.
 
-Backend-independent trait design is preferred so compiler layers do not depend on storage details.
+RocksDB supports both modes while keeping one implementation path and one data model.
+Backend-independent trait design is still preferred so compiler layers do not depend on storage details.
 
 # What Should Be Indexed For Cleanup And Maintenance?
 
@@ -230,7 +231,9 @@ Prefer data-driven graph test cases to reduce duplication.
 # What Is A Practical Rollout Plan?
 
 1. Introduce bucket-aware artifact API and basic trait tests.
-2. Add dependency indexes and invalidation traversal.
-3. Add atomic write boundary in backend implementations.
-4. Integrate query engine to persist dependencies per query evaluation.
-5. Add observability and retention policies after correctness is stable.
+2. Implement RocksDB backend with column-family layout for artifacts and dependency indexes.
+3. Add RocksDB in-memory mode configuration for tests and fast local runs.
+4. Add dependency indexes and invalidation traversal.
+5. Add atomic write boundary for artifact+graph updates.
+6. Integrate query engine to persist dependencies per query evaluation.
+7. Add observability and retention policies after correctness is stable.
