@@ -1,0 +1,4 @@
+.idea/
+ui/test-results/
+ui/*.tsbuildinfo
+*.log
