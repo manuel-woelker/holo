@@ -1,6 +1,14 @@
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Formatter};
 
+/// Creates a [`HoloError`] with [`ErrorKind::Message`] using `format!` syntax.
+#[macro_export]
+macro_rules! holo_message_error {
+    ($($arg:tt)*) => {
+        $crate::HoloError::new($crate::ErrorKind::Message(format!($($arg)*)))
+    };
+}
+
 /// High-level classification for [`HoloError`].
 #[derive(Debug)]
 pub enum ErrorKind {
@@ -30,17 +38,19 @@ impl Display for ErrorKind {
 /// - Use [`ErrorKind::Io`] when the top-level failure category is I/O.
 /// - Use [`ErrorKind::Std`] to wrap external library errors that do not have a
 ///   dedicated holo category.
+/// - Use [`holo_message_error!`] when you want `format!`-style construction for
+///   message errors.
 /// - Use [`HoloError::with_source`] or [`HoloError::with_std_source`] to chain
 ///   context from high-level failures to underlying causes.
 ///
 /// # What is a recommended construction pattern?
 ///
 /// ```rust
-/// use holo_base::{ErrorKind, HoloError, Result};
+/// use holo_base::Result;
 ///
 /// fn read_config() -> Result<String> {
 ///     std::fs::read_to_string("holo.toml")
-///         .map_err(|error| HoloError::new(ErrorKind::Message("failed to read config".into())).with_std_source(error))
+///         .map_err(|error| holo_base::holo_message_error!("failed to read {}", "holo.toml").with_std_source(error))
 /// }
 /// ```
 ///
@@ -154,5 +164,12 @@ mod tests {
     fn supports_generic_std_error_kind() {
         let error = HoloError::from_std_error(std::io::Error::other("wrapped"));
         assert!(matches!(error.kind(), ErrorKind::Std(_)));
+    }
+
+    #[test]
+    fn creates_message_errors_with_macro() {
+        let value = 42;
+        let error = crate::holo_message_error!("value is {}", value);
+        assert!(matches!(error.kind(), ErrorKind::Message(message) if message == "value is 42"));
     }
 }
