@@ -119,7 +119,7 @@ Prefer black box testing and try to avoid mocking as much as possible.
 
 ## Checks and formatting
 
-Run cargo clippy and cargo fmt before finishing a feature.
+Run `scripts/check.sh` before finishing a feature to validate formatting, linting, and tests.
 
 ## Commit messages
 
