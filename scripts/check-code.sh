@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST_PATH="$ROOT_DIR/crates/Cargo.toml"
-LOG_DIR="$ROOT_DIR/target/.check-logs"
+LOG_DIR="$ROOT_DIR/crates/target/.check-logs"
 
 if [[ ! -f "$MANIFEST_PATH" ]]; then
   echo "error: workspace manifest not found at $MANIFEST_PATH" >&2

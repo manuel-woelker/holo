@@ -251,7 +251,6 @@ where
 fn next_in_memory_db_path() -> Result<PathBuf> {
     let in_memory_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
-        .join("..")
         .join("target")
         .join("rocksdb-in-memory");
     std::fs::create_dir_all(&in_memory_root).map_err(|error| {
