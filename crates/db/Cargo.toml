@@ -8,3 +8,5 @@ publish = false
 
 [dependencies]
 holo-base = { path = "../base" }
+bitcode = { version = "0.6", features = ["derive"] }
+rocksdb = "0.23"

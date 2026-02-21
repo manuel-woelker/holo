@@ -2,4 +2,7 @@
 
 pub mod database;
 
-pub use database::{ArtifactKey, Database};
+pub use database::{
+    ArtifactKey, ArtifactKind, ArtifactRecord, Database, NodeId, Revision, RocksDbDatabase,
+    RocksDbMode,
+};
