@@ -2,3 +2,6 @@
 ui/test-results/
 ui/*.tsbuildinfo
 *.log
+target/
+crates/target/
+crates/target*/

@@ -1,0 +1,11 @@
+[package]
+name = "holo-base"
+version = "0.1.0"
+edition = "2021"
+description = "Common infrastructure for holo error handling and logging"
+license = "MIT"
+publish = false
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
