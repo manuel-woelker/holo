@@ -57,6 +57,8 @@ Each stored artifact should include:
 - Optional schema/version tag (for safe decode/migration).
 - Optional timestamps for diagnostics and observability.
 
+Use the `bitcode` crate as the default serialization format for artifact payloads.
+
 # What Dependency Indexes Are Required?
 
 At minimum, two indexes are required:
@@ -204,6 +206,7 @@ These are optimization indexes, not required for initial correctness.
 - Bump version on incompatible serialization or semantics change.
 - On read mismatch, treat as cache miss and recompute.
 - Optionally perform batch purge by version in maintenance tasks.
+- Standardize artifact encoding/decoding through the `bitcode` crate to keep format handling consistent.
 
 # What Observability Should Be Included?
 
