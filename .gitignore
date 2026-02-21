@@ -5,4 +5,4 @@ ui/*.tsbuildinfo
 target/
 crates/target/
 crates/target*/
-.check-logs/
+target/.check-logs/
