@@ -23,6 +23,31 @@ impl Display for ErrorKind {
 }
 
 /// Error type used by shared holo infrastructure.
+///
+/// # How should this error type be used?
+///
+/// - Use [`ErrorKind::Message`] for domain-level messages created by holo code.
+/// - Use [`ErrorKind::Io`] when the top-level failure category is I/O.
+/// - Use [`ErrorKind::Std`] to wrap external library errors that do not have a
+///   dedicated holo category.
+/// - Use [`HoloError::with_source`] or [`HoloError::with_std_source`] to chain
+///   context from high-level failures to underlying causes.
+///
+/// # What is a recommended construction pattern?
+///
+/// ```rust
+/// use holo_base::{ErrorKind, HoloError, Result};
+///
+/// fn read_config() -> Result<String> {
+///     std::fs::read_to_string("holo.toml")
+///         .map_err(|error| HoloError::new(ErrorKind::Message("failed to read config".into())).with_std_source(error))
+/// }
+/// ```
+///
+/// # Why chain errors?
+///
+/// Chaining preserves both user-facing context and low-level root causes,
+/// which is important for actionable diagnostics and debugging.
 #[derive(Debug)]
 pub struct HoloError {
     kind: ErrorKind,
