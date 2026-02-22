@@ -153,22 +153,14 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
         }
 
         for annotation in &diagnostic.annotated_spans {
-            if let Some((line_no, column_no, line_text, caret_offset, caret_len)) = diagnostic
+            if let Some((line_no, line_text, caret_offset, caret_len)) = diagnostic
                 .source_excerpts
                 .iter()
                 .find_map(|excerpt| render_info_with_excerpt(annotation, excerpt))
             {
-                output.push_str(&format!(
-                    "{dim}├─{reset} {cyan}--> line {line}, column {column}{reset}\n",
-                    dim = ANSI_DIM,
-                    cyan = ANSI_CYAN,
-                    reset = ANSI_RESET,
-                    line = line_no,
-                    column = column_no,
-                ));
                 output.push('\n');
                 output.push_str(&format!(
-                    "{dim}│ {reset}{blue}{line:>4} │{reset} {source}\n",
+                    "{dim}│ {reset}{blue}{line:>4} |{reset} {source}\n",
                     dim = ANSI_DIM,
                     blue = ANSI_BLUE,
                     reset = ANSI_RESET,
@@ -176,7 +168,7 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
                     source = line_text,
                 ));
                 output.push_str(&format!(
-                    "{dim}│ {reset}     │ {red}{spacing}{carets}{reset} {annotation}\n",
+                    "{dim}│ {reset}     | {red}{spacing}{carets}{reset} {annotation}\n",
                     dim = ANSI_DIM,
                     red = ANSI_RED,
                     reset = ANSI_RESET,
@@ -251,7 +243,7 @@ fn render_annotation_with_excerpt(
 fn render_info_with_excerpt(
     annotation: &AnnotatedSpan,
     excerpt: &SourceExcerpt,
-) -> Option<(usize, usize, String, usize, usize)> {
+) -> Option<(usize, String, usize, usize)> {
     let (line_no, line_start, line_text) = find_line_for_offset(excerpt, annotation.span.start)?;
     let start = annotation.span.start.max(line_start);
     let end = annotation.span.end.max(start + 1);
@@ -259,7 +251,7 @@ fn render_info_with_excerpt(
     let caret_start = start.saturating_sub(line_start);
     let caret_end = end.min(line_end).max(start + 1);
     let caret_len = caret_end.saturating_sub(start).max(1);
-    Some((line_no, caret_start + 1, line_text, caret_start, caret_len))
+    Some((line_no, line_text, caret_start, caret_len))
 }
 
 const ANSI_RESET: &str = "\x1b[0m";
@@ -269,7 +261,6 @@ const ANSI_RED: &str = "\x1b[31m";
 const ANSI_YELLOW: &str = "\x1b[33m";
 const ANSI_BLUE: &str = "\x1b[34m";
 const ANSI_MAGENTA: &str = "\x1b[35m";
-const ANSI_CYAN: &str = "\x1b[36m";
 
 fn find_line_for_offset(excerpt: &SourceExcerpt, offset: usize) -> Option<(usize, usize, String)> {
     if offset < excerpt.starting_offset {
@@ -334,8 +325,10 @@ mod tests {
         let rendered = display_source_diagnostics(&diagnostics);
 
         assert!(rendered.contains("● Parsing"));
-        assert!(rendered.contains("├─"));
-        assert!(rendered.contains("│"));
+        assert!(!rendered.contains("--> line"));
+        assert!(!rendered.contains("├─"));
+        assert!(rendered.contains("│ "));
+        assert!(rendered.contains("assert();"));
         assert!(rendered.contains("┄"));
         assert!(rendered.contains("\u{1b}[31m"));
         assert!(rendered.contains("\u{1b}[1m"));
