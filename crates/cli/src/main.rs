@@ -14,7 +14,8 @@ use holo_base::{holo_message_error, Result};
 use holo_core::daemon::{CoreDaemon, DaemonStatusUpdate};
 use holo_core::CompilerCore;
 use holo_deck::{
-    run_with_updates as run_deck_with_updates, ProjectIssueSeverity as DeckIssueSeverity,
+    run_with_updates as run_deck_with_updates, DaemonState as DeckDaemonState,
+    ProjectIssueSeverity as DeckIssueSeverity,
 };
 use holo_deck::{ProjectIssue as DeckIssue, ProjectIssueKind as DeckIssueKind};
 use holo_ipc::{
@@ -58,7 +59,10 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
     let endpoint = daemon_endpoint_name(root_dir)?;
     let server = IpcServer::bind(&endpoint)?;
 
-    let state = Arc::new(Mutex::new(DaemonSharedState { issues: Vec::new() }));
+    let state = Arc::new(Mutex::new(DaemonSharedState {
+        issues: Vec::new(),
+        daemon_state: "Compiling".to_owned(),
+    }));
     let subscribers: Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>> = Arc::new(Mutex::new(Vec::new()));
 
     {
@@ -81,12 +85,17 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
             source_count = startup_sources.len(),
             "running initial daemon cycle"
         );
+        broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Compiling".to_owned()));
         daemon.enqueue_startup_sources(startup_sources, startup_now);
         let startup_update = daemon.process_ready(&mut core, startup_now)?;
         apply_update_to_state_and_subscribers(&startup_update, &state, &subscribers);
         println!("{}", startup_update.to_report());
     } else {
         info!("no .holo files found during daemon startup");
+        if let Ok(mut guard) = state.lock() {
+            guard.daemon_state = "Green".to_owned();
+        }
+        broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Green".to_owned()));
     }
 
     let (event_sender, event_receiver) = mpsc::channel();
@@ -120,6 +129,10 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
                     continue;
                 }
 
+                broadcast_to_subscribers(
+                    &subscribers,
+                    DaemonEvent::Lifecycle("Compiling".to_owned()),
+                );
                 let update = daemon.process_ready(&mut core, current_time_ms())?;
                 apply_update_to_state_and_subscribers(&update, &state, &subscribers);
                 println!("{}", update.to_report());
@@ -208,13 +221,17 @@ fn handle_ipc_connection(
                     .push(tx);
             }
 
-            let current_issues = state
-                .lock()
-                .map_err(|_| holo_message_error!("daemon state lock poisoned"))?
-                .issues
-                .clone();
+            let (current_issues, current_state) = {
+                let guard = state
+                    .lock()
+                    .map_err(|_| holo_message_error!("daemon state lock poisoned"))?;
+                (guard.issues.clone(), guard.daemon_state.clone())
+            };
             connection.send(&WireMessage::Event {
                 event: DaemonEvent::IssuesUpdated(current_issues),
+            })?;
+            connection.send(&WireMessage::Event {
+                event: DaemonEvent::Lifecycle(current_state),
             })?;
 
             for event in rx {
@@ -250,19 +267,33 @@ fn apply_update_to_state_and_subscribers(
     subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
 ) {
     let issues = derive_issues(update);
+    let daemon_state = daemon_state_label_for_update(update).to_owned();
     if let Ok(mut guard) = state.lock() {
         guard.issues = issues.clone();
+        guard.daemon_state = daemon_state.clone();
     }
 
+    broadcast_to_subscribers(subscribers, DaemonEvent::IssuesUpdated(issues));
+    broadcast_to_subscribers(subscribers, DaemonEvent::Lifecycle(daemon_state));
+}
+
+fn broadcast_to_subscribers(
+    subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
+    event: DaemonEvent,
+) {
     let mut guard = match subscribers.lock() {
         Ok(guard) => guard,
         Err(_) => return,
     };
-    guard.retain(|sender| {
-        sender
-            .send(DaemonEvent::IssuesUpdated(issues.clone()))
-            .is_ok()
-    });
+    guard.retain(|sender| sender.send(event.clone()).is_ok());
+}
+
+fn daemon_state_label_for_update(update: &DaemonStatusUpdate) -> &'static str {
+    if !update.errors.is_empty() || update.tests_failed > 0 {
+        "Failed"
+    } else {
+        "Green"
+    }
 }
 
 fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
@@ -304,15 +335,21 @@ fn run_deck_mode(root_dir: &Path) -> Result<()> {
 
     let initial_issues = request_issues_snapshot(&endpoint)?;
     let (updates_tx, updates_rx) = mpsc::channel::<Vec<DeckIssue>>();
+    let (state_tx, state_rx) = mpsc::channel::<DeckDaemonState>();
+    let _ = state_tx.send(DeckDaemonState::Green);
 
     let endpoint_for_thread = endpoint.clone();
     thread::spawn(move || {
-        if let Err(error) = stream_issue_updates(&endpoint_for_thread, updates_tx) {
+        if let Err(error) = stream_issue_updates(&endpoint_for_thread, updates_tx, state_tx) {
             warn!(error = %error, "deck issue update stream ended");
         }
     });
 
-    run_deck_with_updates(map_ipc_issues_to_deck(initial_issues), Some(updates_rx))
+    run_deck_with_updates(
+        map_ipc_issues_to_deck(initial_issues),
+        Some(updates_rx),
+        Some(state_rx),
+    )
 }
 
 fn ensure_daemon_running(root_dir: &Path, endpoint: &str) -> Result<()> {
@@ -374,7 +411,11 @@ fn request_issues_snapshot(endpoint: &str) -> Result<Vec<ProjectIssue>> {
     }
 }
 
-fn stream_issue_updates(endpoint: &str, updates_tx: mpsc::Sender<Vec<DeckIssue>>) -> Result<()> {
+fn stream_issue_updates(
+    endpoint: &str,
+    updates_tx: mpsc::Sender<Vec<DeckIssue>>,
+    state_tx: mpsc::Sender<DeckDaemonState>,
+) -> Result<()> {
     let mut connection = IpcConnection::connect(endpoint)?;
     connection.send(&WireMessage::Request {
         request_id: 2,
@@ -390,11 +431,14 @@ fn stream_issue_updates(endpoint: &str, updates_tx: mpsc::Sender<Vec<DeckIssue>>
         WireMessage::Response {
             request_id: 2,
             response: Response::Ok,
-        } => {}
+        } => {
+            let _ = state_tx.send(DeckDaemonState::Green);
+        }
         WireMessage::Response {
             request_id: 2,
             response: Response::Error(error),
         } => {
+            let _ = state_tx.send(DeckDaemonState::Failed);
             return Err(holo_message_error!(
                 "daemon rejected issue subscription: {error}"
             ));
@@ -407,17 +451,36 @@ fn stream_issue_updates(endpoint: &str, updates_tx: mpsc::Sender<Vec<DeckIssue>>
     }
 
     while let Some(message) = connection.receive()? {
-        if let WireMessage::Event {
-            event: DaemonEvent::IssuesUpdated(issues),
-        } = message
-        {
-            if updates_tx.send(map_ipc_issues_to_deck(issues)).is_err() {
-                break;
+        match message {
+            WireMessage::Event {
+                event: DaemonEvent::IssuesUpdated(issues),
+            } => {
+                if updates_tx.send(map_ipc_issues_to_deck(issues)).is_err() {
+                    break;
+                }
             }
+            WireMessage::Event {
+                event: DaemonEvent::Lifecycle(state),
+            } => {
+                if state_tx.send(map_lifecycle_state_to_deck(&state)).is_err() {
+                    break;
+                }
+            }
+            _ => {}
         }
     }
 
+    let _ = state_tx.send(DeckDaemonState::Disconnected);
     Ok(())
+}
+
+fn map_lifecycle_state_to_deck(state: &str) -> DeckDaemonState {
+    match state {
+        "Green" => DeckDaemonState::Green,
+        "Compiling" => DeckDaemonState::Compiling,
+        "Failed" => DeckDaemonState::Failed,
+        _ => DeckDaemonState::Disconnected,
+    }
 }
 
 fn map_ipc_issues_to_deck(issues: Vec<ProjectIssue>) -> Vec<DeckIssue> {
@@ -615,14 +678,16 @@ fn main() {
 #[derive(Debug, Clone)]
 struct DaemonSharedState {
     issues: Vec<ProjectIssue>,
+    daemon_state: String,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         collect_holo_sources, daemon_endpoint_name, display_source_path, is_holo_file,
-        parse_cli_mode, path_arg_or_default, run_build_once, CliMode,
+        map_lifecycle_state_to_deck, parse_cli_mode, path_arg_or_default, run_build_once, CliMode,
     };
+    use holo_deck::DaemonState as DeckDaemonState;
     use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -717,6 +782,23 @@ mod tests {
     fn path_arg_defaults_when_missing() {
         let args = vec!["holo-cli".to_owned(), "daemon".to_owned()];
         assert_eq!(path_arg_or_default(&args, 2), Path::new(".").to_owned());
+    }
+
+    #[test]
+    fn maps_daemon_lifecycle_to_deck_state() {
+        assert_eq!(map_lifecycle_state_to_deck("Green"), DeckDaemonState::Green);
+        assert_eq!(
+            map_lifecycle_state_to_deck("Compiling"),
+            DeckDaemonState::Compiling
+        );
+        assert_eq!(
+            map_lifecycle_state_to_deck("Failed"),
+            DeckDaemonState::Failed
+        );
+        assert_eq!(
+            map_lifecycle_state_to_deck("Unknown"),
+            DeckDaemonState::Disconnected
+        );
     }
 
     #[test]
