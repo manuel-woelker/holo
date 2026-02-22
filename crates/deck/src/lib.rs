@@ -10,7 +10,8 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use holo_base::{
-    display_source_diagnostics, holo_message_error, Result, SharedString, SourceDiagnostic,
+    display_source_diagnostics, holo_message_error, FilePath, Result, SharedString,
+    SourceDiagnostic,
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -27,7 +28,7 @@ pub struct ProjectIssue {
     /// Short issue title.
     pub title: SharedString,
     /// Source file path.
-    pub file: SharedString,
+    pub file: FilePath,
     /// 1-based line number.
     pub line: usize,
     /// Issue kind/category.
@@ -348,7 +349,8 @@ fn format_master_issue_row(issue: &ProjectIssue) -> SharedString {
     .into()
 }
 
-fn master_display_path(path: &str) -> SharedString {
+fn master_display_path(path: &FilePath) -> SharedString {
+    let path = path.as_str();
     if let Some(stripped) = path.strip_prefix(".\\") {
         return stripped.into();
     }
@@ -1201,8 +1203,8 @@ mod tests {
 
     #[test]
     fn strips_relative_prefix_for_master_file_path() {
-        assert_eq!(master_display_path(".\\a.holo"), "a.holo");
-        assert_eq!(master_display_path("./a.holo"), "a.holo");
-        assert_eq!(master_display_path("a.holo"), "a.holo");
+        assert_eq!(master_display_path(&".\\a.holo".into()), "a.holo");
+        assert_eq!(master_display_path(&"./a.holo".into()), "a.holo");
+        assert_eq!(master_display_path(&"a.holo".into()), "a.holo");
     }
 }

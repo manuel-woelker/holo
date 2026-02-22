@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use holo_ast::Statement;
-use holo_base::{holo_message_error, Result, SharedString, TaskTiming};
+use holo_base::{holo_message_error, FilePath, Result, SharedString, TaskTiming};
 use holo_core::daemon::{CoreDaemon, DaemonStatusUpdate};
 use holo_core::CompilerCore;
 use holo_deck::{
@@ -444,7 +444,8 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
     issues
 }
 
-fn title_display_path(path: &str) -> SharedString {
+fn title_display_path(path: &FilePath) -> SharedString {
+    let path = path.as_str();
     if let Some(stripped) = path.strip_prefix(".\\") {
         return stripped.into();
     }
@@ -711,7 +712,7 @@ fn build_dependency_graph(root_dir: &Path) -> Result<SharedString> {
 }
 
 fn extract_test_dependencies_from_source(
-    file_path: &str,
+    file_path: &FilePath,
     source: &str,
 ) -> Result<Vec<TestDependency>> {
     let lexer = BasicLexer;
@@ -747,7 +748,7 @@ fn extract_test_dependencies_from_source(
 
         dependencies.push(TestDependency {
             test_name: test.name,
-            file_path: file_path.into(),
+            file_path: file_path.clone(),
             used_functions,
         });
     }
@@ -856,7 +857,7 @@ fn record_changed_holo_files(
     Ok(changed)
 }
 
-fn display_source_path(root_dir: &Path, path: &Path) -> SharedString {
+fn display_source_path(root_dir: &Path, path: &Path) -> FilePath {
     if let Ok(relative) = path.strip_prefix(root_dir) {
         if relative.components().next() == Some(Component::CurDir) {
             return relative.to_string_lossy().into_owned().into();
@@ -899,7 +900,7 @@ fn path_arg_or_default(args: &[String], index: usize) -> PathBuf {
 }
 
 #[instrument(skip_all, fields(root_dir = %root_dir.display()))]
-fn collect_holo_sources(root_dir: &Path) -> Result<Vec<(SharedString, SharedString)>> {
+fn collect_holo_sources(root_dir: &Path) -> Result<Vec<(FilePath, SharedString)>> {
     let mut paths = Vec::new();
     collect_holo_paths_recursive(root_dir, &mut paths)?;
     paths.sort();
@@ -1002,7 +1003,7 @@ struct DaemonSharedState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TestDependency {
     test_name: SharedString,
-    file_path: SharedString,
+    file_path: FilePath,
     used_functions: Vec<SharedString>,
 }
 
@@ -1258,11 +1259,17 @@ mod tests {
     #[test]
     fn strips_relative_prefix_for_title_paths() {
         assert_eq!(
-            title_display_path(".\\src\\sample.holo"),
+            title_display_path(&".\\src\\sample.holo".into()),
             "src\\sample.holo"
         );
-        assert_eq!(title_display_path("./src/sample.holo"), "src/sample.holo");
-        assert_eq!(title_display_path("src/sample.holo"), "src/sample.holo");
+        assert_eq!(
+            title_display_path(&"./src/sample.holo".into()),
+            "src/sample.holo"
+        );
+        assert_eq!(
+            title_display_path(&"src/sample.holo".into()),
+            "src/sample.holo"
+        );
     }
 
     #[test]

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use bitcode::{Decode, Encode};
 use holo_ast::{Module, TestItem};
 use holo_base::{
-    holo_message_error, project_revision, time_task, DiagnosticKind, Result, SharedString,
+    holo_message_error, project_revision, time_task, DiagnosticKind, FilePath, Result,
     SourceDiagnostic, Span, TaskTiming,
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
@@ -44,7 +44,7 @@ pub struct CompilerCore {
     typechecker: BasicTypechecker,
     interpreter: BasicInterpreter,
     query_store: InMemoryQueryStore,
-    cycle_cache: HashMap<(SharedString, u64), CoreCycleSummary>,
+    cycle_cache: HashMap<(FilePath, u64), CoreCycleSummary>,
     persisted_cache: Option<PersistedCache>,
 }
 
@@ -76,7 +76,11 @@ impl CompilerCore {
 
     /// Runs lexing, parsing, typechecking, and test execution for one source file.
     #[instrument(skip_all, fields(file_path = %file_path, source_len = source.len()))]
-    pub fn process_source(&mut self, file_path: &str, source: &str) -> Result<CoreCycleSummary> {
+    pub fn process_source(
+        &mut self,
+        file_path: &FilePath,
+        source: &str,
+    ) -> Result<CoreCycleSummary> {
         info!("starting compile-and-test cycle");
         let content_hash_bytes = content_hash_bytes(source);
         let content_hash = content_hash_u64(&content_hash_bytes);
@@ -86,7 +90,7 @@ impl CompilerCore {
         {
             if let Some(summary) = self
                 .cycle_cache
-                .get(&(file_path.into(), content_hash))
+                .get(&(file_path.clone(), content_hash))
                 .cloned()
             {
                 info!("cache hit for unchanged source hash");
@@ -101,7 +105,7 @@ impl CompilerCore {
             if let Some(summary) = cache.load_summary(file_path, content_hash_bytes)? {
                 info!("cache hit from persisted database");
                 self.cycle_cache
-                    .insert((file_path.into(), content_hash), summary.clone());
+                    .insert((file_path.clone(), content_hash), summary.clone());
                 return Ok(summary);
             }
         }
@@ -117,7 +121,7 @@ impl CompilerCore {
         );
         self.query_store.put(
             QueryKey {
-                file_path: file_path.into(),
+                file_path: file_path.clone(),
                 stage: QueryStage::Lex,
                 content_hash,
             },
@@ -125,7 +129,7 @@ impl CompilerCore {
         );
 
         info!("parsing tokens");
-        let (parsed, parse_timing) = time_task(format!("parse `{file_path}`"), || {
+        let (parsed, parse_timing) = time_task(format!("parse `{}`", file_path), || {
             self.parser.parse_module(&tokens, source)
         });
         let module = parsed.module;
@@ -151,9 +155,10 @@ impl CompilerCore {
         );
 
         info!("typechecking module");
-        let (typechecked, typecheck_timing) = time_task(format!("typecheck `{file_path}`"), || {
+        let (typechecked, typecheck_timing) =
+            time_task(format!("typecheck `{}`", file_path), || {
             self.typechecker.typecheck_module(&module, source)
-        });
+            });
         let typecheck = typechecked.summary;
         let typecheck_timings = typechecked.timings;
         diagnostics.extend(typechecked.diagnostics);
@@ -171,7 +176,7 @@ impl CompilerCore {
         );
         self.query_store.put(
             QueryKey {
-                file_path: file_path.into(),
+                file_path: file_path.clone(),
                 stage: QueryStage::Typecheck,
                 content_hash,
             },
@@ -186,7 +191,7 @@ impl CompilerCore {
         );
         self.query_store.put(
             QueryKey {
-                file_path: file_path.into(),
+                file_path: file_path.clone(),
                 stage: QueryStage::CollectTests,
                 content_hash,
             },
@@ -194,7 +199,7 @@ impl CompilerCore {
         );
 
         info!("running tests");
-        let (tests, run_tests_timing) = time_task(format!("run tests `{file_path}`"), || {
+        let (tests, run_tests_timing) = time_task(format!("run tests `{}`", file_path), || {
             self.interpreter.run_tests(&module)
         });
         info!(
@@ -211,7 +216,7 @@ impl CompilerCore {
         );
         self.query_store.put(
             QueryKey {
-                file_path: file_path.into(),
+                file_path: file_path.clone(),
                 stage: QueryStage::RunTests,
                 content_hash,
             },
@@ -227,7 +232,7 @@ impl CompilerCore {
         for diagnostic in &mut diagnostics {
             for excerpt in &mut diagnostic.source_excerpts {
                 if excerpt.source_name.is_none() {
-                    excerpt.set_source_name(file_path);
+                    excerpt.set_source_name(file_path.clone());
                 }
             }
         }
@@ -249,7 +254,7 @@ impl CompilerCore {
             },
         };
         self.cycle_cache
-            .insert((file_path.into(), content_hash), summary.clone());
+            .insert((file_path.clone(), content_hash), summary.clone());
         if let Some(cache) = &self.persisted_cache {
             cache.store_summary(file_path, content_hash_bytes, &summary)?;
         }
@@ -259,14 +264,9 @@ impl CompilerCore {
     }
 
     /// Returns the latest query value for a stage when available.
-    pub fn query_value(
-        &self,
-        file_path: &str,
-        stage: QueryStage,
-        source: &str,
-    ) -> Option<&QueryValue> {
+    pub fn query_value(&self, file_path: &FilePath, stage: QueryStage, source: &str) -> Option<&QueryValue> {
         let key = QueryKey {
-            file_path: file_path.into(),
+            file_path: file_path.clone(),
             stage,
             content_hash: content_hash_u64(&content_hash_bytes(source)),
         };
@@ -577,11 +577,11 @@ impl std::fmt::Debug for PersistedCache {
 impl PersistedCache {
     fn store_summary(
         &self,
-        file_path: &str,
+        file_path: &FilePath,
         content_hash: [u8; 32],
         summary: &CoreCycleSummary,
     ) -> Result<()> {
-        let key = CoreArtifactKey(file_path.into());
+        let key = CoreArtifactKey(file_path.to_string());
         let persisted = PersistedCycleSummary::from_runtime(summary);
         let record = ArtifactRecord {
             bytes: bitcode::encode(&persisted),
@@ -595,10 +595,10 @@ impl PersistedCache {
 
     fn load_summary(
         &self,
-        file_path: &str,
+        file_path: &FilePath,
         content_hash: [u8; 32],
     ) -> Result<Option<CoreCycleSummary>> {
-        let key = CoreArtifactKey(file_path.into());
+        let key = CoreArtifactKey(file_path.to_string());
         let Some(record) = self
             .db
             .get_artifact(&CoreArtifactKind::CycleSummary, &key)?
@@ -632,12 +632,12 @@ mod tests {
         let mut core = CompilerCore::default();
         let source = "#[test] fn smoke() { assert(true); }";
         let summary = core
-            .process_source("smoke.holo", source)
+            .process_source(&"smoke.holo".into(), source)
             .expect("pipeline should run");
 
         assert!(summary.token_count > 0);
         assert_eq!(
-            core.query_value("smoke.holo", QueryStage::Parse, source),
+            core.query_value(&"smoke.holo".into(), QueryStage::Parse, source),
             Some(&QueryValue::Complete)
         );
     }
@@ -648,15 +648,15 @@ mod tests {
         let source = "#[test] fn smoke() { assert(true); }";
 
         let first = core
-            .process_source("smoke.holo", source)
+            .process_source(&"smoke.holo".into(), source)
             .expect("first pipeline run should succeed");
         let second = core
-            .process_source("smoke.holo", source)
+            .process_source(&"smoke.holo".into(), source)
             .expect("second pipeline run should hit cache");
 
         assert_eq!(first, second);
         assert_eq!(
-            core.query_value("smoke.holo", QueryStage::CollectTests, source),
+            core.query_value(&"smoke.holo".into(), QueryStage::CollectTests, source),
             Some(&QueryValue::Message("1 collected test(s)".into()))
         );
     }
@@ -667,14 +667,14 @@ mod tests {
         let source =
             "#[test] fn pass_case() { assert(true); } #[test] fn fail_case() { assert(false); }";
         let summary = core
-            .process_source("suite.holo", source)
+            .process_source(&"suite.holo".into(), source)
             .expect("pipeline should run");
 
         assert_eq!(summary.tests.executed, 2);
         assert_eq!(summary.tests.passed, 1);
         assert_eq!(summary.tests.failed, 1);
         assert_eq!(
-            core.query_value("suite.holo", QueryStage::CollectTests, source),
+            core.query_value(&"suite.holo".into(), QueryStage::CollectTests, source),
             Some(&QueryValue::Message("2 collected test(s)".into()))
         );
     }
@@ -684,7 +684,7 @@ mod tests {
         let mut core = CompilerCore::default();
         let source = "#[test] fn good() { assert(true); } @ #[test] fn bad() { assert(); }";
         let summary = core
-            .process_source("diagnostics.holo", source)
+            .process_source(&"diagnostics.holo".into(), source)
             .expect("pipeline should continue despite diagnostics");
 
         assert!(summary.tests.executed >= 1);
@@ -696,7 +696,7 @@ mod tests {
         let mut core = CompilerCore::default();
         let source = "fn helper() -> i64 { missing_value; } #[test] fn smoke() { assert(true); }";
         let summary = core
-            .process_source("non_test_diagnostic.holo", source)
+            .process_source(&"non_test_diagnostic.holo".into(), source)
             .expect("pipeline should continue despite diagnostics in helper function");
 
         assert_eq!(summary.tests.executed, 1);
@@ -713,10 +713,10 @@ mod tests {
             "fn helper() -> bool { false; } #[test] fn smoke() { assert(helper()); }";
 
         let first = core
-            .process_source("helper_change.holo", passing_source)
+            .process_source(&"helper_change.holo".into(), passing_source)
             .expect("first pipeline run should succeed");
         let second = core
-            .process_source("helper_change.holo", failing_source)
+            .process_source(&"helper_change.holo".into(), failing_source)
             .expect("second pipeline run should succeed");
 
         assert_eq!(first.tests.failed, 0);
@@ -731,19 +731,19 @@ mod tests {
         let mut first = CompilerCore::with_persistent_cache(&root)
             .expect("first core with persistence should initialize");
         let first_summary = first
-            .process_source("persisted.holo", source)
+            .process_source(&"persisted.holo".into(), source)
             .expect("first run should succeed");
         drop(first);
 
         let mut second = CompilerCore::with_persistent_cache(&root)
             .expect("second core with persistence should initialize");
         let second_summary = second
-            .process_source("persisted.holo", source)
+            .process_source(&"persisted.holo".into(), source)
             .expect("second run should succeed");
 
         assert_eq!(first_summary, second_summary);
         assert_eq!(
-            second.query_value("persisted.holo", QueryStage::Parse, source),
+            second.query_value(&"persisted.holo".into(), QueryStage::Parse, source),
             None
         );
         drop(second);
@@ -759,7 +759,7 @@ mod tests {
         let mut first = CompilerCore::with_persistent_cache(&root)
             .expect("first core with persistence should initialize");
         let first_summary = first
-            .process_source("broken.holo", source)
+            .process_source(&"broken.holo".into(), source)
             .expect("first run should succeed with diagnostics");
         assert!(!first_summary.diagnostics.is_empty());
         drop(first);
@@ -767,7 +767,7 @@ mod tests {
         let mut second = CompilerCore::with_persistent_cache(&root)
             .expect("second core with persistence should initialize");
         let second_summary = second
-            .process_source("broken.holo", source)
+            .process_source(&"broken.holo".into(), source)
             .expect("second run should succeed with diagnostics");
         let rendered = holo_base::display_source_diagnostics(&second_summary.diagnostics);
 

@@ -13,6 +13,7 @@ pub use source_diagnostic::{
 };
 pub use span::Span;
 pub use timing::{time_task, TaskTimer, TaskTiming};
+pub type FilePath = relative_path::RelativePathBuf;
 pub type SharedString = ecow::EcoString;
 
 /// Build-time project revision string.

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use holo_base::{
-    display_source_diagnostics, DiagnosticKind, Result, SharedString, SourceDiagnostic,
+    display_source_diagnostics, DiagnosticKind, FilePath, Result, SharedString, SourceDiagnostic,
     SourceExcerpt, TaskTiming,
 };
 use tracing::{info, instrument, warn};
@@ -14,7 +14,7 @@ use crate::{CompilerCore, CoreCycleSummary};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileDiagnostic {
     /// File path associated with the diagnostic.
-    pub file_path: SharedString,
+    pub file_path: FilePath,
     /// Diagnostic message text.
     pub message: SharedString,
     /// Styled message text for rich terminal presentation.
@@ -27,7 +27,7 @@ pub struct FileDiagnostic {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessedFile {
     /// File path that was recomputed.
-    pub file_path: SharedString,
+    pub file_path: FilePath,
     /// Pipeline summary when processing succeeded.
     pub summary: CoreCycleSummary,
 }
@@ -67,7 +67,7 @@ impl DaemonStatusUpdate {
         let mut processed_paths = self
             .processed_files
             .iter()
-            .map(|file| file.file_path.clone())
+            .map(|file| file.file_path.to_string())
             .collect::<Vec<_>>();
         processed_paths.sort();
         lines.push(format!("processed: {}", processed_paths.join(", ")));
@@ -94,7 +94,7 @@ impl DaemonStatusUpdate {
 #[derive(Debug)]
 pub struct CoreDaemon {
     debounce_ms: u64,
-    pending_changes: HashMap<SharedString, PendingChange>,
+    pending_changes: HashMap<FilePath, PendingChange>,
 }
 
 #[derive(Debug, Clone)]
@@ -115,7 +115,7 @@ impl CoreDaemon {
     /// Enqueues startup sources for initial compile and test run.
     pub fn enqueue_startup_sources(
         &mut self,
-        sources: Vec<(SharedString, SharedString)>,
+        sources: Vec<(FilePath, SharedString)>,
         now_ms: u64,
     ) {
         for (file_path, source) in sources {
@@ -124,7 +124,7 @@ impl CoreDaemon {
     }
 
     /// Records an updated source payload for a file.
-    pub fn record_change(&mut self, file_path: SharedString, source: SharedString, change_ms: u64) {
+    pub fn record_change(&mut self, file_path: FilePath, source: SharedString, change_ms: u64) {
         self.pending_changes.insert(
             file_path,
             PendingChange {

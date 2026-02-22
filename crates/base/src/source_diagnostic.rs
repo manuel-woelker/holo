@@ -1,4 +1,4 @@
-use crate::{SharedString, Span};
+use crate::{FilePath, SharedString, Span};
 use serde::{Deserialize, Serialize};
 
 /// Compiler stage associated with a source diagnostic.
@@ -38,7 +38,7 @@ impl AnnotatedSpan {
 pub struct SourceExcerpt {
     /// Optional source file name/path for this excerpt.
     #[serde(default)]
-    pub source_name: Option<SharedString>,
+    pub source_name: Option<FilePath>,
     /// Source text content used for rendering context lines.
     pub source: SharedString,
     /// 1-based line number corresponding to byte offset `starting_offset`.
@@ -63,13 +63,13 @@ impl SourceExcerpt {
     }
 
     /// Sets a source file name/path for this excerpt.
-    pub fn with_source_name(mut self, source_name: impl Into<SharedString>) -> Self {
+    pub fn with_source_name(mut self, source_name: impl Into<FilePath>) -> Self {
         self.source_name = Some(source_name.into());
         self
     }
 
     /// Sets or replaces source file name/path for this excerpt in place.
-    pub fn set_source_name(&mut self, source_name: impl Into<SharedString>) {
+    pub fn set_source_name(&mut self, source_name: impl Into<FilePath>) {
         self.source_name = Some(source_name.into());
     }
 }
@@ -274,7 +274,7 @@ fn render_annotation_with_excerpt(
 fn render_info_with_excerpt(
     annotation: &AnnotatedSpan,
     excerpt: &SourceExcerpt,
-) -> Option<(usize, String, usize, usize, Option<SharedString>)> {
+) -> Option<(usize, String, usize, usize, Option<FilePath>)> {
     let (line_no, line_start, line_text) = find_line_for_offset(excerpt, annotation.span.start)?;
     let start = annotation.span.start.max(line_start);
     let end = annotation.span.end.max(start + 1);

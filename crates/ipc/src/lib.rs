@@ -2,7 +2,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 
-use holo_base::{holo_message_error, Result, SharedString, SourceDiagnostic};
+use holo_base::{holo_message_error, FilePath, Result, SharedString, SourceDiagnostic};
 use interprocess::local_socket::traits::{Listener as _, Stream as _};
 use interprocess::local_socket::{GenericNamespaced, Listener, ListenerOptions, Stream, ToNsName};
 use serde::{Deserialize, Serialize};
@@ -59,7 +59,7 @@ pub struct ProjectIssue {
     /// Short issue title.
     pub title: SharedString,
     /// Source file path for the issue.
-    pub file: SharedString,
+    pub file: FilePath,
     /// 1-based line number.
     pub line: usize,
     /// High-level issue category.
