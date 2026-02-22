@@ -454,6 +454,12 @@ fn is_navigable_key_event(key_event: &KeyEvent) -> bool {
 }
 
 fn draw_daemon_status(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
+    let version = format!("Version: {}", holo_base::project_revision());
+    let version_widget = Paragraph::new(version)
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Left);
+    frame.render_widget(version_widget, area);
+
     let (icon, label, color) = app.daemon_state.display_parts();
     let (compilation_failures, test_failures) = app.failure_counts();
     let status = Paragraph::new(Line::from(vec![

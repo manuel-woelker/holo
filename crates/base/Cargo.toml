@@ -5,6 +5,7 @@ edition = "2021"
 description = "Common infrastructure for holo error handling and logging"
 license = "MIT"
 publish = false
+build = "build.rs"
 
 [dependencies]
 parking_lot = "0.12"

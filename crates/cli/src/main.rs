@@ -743,6 +743,7 @@ enum CliMode {
     Build(PathBuf),
     Deck(PathBuf),
     Daemon(PathBuf),
+    Version,
 }
 
 fn parse_cli_mode(args: &[String]) -> CliMode {
@@ -750,6 +751,7 @@ fn parse_cli_mode(args: &[String]) -> CliMode {
         Some("build") => CliMode::Build(path_arg_or_default(args, 2)),
         Some("daemon") => CliMode::Daemon(path_arg_or_default(args, 2)),
         Some("deck") => CliMode::Deck(path_arg_or_default(args, 2)),
+        Some("version") => CliMode::Version,
         Some(path) => CliMode::Deck(PathBuf::from(path)),
         None => CliMode::Deck(PathBuf::from(".")),
     }
@@ -847,6 +849,9 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        CliMode::Version => {
+            println!("{}", holo_base::project_revision());
+        }
     }
 }
 
@@ -939,6 +944,12 @@ mod tests {
             parse_cli_mode(&args),
             CliMode::Deck(Path::new("repo").to_owned())
         );
+    }
+
+    #[test]
+    fn parses_version_subcommand() {
+        let args = vec!["holo-cli".to_owned(), "version".to_owned()];
+        assert_eq!(parse_cli_mode(&args), CliMode::Version);
     }
 
     #[test]
