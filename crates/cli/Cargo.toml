@@ -9,4 +9,5 @@ publish = false
 [dependencies]
 holo-base = { path = "../base" }
 holo-core = { path = "../core" }
+notify = "8.2.0"
 tracing = "0.1"
