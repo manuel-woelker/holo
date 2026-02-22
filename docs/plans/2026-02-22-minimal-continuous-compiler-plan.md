@@ -119,7 +119,7 @@ Implement memoized per-file queries with hash-based invalidation in `holo-query`
 Discover `#[test]` items and evaluate test bodies through `holo-interpreter`.
 6. **Core daemon integration - Done**
 Add watch + debounce + incremental recompute loop.
-7. **Reporting - In Progress**
+7. **Reporting - Done**
 Print stable diagnostics and per-cycle test summary.
 
 ## What Tests Should Validate This Plan?

@@ -41,6 +41,43 @@ pub struct DaemonStatusUpdate {
     pub failing_tests: Vec<String>,
 }
 
+impl DaemonStatusUpdate {
+    /// Renders a deterministic text report for one daemon cycle.
+    pub fn to_report(&self) -> String {
+        let mut lines = Vec::new();
+        lines.push(format!("processed_files: {}", self.processed_files.len()));
+        lines.push(format!("errors: {}", self.errors.len()));
+        lines.push(format!(
+            "tests: run={} passed={} failed={}",
+            self.tests_run, self.tests_passed, self.tests_failed
+        ));
+
+        let mut processed_paths = self
+            .processed_files
+            .iter()
+            .map(|file| file.file_path.clone())
+            .collect::<Vec<_>>();
+        processed_paths.sort();
+        lines.push(format!("processed: {}", processed_paths.join(", ")));
+
+        let mut failing = self.failing_tests.clone();
+        failing.sort();
+        lines.push(format!("failing_tests: {}", failing.join(", ")));
+
+        let mut errors = self
+            .errors
+            .iter()
+            .map(|error| format!("{}: {}", error.file_path, error.message))
+            .collect::<Vec<_>>();
+        errors.sort();
+        for error in errors {
+            lines.push(format!("error: {error}"));
+        }
+
+        lines.join("\n")
+    }
+}
+
 /// Debounced daemon loop state for file-change driven recompilation.
 #[derive(Debug)]
 pub struct CoreDaemon {
@@ -137,8 +174,11 @@ impl CoreDaemon {
 
 #[cfg(test)]
 mod tests {
-    use super::CoreDaemon;
+    use super::{CoreDaemon, DaemonStatusUpdate, FileDiagnostic, ProcessedFile};
     use crate::CompilerCore;
+    use crate::CoreCycleSummary;
+    use holo_interpreter::{TestResult, TestRunSummary, TestStatus};
+    use holo_typechecker::TypecheckSummary;
 
     #[test]
     fn waits_for_debounce_before_processing() {
@@ -201,5 +241,83 @@ mod tests {
         assert_eq!(second.processed_files[0].file_path, "b.holo");
         assert_eq!(second.tests_failed, 1);
         assert_eq!(second.failing_tests, vec!["b_test".to_owned()]);
+    }
+
+    #[test]
+    fn renders_stable_cycle_report() {
+        let update = DaemonStatusUpdate {
+            processed_files: vec![
+                ProcessedFile {
+                    file_path: "b.holo".to_owned(),
+                    summary: CoreCycleSummary {
+                        token_count: 1,
+                        typecheck: TypecheckSummary {
+                            test_count: 1,
+                            assertion_count: 1,
+                        },
+                        tests: TestRunSummary::default(),
+                    },
+                },
+                ProcessedFile {
+                    file_path: "a.holo".to_owned(),
+                    summary: CoreCycleSummary {
+                        token_count: 1,
+                        typecheck: TypecheckSummary {
+                            test_count: 1,
+                            assertion_count: 1,
+                        },
+                        tests: TestRunSummary::default(),
+                    },
+                },
+            ],
+            errors: vec![FileDiagnostic {
+                file_path: "z.holo".to_owned(),
+                message: "typecheck failed".to_owned(),
+            }],
+            tests_run: 2,
+            tests_passed: 1,
+            tests_failed: 1,
+            failing_tests: vec!["fail_b".to_owned(), "fail_a".to_owned()],
+        };
+
+        let report = update.to_report();
+        let expected = "\
+processed_files: 2
+errors: 1
+tests: run=2 passed=1 failed=1
+processed: a.holo, b.holo
+failing_tests: fail_a, fail_b
+error: z.holo: typecheck failed";
+        assert_eq!(report, expected);
+    }
+
+    #[test]
+    fn includes_failing_test_names_in_report_after_processing() {
+        let mut daemon = CoreDaemon::new(0);
+        let mut core = CompilerCore::default();
+        daemon.record_change(
+            "suite.holo".to_owned(),
+            "#[test] fn pass_case() { assert(true); } #[test] fn fail_case() { assert(false); }"
+                .to_owned(),
+            0,
+        );
+
+        let update = daemon
+            .process_ready(&mut core, 0)
+            .expect("tick should succeed");
+        let report = update.to_report();
+
+        assert!(report.contains("tests: run=2 passed=1 failed=1"));
+        assert!(report.contains("failing_tests: fail_case"));
+        assert_eq!(
+            update
+                .processed_files
+                .first()
+                .and_then(|file| file.summary.tests.results.get(1)),
+            Some(&TestResult {
+                name: "fail_case".to_owned(),
+                status: TestStatus::Failed
+            })
+        );
     }
 }
