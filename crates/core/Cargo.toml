@@ -7,6 +7,7 @@ license = "MIT"
 publish = false
 
 [dependencies]
+holo-ast = { path = "../ast" }
 holo-base = { path = "../base" }
 holo-interpreter = { path = "../interpreter" }
 holo-lexer = { path = "../lexer" }

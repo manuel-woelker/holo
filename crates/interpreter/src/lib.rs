@@ -1,6 +1,6 @@
 //! Test interpreter for the minimal holo language.
 
-use holo_ast::{Expr, ExprKind, Module, Statement};
+use holo_ast::{Expr, ExprKind, Module, Statement, TestItem};
 
 /// Final status for a single test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,8 +33,14 @@ pub struct TestRunSummary {
 
 /// Interpreter abstraction used by the core crate.
 pub trait Interpreter {
+    /// Executes one collected test item.
+    fn run_test(&self, test: &TestItem) -> TestResult;
+    /// Executes a collected test set and returns run summary details.
+    fn run_collected_tests(&self, tests: &[TestItem]) -> TestRunSummary;
     /// Executes tests in a module and returns run summary details.
-    fn run_tests(&self, module: &Module) -> TestRunSummary;
+    fn run_tests(&self, module: &Module) -> TestRunSummary {
+        self.run_collected_tests(&module.tests)
+    }
 }
 
 /// Basic interpreter for boolean expressions and assertions.
@@ -51,30 +57,35 @@ impl BasicInterpreter {
 }
 
 impl Interpreter for BasicInterpreter {
-    fn run_tests(&self, module: &Module) -> TestRunSummary {
+    fn run_test(&self, test: &TestItem) -> TestResult {
+        let mut status = TestStatus::Passed;
+        for statement in &test.statements {
+            let assertion_holds = match statement {
+                Statement::Assert(assertion) => Self::eval_expr(&assertion.expression),
+            };
+            if !assertion_holds {
+                status = TestStatus::Failed;
+                break;
+            }
+        }
+
+        TestResult {
+            name: test.name.clone(),
+            status,
+        }
+    }
+
+    fn run_collected_tests(&self, tests: &[TestItem]) -> TestRunSummary {
         let mut summary = TestRunSummary::default();
 
-        for test in &module.tests {
-            let mut status = TestStatus::Passed;
-            for statement in &test.statements {
-                let assertion_holds = match statement {
-                    Statement::Assert(assertion) => Self::eval_expr(&assertion.expression),
-                };
-                if !assertion_holds {
-                    status = TestStatus::Failed;
-                    break;
-                }
-            }
-
+        for test in tests {
+            let result = self.run_test(test);
             summary.executed += 1;
-            match status {
+            match result.status {
                 TestStatus::Passed => summary.passed += 1,
                 TestStatus::Failed => summary.failed += 1,
             }
-            summary.results.push(TestResult {
-                name: test.name.clone(),
-                status,
-            });
+            summary.results.push(result);
         }
 
         summary
@@ -107,5 +118,32 @@ mod tests {
         assert_eq!(summary.executed, 1);
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.results[0].status, TestStatus::Failed);
+    }
+
+    #[test]
+    fn runs_collected_tests_slice() {
+        let tests = vec![
+            TestItem {
+                name: "pass".to_owned(),
+                statements: vec![Statement::Assert(AssertStatement {
+                    expression: Expr::bool_literal(true, Span::new(17, 21)),
+                    span: Span::new(9, 22),
+                })],
+                span: Span::new(0, 24),
+            },
+            TestItem {
+                name: "fail".to_owned(),
+                statements: vec![Statement::Assert(AssertStatement {
+                    expression: Expr::bool_literal(false, Span::new(17, 22)),
+                    span: Span::new(9, 23),
+                })],
+                span: Span::new(25, 49),
+            },
+        ];
+
+        let summary = BasicInterpreter.run_collected_tests(&tests);
+        assert_eq!(summary.executed, 2);
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failed, 1);
     }
 }

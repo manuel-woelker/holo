@@ -4,6 +4,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+use holo_ast::{Module, TestItem};
 use holo_base::Result;
 use holo_interpreter::{BasicInterpreter, Interpreter, TestRunSummary};
 use holo_lexer::{BasicLexer, Lexer};
@@ -34,6 +35,10 @@ pub struct CompilerCore {
 }
 
 impl CompilerCore {
+    fn collect_tests(module: &Module) -> Vec<TestItem> {
+        module.tests.clone()
+    }
+
     /// Runs lexing, parsing, typechecking, and test execution for one source file.
     pub fn process_source(&mut self, file_path: &str, source: &str) -> Result<CoreCycleSummary> {
         let content_hash = hash_content(source);
@@ -82,17 +87,17 @@ impl CompilerCore {
             QueryValue::Complete,
         );
 
-        let collected_tests = module.tests.len();
+        let collected_tests = Self::collect_tests(&module);
         self.query_store.put(
             QueryKey {
                 file_path: file_path.to_owned(),
                 stage: QueryStage::CollectTests,
                 content_hash,
             },
-            QueryValue::Message(format!("{collected_tests} collected test(s)")),
+            QueryValue::Message(format!("{} collected test(s)", collected_tests.len())),
         );
 
-        let tests = self.interpreter.run_tests(&module);
+        let tests = self.interpreter.run_collected_tests(&collected_tests);
         self.query_store.put(
             QueryKey {
                 file_path: file_path.to_owned(),
@@ -174,6 +179,24 @@ mod tests {
         assert_eq!(
             core.query_value("smoke.holo", QueryStage::CollectTests, source),
             Some(&QueryValue::Message("1 collected test(s)".to_owned()))
+        );
+    }
+
+    #[test]
+    fn collects_tests_then_executes_through_interpreter() {
+        let mut core = CompilerCore::default();
+        let source =
+            "#[test] fn pass_case() { assert(true); } #[test] fn fail_case() { assert(false); }";
+        let summary = core
+            .process_source("suite.holo", source)
+            .expect("pipeline should run");
+
+        assert_eq!(summary.tests.executed, 2);
+        assert_eq!(summary.tests.passed, 1);
+        assert_eq!(summary.tests.failed, 1);
+        assert_eq!(
+            core.query_value("suite.holo", QueryStage::CollectTests, source),
+            Some(&QueryValue::Message("2 collected test(s)".to_owned()))
         );
     }
 }
