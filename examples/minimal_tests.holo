@@ -1,0 +1,8 @@
+#[test]
+fn passing_literal() { assert(true); }
+
+#[test]
+fn passing_negation() { assert(!false); }
+
+#[test]
+fn failing_example() { assert(false); }
