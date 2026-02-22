@@ -1,6 +1,7 @@
 //! Core orchestration for the minimal compile-and-test pipeline.
 
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use holo_base::Result;
@@ -29,13 +30,27 @@ pub struct CompilerCore {
     typechecker: BasicTypechecker,
     interpreter: BasicInterpreter,
     query_store: InMemoryQueryStore,
+    cycle_cache: HashMap<(String, u64), CoreCycleSummary>,
 }
 
 impl CompilerCore {
     /// Runs lexing, parsing, typechecking, and test execution for one source file.
     pub fn process_source(&mut self, file_path: &str, source: &str) -> Result<CoreCycleSummary> {
         let content_hash = hash_content(source);
-        self.query_store.invalidate_file(file_path);
+        if !self
+            .query_store
+            .invalidate_if_hash_changed(file_path, content_hash)
+        {
+            if let Some(summary) = self
+                .cycle_cache
+                .get(&(file_path.to_owned(), content_hash))
+                .cloned()
+            {
+                return Ok(summary);
+            }
+        } else {
+            self.cycle_cache.retain(|(path, _), _| path != file_path);
+        }
 
         let tokens = self.lexer.lex(source)?;
         self.query_store.put(
@@ -67,6 +82,16 @@ impl CompilerCore {
             QueryValue::Complete,
         );
 
+        let collected_tests = module.tests.len();
+        self.query_store.put(
+            QueryKey {
+                file_path: file_path.to_owned(),
+                stage: QueryStage::CollectTests,
+                content_hash,
+            },
+            QueryValue::Message(format!("{collected_tests} collected test(s)")),
+        );
+
         let tests = self.interpreter.run_tests(&module);
         self.query_store.put(
             QueryKey {
@@ -80,11 +105,15 @@ impl CompilerCore {
             )),
         );
 
-        Ok(CoreCycleSummary {
+        let summary = CoreCycleSummary {
             token_count: tokens.len(),
             typecheck,
             tests,
-        })
+        };
+        self.cycle_cache
+            .insert((file_path.to_owned(), content_hash), summary.clone());
+
+        Ok(summary)
     }
 
     /// Returns the latest query value for a stage when available.
@@ -126,6 +155,25 @@ mod tests {
         assert_eq!(
             core.query_value("smoke.holo", QueryStage::Parse, source),
             Some(&QueryValue::Complete)
+        );
+    }
+
+    #[test]
+    fn caches_results_for_unchanged_source_hash() {
+        let mut core = CompilerCore::default();
+        let source = "#[test] fn smoke() { assert(true); }";
+
+        let first = core
+            .process_source("smoke.holo", source)
+            .expect("first pipeline run should succeed");
+        let second = core
+            .process_source("smoke.holo", source)
+            .expect("second pipeline run should hit cache");
+
+        assert_eq!(first, second);
+        assert_eq!(
+            core.query_value("smoke.holo", QueryStage::CollectTests, source),
+            Some(&QueryValue::Message("1 collected test(s)".to_owned()))
         );
     }
 }

@@ -8,6 +8,7 @@ pub enum QueryStage {
     Lex,
     Parse,
     Typecheck,
+    CollectTests,
     RunTests,
 }
 
@@ -37,6 +38,10 @@ pub trait QueryStore {
     fn put(&mut self, key: QueryKey, value: QueryValue);
     /// Returns a cached value for a key when present.
     fn get(&self, key: &QueryKey) -> Option<&QueryValue>;
+    /// Invalidates file entries only when content hash changed.
+    fn invalidate_if_hash_changed(&mut self, file_path: &str, content_hash: u64) -> bool;
+    /// Returns whether this file/hash pair is already current in the store.
+    fn is_current_hash(&self, file_path: &str, content_hash: u64) -> bool;
     /// Removes all entries associated with a file path.
     fn invalidate_file(&mut self, file_path: &str);
 }
@@ -45,6 +50,7 @@ pub trait QueryStore {
 #[derive(Debug, Default)]
 pub struct InMemoryQueryStore {
     entries: HashMap<QueryKey, QueryValue>,
+    file_hashes: HashMap<String, u64>,
 }
 
 impl QueryStore for InMemoryQueryStore {
@@ -56,8 +62,25 @@ impl QueryStore for InMemoryQueryStore {
         self.entries.get(key)
     }
 
+    fn invalidate_if_hash_changed(&mut self, file_path: &str, content_hash: u64) -> bool {
+        if self.is_current_hash(file_path, content_hash) {
+            return false;
+        }
+
+        self.invalidate_file(file_path);
+        self.file_hashes.insert(file_path.to_owned(), content_hash);
+        true
+    }
+
+    fn is_current_hash(&self, file_path: &str, content_hash: u64) -> bool {
+        self.file_hashes
+            .get(file_path)
+            .is_some_and(|existing_hash| *existing_hash == content_hash)
+    }
+
     fn invalidate_file(&mut self, file_path: &str) {
         self.entries.retain(|key, _| key.file_path != file_path);
+        self.file_hashes.remove(file_path);
     }
 }
 
@@ -77,5 +100,29 @@ mod tests {
         assert_eq!(store.get(&key), Some(&QueryValue::Complete));
         store.invalidate_file("sample.holo");
         assert_eq!(store.get(&key), None);
+    }
+
+    #[test]
+    fn keeps_cache_when_hash_is_unchanged() {
+        let mut store = InMemoryQueryStore::default();
+        assert!(store.invalidate_if_hash_changed("sample.holo", 11));
+        assert!(!store.invalidate_if_hash_changed("sample.holo", 11));
+        assert!(store.is_current_hash("sample.holo", 11));
+    }
+
+    #[test]
+    fn invalidates_cache_when_hash_changes() {
+        let mut store = InMemoryQueryStore::default();
+        let key = QueryKey {
+            file_path: "sample.holo".to_owned(),
+            stage: QueryStage::Lex,
+            content_hash: 11,
+        };
+        store.invalidate_if_hash_changed("sample.holo", 11);
+        store.put(key.clone(), QueryValue::Complete);
+
+        assert!(store.invalidate_if_hash_changed("sample.holo", 12));
+        assert_eq!(store.get(&key), None);
+        assert!(store.is_current_hash("sample.holo", 12));
     }
 }
