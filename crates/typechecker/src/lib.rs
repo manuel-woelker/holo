@@ -759,4 +759,56 @@ mod tests {
             .message
             .contains("expects 2 argument(s) but got 1")));
     }
+
+    #[test]
+    fn rejects_non_numeric_arithmetic_operands() {
+        let module = Module {
+            functions: Vec::new(),
+            tests: vec![TestItem {
+                name: "non_numeric".into(),
+                statements: vec![Statement::Assert(AssertStatement {
+                    expression: Expr::binary(
+                        BinaryOperator::Add,
+                        Expr::bool_literal(true, Span::new(0, 4)),
+                        Expr::bool_literal(false, Span::new(7, 12)),
+                        Span::new(0, 12),
+                    ),
+                    span: Span::new(0, 13),
+                })],
+                span: Span::new(0, 13),
+            }],
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "assert(true + false);");
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("require numeric operands")));
+    }
+
+    #[test]
+    fn rejects_float_modulo() {
+        let module = Module {
+            functions: Vec::new(),
+            tests: vec![TestItem {
+                name: "float_modulo".into(),
+                statements: vec![Statement::Assert(AssertStatement {
+                    expression: Expr::binary(
+                        BinaryOperator::Modulo,
+                        Expr::number_literal("1.0f64", Span::new(0, 6)),
+                        Expr::number_literal("2.0f64", Span::new(9, 15)),
+                        Span::new(0, 15),
+                    ),
+                    span: Span::new(0, 16),
+                })],
+                span: Span::new(0, 16),
+            }],
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "assert(1.0f64 % 2.0f64);");
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("only valid for integer types")));
+    }
 }

@@ -652,4 +652,93 @@ mod tests {
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.results[0].failure_span, Some(Span::new(0, 11)));
     }
+
+    #[test]
+    fn executes_numeric_operations_for_all_supported_number_types() {
+        let cases = vec![
+            ("u32_ops", "1u32", "2u32", BinaryOperator::Add, TypeRef::U32),
+            (
+                "u64_ops",
+                "8u64",
+                "3u64",
+                BinaryOperator::Subtract,
+                TypeRef::U64,
+            ),
+            (
+                "i32_ops",
+                "2i32",
+                "3i32",
+                BinaryOperator::Multiply,
+                TypeRef::I32,
+            ),
+            (
+                "i64_ops",
+                "8i64",
+                "2i64",
+                BinaryOperator::Divide,
+                TypeRef::I64,
+            ),
+            (
+                "f32_ops",
+                "7.0f32",
+                "2.0f32",
+                BinaryOperator::Modulo,
+                TypeRef::F32,
+            ),
+            (
+                "f64_ops",
+                "9.0f64",
+                "3.0f64",
+                BinaryOperator::Divide,
+                TypeRef::F64,
+            ),
+        ];
+
+        for (name, left_literal, right_literal, operator, return_type) in cases {
+            let module = Module {
+                functions: vec![FunctionItem {
+                    name: name.into(),
+                    parameters: Vec::new(),
+                    return_type,
+                    statements: vec![Statement::Expr(ExprStatement {
+                        expression: Expr::binary(
+                            operator,
+                            Expr::number_literal(left_literal, Span::new(0, left_literal.len())),
+                            Expr::number_literal(
+                                right_literal,
+                                Span::new(10, 10 + right_literal.len()),
+                            ),
+                            Span::new(0, 10 + right_literal.len()),
+                        ),
+                        span: Span::new(0, 11 + right_literal.len()),
+                    })],
+                    is_test: false,
+                    span: Span::new(0, 11 + right_literal.len()),
+                }],
+                tests: vec![TestItem {
+                    name: "smoke".into(),
+                    statements: vec![
+                        Statement::Expr(ExprStatement {
+                            expression: Expr::call(
+                                Expr::identifier(name, Span::new(0, name.len())),
+                                vec![],
+                                Span::new(0, name.len() + 2),
+                            ),
+                            span: Span::new(0, name.len() + 3),
+                        }),
+                        Statement::Assert(AssertStatement {
+                            expression: Expr::bool_literal(true, Span::new(20, 24)),
+                            span: Span::new(13, 25),
+                        }),
+                    ],
+                    span: Span::new(0, 26),
+                }],
+            };
+
+            let summary = BasicInterpreter.run_tests(&module);
+            assert_eq!(summary.executed, 1, "{name}");
+            assert_eq!(summary.passed, 1, "{name}");
+            assert_eq!(summary.failed, 0, "{name}");
+        }
+    }
 }

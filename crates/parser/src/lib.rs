@@ -610,4 +610,26 @@ mod tests {
         assert_eq!(result.module.tests.len(), 1);
         assert_eq!(result.module.tests[0].statements.len(), 1);
     }
+
+    #[test]
+    fn parses_numeric_suffix_literals_and_arithmetic_operators() {
+        let cases = vec![
+            "fn f() -> i64 { 1i64 + 2i64; }",
+            "fn f() -> u32 { 1u32 % 1u32; }",
+            "fn f() -> f64 { 1.0f64 / 2.0f64; }",
+            "fn f() -> f32 { -1.0f32 * 3.0f32; }",
+        ];
+
+        for source in cases {
+            let lexed = BasicLexer.lex(source);
+            assert!(lexed.diagnostics.is_empty(), "{source}");
+            let parsed = BasicParser.parse_module(&lexed.tokens, source);
+            assert!(
+                parsed.diagnostics.is_empty(),
+                "{source}: {:?}",
+                parsed.diagnostics
+            );
+            assert_eq!(parsed.module.functions.len(), 1, "{source}");
+        }
+    }
 }

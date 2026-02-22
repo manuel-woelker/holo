@@ -1199,6 +1199,32 @@ mod tests {
     }
 
     #[test]
+    fn build_mode_recursively_processes_multiple_files() {
+        let temp = temp_source_dir("build_mode_recursively_processes_multiple_files");
+        fs::write(
+            temp.join("a.holo"),
+            "fn u32_calc() -> u32 { 1u32 + 2u32; } #[test] fn a() { u32_calc(); assert(true); }",
+        )
+        .expect("should write a.holo");
+        fs::create_dir_all(temp.join("nested")).expect("should create nested dir");
+        fs::write(
+            temp.join("nested").join("b.holo"),
+            "fn f64_calc() -> f64 { 6.0f64 / 2.0f64; } #[test] fn b() { f64_calc(); assert(true); }",
+        )
+        .expect("should write b.holo");
+
+        let report = run_build_once(&temp).expect("build should succeed");
+        assert!(report.contains("processed_files: 2"), "{report}");
+        assert!(
+            report.contains("tests: run=2 passed=2 failed=0"),
+            "{report}"
+        );
+        assert!(report.contains("failing_tests: "), "{report}");
+
+        fs::remove_dir_all(temp).expect("cleanup should succeed");
+    }
+
+    #[test]
     fn renders_relative_source_path() {
         let root = Path::new("repo");
         let source = Path::new("repo/src/main.holo");

@@ -85,7 +85,7 @@ This plan focuses on language/frontend/runtime capability, not performance work.
 - Keep dependency/query invalidation correct for function and expression changes.
 - Preserve persistent cache compatibility via schema bump where needed.
 
-7. **Test coverage hardening - In Progress**
+7. **Test coverage hardening - Done**
 - Add data-driven parser/typechecker/interpreter tests for all numeric types and operators.
 - Add negative tests for unsupported mixes (`i64 + f64`, `bool + bool`, etc.).
 - Add end-to-end CLI/daemon tests over multi-file examples using functions + arithmetic.
