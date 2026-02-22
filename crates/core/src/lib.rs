@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use bitcode::{Decode, Encode};
 use holo_ast::{Module, TestItem};
 use holo_base::{
-    holo_message_error, project_revision, DiagnosticKind, Result, SharedString, SourceDiagnostic,
-    Span,
+    holo_message_error, project_revision, time_task, DiagnosticKind, Result, SharedString,
+    SourceDiagnostic, Span, TaskTiming,
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{BasicInterpreter, Interpreter, TestRunSummary, TestStatus};
@@ -32,6 +32,8 @@ pub struct CoreCycleSummary {
     pub tests: TestRunSummary,
     /// Collected source diagnostics for this file.
     pub diagnostics: Vec<SourceDiagnostic>,
+    /// Timings captured for this file's pipeline and nested tasks.
+    pub timings: Vec<TaskTiming>,
 }
 
 /// Coordinates compiler stages and query cache updates.
@@ -123,9 +125,17 @@ impl CompilerCore {
         );
 
         info!("parsing tokens");
-        let parsed = self.parser.parse_module(&tokens, source);
+        let (parsed, parse_timing) = time_task(format!("parse `{file_path}`"), || {
+            self.parser.parse_module(&tokens, source)
+        });
         let module = parsed.module;
         diagnostics.extend(parsed.diagnostics);
+        info!(
+            file_path = %file_path,
+            stage = "parse",
+            elapsed_ms = parse_timing.elapsed.as_secs_f64() * 1000.0,
+            "stage timing"
+        );
         debug!(
             test_item_count = module.tests.len(),
             diagnostics = diagnostics.len(),
@@ -141,9 +151,18 @@ impl CompilerCore {
         );
 
         info!("typechecking module");
-        let typechecked = self.typechecker.typecheck_module(&module, source);
+        let (typechecked, typecheck_timing) = time_task(format!("typecheck `{file_path}`"), || {
+            self.typechecker.typecheck_module(&module, source)
+        });
         let typecheck = typechecked.summary;
+        let typecheck_timings = typechecked.timings;
         diagnostics.extend(typechecked.diagnostics);
+        info!(
+            file_path = %file_path,
+            stage = "typecheck",
+            elapsed_ms = typecheck_timing.elapsed.as_secs_f64() * 1000.0,
+            "stage timing"
+        );
         debug!(
             typechecked_tests = typecheck.test_count,
             assertions = typecheck.assertion_count,
@@ -175,7 +194,15 @@ impl CompilerCore {
         );
 
         info!("running tests");
-        let tests = self.interpreter.run_collected_tests(&collected_tests);
+        let (tests, run_tests_timing) = time_task(format!("run tests `{file_path}`"), || {
+            self.interpreter.run_collected_tests(&collected_tests)
+        });
+        info!(
+            file_path = %file_path,
+            stage = "run_tests",
+            elapsed_ms = run_tests_timing.elapsed.as_secs_f64() * 1000.0,
+            "stage timing"
+        );
         info!(
             tests_run = tests.executed,
             tests_passed = tests.passed,
@@ -197,11 +224,21 @@ impl CompilerCore {
             ),
         );
 
+        let test_timings = tests.timings.clone();
         let summary = CoreCycleSummary {
             token_count: tokens.len(),
             typecheck,
             tests,
             diagnostics,
+            timings: {
+                let mut timings = Vec::new();
+                timings.push(parse_timing);
+                timings.push(typecheck_timing);
+                timings.push(run_tests_timing);
+                timings.extend(typecheck_timings);
+                timings.extend(test_timings);
+                timings
+            },
         };
         self.cycle_cache
             .insert((file_path.into(), content_hash), summary.clone());
@@ -296,6 +333,8 @@ struct PersistedCycleSummary {
     tests_failed: usize,
     test_results: Vec<PersistedTestResult>,
     diagnostics: Vec<PersistedDiagnostic>,
+    timings: Vec<PersistedTaskTiming>,
+    test_timings: Vec<PersistedTaskTiming>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
@@ -342,6 +381,12 @@ struct PersistedSourceExcerpt {
     starting_offset: usize,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+struct PersistedTaskTiming {
+    task_name: String,
+    elapsed_nanos: u64,
+}
+
 impl PersistedCycleSummary {
     fn from_runtime(summary: &CoreCycleSummary) -> Self {
         Self {
@@ -369,6 +414,23 @@ impl PersistedCycleSummary {
                 .diagnostics
                 .iter()
                 .map(PersistedDiagnostic::from_runtime)
+                .collect(),
+            timings: summary
+                .timings
+                .iter()
+                .map(|timing| PersistedTaskTiming {
+                    task_name: timing.task_name.to_string(),
+                    elapsed_nanos: timing.elapsed.as_nanos().min(u64::MAX as u128) as u64,
+                })
+                .collect(),
+            test_timings: summary
+                .tests
+                .timings
+                .iter()
+                .map(|timing| PersistedTaskTiming {
+                    task_name: timing.task_name.to_string(),
+                    elapsed_nanos: timing.elapsed.as_nanos().min(u64::MAX as u128) as u64,
+                })
                 .collect(),
         }
     }
@@ -399,11 +461,27 @@ impl PersistedCycleSummary {
                         },
                     })
                     .collect(),
+                timings: self
+                    .test_timings
+                    .iter()
+                    .map(|timing| TaskTiming {
+                        task_name: timing.task_name.clone().into(),
+                        elapsed: std::time::Duration::from_nanos(timing.elapsed_nanos),
+                    })
+                    .collect(),
             },
             diagnostics: self
                 .diagnostics
                 .into_iter()
                 .map(PersistedDiagnostic::into_runtime)
+                .collect(),
+            timings: self
+                .timings
+                .into_iter()
+                .map(|timing| TaskTiming {
+                    task_name: timing.task_name.into(),
+                    elapsed: std::time::Duration::from_nanos(timing.elapsed_nanos),
+                })
                 .collect(),
         }
     }
@@ -494,7 +572,7 @@ impl PersistedCache {
             bytes: bitcode::encode(&persisted),
             produced_at: 0,
             content_hash,
-            schema_version: 2,
+            schema_version: 4,
         };
         self.db
             .put_artifact(&CoreArtifactKind::CycleSummary, &key, record)
@@ -516,7 +594,7 @@ impl PersistedCache {
         if record.content_hash != content_hash {
             return Ok(None);
         }
-        if record.schema_version != 2 {
+        if record.schema_version != 4 {
             return Ok(None);
         }
 

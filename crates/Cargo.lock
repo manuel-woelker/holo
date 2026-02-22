@@ -456,6 +456,7 @@ version = "0.1.0"
 dependencies = [
  "holo-ast",
  "holo-base",
+ "tracing",
 ]
 
 [[package]]
@@ -497,6 +498,7 @@ version = "0.1.0"
 dependencies = [
  "holo-ast",
  "holo-base",
+ "tracing",
 ]
 
 [[package]]

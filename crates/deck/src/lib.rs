@@ -58,7 +58,7 @@ pub enum ProjectIssueSeverity {
 
 /// Opens deck TUI with static example data.
 pub fn run() -> Result<()> {
-    run_with_updates(example_issues(), None, None, None, None)
+    run_with_updates(example_issues(), None, None, None, None, None)
 }
 
 /// Opens deck TUI with initial issues and optional live updates.
@@ -68,6 +68,7 @@ pub fn run_with_updates(
     daemon_state_updates: Option<Receiver<DaemonState>>,
     log_updates: Option<Receiver<SharedString>>,
     dependency_graph_updates: Option<Receiver<SharedString>>,
+    performance_updates: Option<Receiver<Vec<SharedString>>>,
 ) -> Result<()> {
     enable_raw_mode()
         .map_err(|error| holo_message_error!("failed to enable raw mode").with_std_source(error))?;
@@ -86,6 +87,7 @@ pub fn run_with_updates(
     let mut daemon_state_updates = daemon_state_updates;
     let mut log_updates = log_updates;
     let mut dependency_graph_updates = dependency_graph_updates;
+    let mut performance_updates = performance_updates;
     let result = run_loop(
         &mut terminal,
         &mut app,
@@ -93,6 +95,7 @@ pub fn run_with_updates(
         &mut daemon_state_updates,
         &mut log_updates,
         &mut dependency_graph_updates,
+        &mut performance_updates,
     );
     restore_terminal(&mut terminal)?;
     result
@@ -105,6 +108,7 @@ fn run_loop(
     daemon_state_updates: &mut Option<Receiver<DaemonState>>,
     log_updates: &mut Option<Receiver<SharedString>>,
     dependency_graph_updates: &mut Option<Receiver<SharedString>>,
+    performance_updates: &mut Option<Receiver<Vec<SharedString>>>,
 ) -> Result<()> {
     loop {
         if let Some(receiver) = issue_updates.as_ref() {
@@ -156,6 +160,19 @@ fn run_loop(
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
                         *dependency_graph_updates = None;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(receiver) = performance_updates.as_ref() {
+            loop {
+                match receiver.try_recv() {
+                    Ok(timings) => app.set_performance_timings(timings),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        *performance_updates = None;
                         break;
                     }
                 }
@@ -240,6 +257,7 @@ fn draw(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
         DeckTab::Issues => draw_issues(rows[1], frame, app),
         DeckTab::Log => draw_log(rows[1], frame, app),
         DeckTab::DependencyGraph => draw_dependency_graph(rows[1], frame, app),
+        DeckTab::Performance => draw_performance(rows[1], frame, app),
     }
     draw_daemon_status(rows[2], frame, app);
 }
@@ -504,6 +522,17 @@ fn draw_dependency_graph(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckA
     frame.render_stateful_widget(list, area, &mut state);
 }
 
+fn draw_performance(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
+    let items = app
+        .performance_timings
+        .iter()
+        .map(|entry| ListItem::new(entry.as_str()))
+        .collect::<Vec<_>>();
+    let list =
+        List::new(items).block(Block::default().title("Performance").borders(Borders::ALL));
+    frame.render_widget(list, area);
+}
+
 fn is_navigable_key_event(key_event: &KeyEvent) -> bool {
     key_event.kind == KeyEventKind::Press
 }
@@ -607,6 +636,14 @@ fn example_dependency_graph() -> SharedString {
     .into()
 }
 
+fn example_performance_timings() -> Vec<SharedString> {
+    vec![
+        "18.500ms parse `tests/auth.holo`".into(),
+        "7.200ms typecheck test `login_valid_credentials`".into(),
+        "4.100ms run test `startup_checks`".into(),
+    ]
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DeckApp {
     issues: Vec<ProjectIssue>,
@@ -615,6 +652,7 @@ struct DeckApp {
     logs: Vec<SharedString>,
     dependency_tree: Vec<DependencyNode>,
     dependency_selected: usize,
+    performance_timings: Vec<SharedString>,
     active_tab: DeckTab,
 }
 
@@ -627,6 +665,7 @@ impl DeckApp {
             logs: example_logs(),
             dependency_tree: parse_dependency_tree(&example_dependency_graph()),
             dependency_selected: 0,
+            performance_timings: example_performance_timings(),
             active_tab: DeckTab::Issues,
         }
     }
@@ -693,6 +732,10 @@ impl DeckApp {
         } else if self.dependency_selected >= visible_len {
             self.dependency_selected = visible_len - 1;
         }
+    }
+
+    fn set_performance_timings(&mut self, timings: Vec<SharedString>) {
+        self.performance_timings = timings;
     }
 
     fn failure_counts(&self) -> (usize, usize) {
@@ -917,11 +960,12 @@ enum DeckTab {
     Issues,
     Log,
     DependencyGraph,
+    Performance,
 }
 
 impl DeckTab {
-    fn titles() -> [&'static str; 3] {
-        ["Issues", "Log", "Dependency Graph"]
+    fn titles() -> [&'static str; 4] {
+        ["Issues", "Log", "Dependency Graph", "Performance"]
     }
 
     fn as_index(self) -> usize {
@@ -929,6 +973,7 @@ impl DeckTab {
             Self::Issues => 0,
             Self::Log => 1,
             Self::DependencyGraph => 2,
+            Self::Performance => 3,
         }
     }
 
@@ -936,15 +981,17 @@ impl DeckTab {
         match self {
             Self::Issues => Self::Log,
             Self::Log => Self::DependencyGraph,
-            Self::DependencyGraph => Self::Issues,
+            Self::DependencyGraph => Self::Performance,
+            Self::Performance => Self::Issues,
         }
     }
 
     fn previous(self) -> Self {
         match self {
-            Self::Issues => Self::DependencyGraph,
+            Self::Issues => Self::Performance,
             Self::Log => Self::Issues,
             Self::DependencyGraph => Self::Log,
+            Self::Performance => Self::DependencyGraph,
         }
     }
 }
@@ -1075,10 +1122,12 @@ mod tests {
         app.select_next_tab();
         assert_eq!(app.active_tab, DeckTab::DependencyGraph);
         app.select_next_tab();
+        assert_eq!(app.active_tab, DeckTab::Performance);
+        app.select_next_tab();
         assert_eq!(app.active_tab, DeckTab::Issues);
 
         app.select_previous_tab();
-        assert_eq!(app.active_tab, DeckTab::DependencyGraph);
+        assert_eq!(app.active_tab, DeckTab::Performance);
     }
 
     #[test]

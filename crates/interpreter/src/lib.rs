@@ -1,7 +1,8 @@
 //! Test interpreter for the minimal holo language.
 
 use holo_ast::{Expr, ExprKind, Module, Statement, TestItem};
-use holo_base::{SharedString, Span};
+use holo_base::{SharedString, Span, TaskTimer, TaskTiming};
+use tracing::info;
 
 /// Final status for a single test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +33,8 @@ pub struct TestRunSummary {
     pub failed: usize,
     /// Per-test outcomes.
     pub results: Vec<TestResult>,
+    /// Per-test execution timings.
+    pub timings: Vec<TaskTiming>,
 }
 
 /// Interpreter abstraction used by the core crate.
@@ -88,7 +91,17 @@ impl Interpreter for BasicInterpreter {
         let mut summary = TestRunSummary::default();
 
         for test in tests {
+            let timer = TaskTimer::start(format!("run test `{}`", test.name));
             let result = self.run_test(test);
+            let timing = timer.finish();
+            summary.timings.push(timing.clone());
+            info!(
+                test_name = %test.name,
+                stage = "run_test",
+                elapsed_ms = timing.elapsed.as_secs_f64() * 1000.0,
+                status = ?result.status,
+                "test timing"
+            );
             summary.executed += 1;
             match result.status {
                 TestStatus::Passed => summary.passed += 1,

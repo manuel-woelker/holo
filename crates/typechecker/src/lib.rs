@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 
 use holo_ast::{Expr, ExprKind, Module, Statement};
-use holo_base::{DiagnosticKind, SourceDiagnostic, SourceExcerpt};
+use holo_base::{DiagnosticKind, SourceDiagnostic, SourceExcerpt, TaskTimer, TaskTiming};
+use tracing::info;
 
 /// Type representation for the minimal language.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,8 @@ pub struct TypecheckResult {
     pub summary: TypecheckSummary,
     /// Typechecking diagnostics encountered while validating the module.
     pub diagnostics: Vec<SourceDiagnostic>,
+    /// Per-test typechecking timings.
+    pub timings: Vec<TaskTiming>,
 }
 
 /// Typechecking abstraction used by the core compiler crate.
@@ -56,8 +59,10 @@ impl Typechecker for BasicTypechecker {
         let mut seen_test_names = HashMap::new();
         let mut assertion_count = 0usize;
         let mut diagnostics = Vec::new();
+        let mut timings = Vec::new();
 
         for test in &module.tests {
+            let timer = TaskTimer::start(format!("typecheck test `{}`", test.name));
             if let Some(first_span) = seen_test_names.get(test.name.as_str()).copied() {
                 diagnostics.push(
                     SourceDiagnostic::new(
@@ -95,6 +100,15 @@ impl Typechecker for BasicTypechecker {
                     }
                 }
             }
+
+            let timing = timer.finish();
+            timings.push(timing.clone());
+            info!(
+                test_name = %test.name,
+                stage = "typecheck_test",
+                elapsed_ms = timing.elapsed.as_secs_f64() * 1000.0,
+                "test timing"
+            );
         }
 
         TypecheckResult {
@@ -103,6 +117,7 @@ impl Typechecker for BasicTypechecker {
                 assertion_count,
             },
             diagnostics,
+            timings,
         }
     }
 }

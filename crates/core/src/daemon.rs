@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use holo_base::{
     display_source_diagnostics, DiagnosticKind, Result, SharedString, SourceDiagnostic,
-    SourceExcerpt,
+    SourceExcerpt, TaskTiming,
 };
 use tracing::{info, instrument, warn};
 
@@ -49,6 +49,8 @@ pub struct DaemonStatusUpdate {
     pub failing_tests: Vec<SharedString>,
     /// Test assertion failures represented as source diagnostics.
     pub test_failures: Vec<FileDiagnostic>,
+    /// Timings captured during this cycle, ordered longest-first.
+    pub cycle_timings: Vec<TaskTiming>,
 }
 
 impl DaemonStatusUpdate {
@@ -166,6 +168,7 @@ impl CoreDaemon {
                     update.tests_run += summary.tests.executed;
                     update.tests_passed += summary.tests.passed;
                     update.tests_failed += summary.tests.failed;
+                    update.cycle_timings.extend(summary.timings.clone());
                     for diagnostic in &summary.diagnostics {
                         update.errors.push(FileDiagnostic {
                             file_path: file_path.clone(),
@@ -219,6 +222,9 @@ impl CoreDaemon {
                 }
             }
         }
+        update
+            .cycle_timings
+            .sort_by(|left, right| right.elapsed.cmp(&left.elapsed));
 
         info!(
             processed_files = update.processed_files.len(),
@@ -226,6 +232,7 @@ impl CoreDaemon {
             tests_run = update.tests_run,
             tests_passed = update.tests_passed,
             tests_failed = update.tests_failed,
+            timings = update.cycle_timings.len(),
             "daemon tick completed"
         );
 
@@ -324,6 +331,7 @@ mod tests {
                         },
                         tests: TestRunSummary::default(),
                         diagnostics: Vec::new(),
+                        timings: Vec::new(),
                     },
                 },
                 ProcessedFile {
@@ -336,6 +344,7 @@ mod tests {
                         },
                         tests: TestRunSummary::default(),
                         diagnostics: Vec::new(),
+                        timings: Vec::new(),
                     },
                 },
             ],
@@ -350,6 +359,7 @@ mod tests {
             tests_failed: 1,
             failing_tests: vec!["fail_b".into(), "fail_a".into()],
             test_failures: Vec::new(),
+            cycle_timings: Vec::new(),
         };
 
         let report = update.to_report();

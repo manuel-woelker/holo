@@ -49,6 +49,8 @@ pub enum DaemonEvent {
     DependencyGraph(SharedString),
     /// Emitted when daemon lifecycle changes.
     Lifecycle(SharedString),
+    /// Emitted when the latest cycle timings are updated.
+    PerformanceTimings(Vec<SharedString>),
 }
 
 /// Project issue payload exchanged over IPC.
@@ -260,5 +262,19 @@ mod tests {
         let graph_event_round_trip: WireMessage =
             serde_json::from_str(&graph_event_json).expect("graph event should deserialize");
         assert_eq!(graph_event_round_trip, graph_event);
+
+        let performance_event = WireMessage::Event {
+            event: DaemonEvent::PerformanceTimings(vec![
+                "18.50ms parse `a.holo`".into(),
+                "7.20ms typecheck test `smoke`".into(),
+            ]),
+        };
+        let performance_event_json =
+            serde_json::to_string(&performance_event).expect("performance event should serialize");
+        let performance_event_round_trip: WireMessage = serde_json::from_str(
+            &performance_event_json,
+        )
+        .expect("performance event should deserialize");
+        assert_eq!(performance_event_round_trip, performance_event);
     }
 }

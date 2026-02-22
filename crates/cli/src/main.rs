@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use holo_ast::Statement;
-use holo_base::{holo_message_error, Result, SharedString};
+use holo_base::{holo_message_error, Result, SharedString, TaskTiming};
 use holo_core::daemon::{CoreDaemon, DaemonStatusUpdate};
 use holo_core::CompilerCore;
 use holo_deck::{
@@ -67,6 +67,7 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
         daemon_state: "Compiling".into(),
         logs: vec!["daemon started".into()],
         dependency_graph: "pipeline:\n  <no .holo files discovered>".into(),
+        performance_timings: Vec::new(),
     }));
     let subscribers: Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -252,7 +253,7 @@ fn handle_ipc_connection(
                     .push(tx);
             }
 
-            let (current_issues, current_state, current_logs, current_graph) = {
+            let (current_issues, current_state, current_logs, current_graph, current_performance) = {
                 let guard = state
                     .lock()
                     .map_err(|_| holo_message_error!("daemon state lock poisoned"))?;
@@ -261,6 +262,7 @@ fn handle_ipc_connection(
                     guard.daemon_state.clone(),
                     guard.logs.clone(),
                     guard.dependency_graph.clone(),
+                    guard.performance_timings.clone(),
                 )
             };
             connection.send(&WireMessage::Event {
@@ -271,6 +273,9 @@ fn handle_ipc_connection(
             })?;
             connection.send(&WireMessage::Event {
                 event: DaemonEvent::DependencyGraph(current_graph),
+            })?;
+            connection.send(&WireMessage::Event {
+                event: DaemonEvent::PerformanceTimings(current_performance),
             })?;
             for entry in current_logs {
                 connection.send(&WireMessage::Event {
@@ -310,13 +315,19 @@ fn apply_update_to_state_and_subscribers(
 ) {
     let issues = derive_issues(update);
     let daemon_state: SharedString = daemon_state_label_for_update(update).into();
+    let ordered_cycle_timings = format_cycle_timings(&update.cycle_timings);
     if let Ok(mut guard) = state.lock() {
         guard.issues = issues.clone();
         guard.daemon_state = daemon_state.clone();
+        guard.performance_timings = ordered_cycle_timings.clone();
     }
 
     broadcast_to_subscribers(subscribers, DaemonEvent::IssuesUpdated(issues));
     broadcast_to_subscribers(subscribers, DaemonEvent::Lifecycle(daemon_state));
+    broadcast_to_subscribers(
+        subscribers,
+        DaemonEvent::PerformanceTimings(ordered_cycle_timings.clone()),
+    );
     append_log_and_broadcast(
         state,
         subscribers,
@@ -328,6 +339,9 @@ fn apply_update_to_state_and_subscribers(
         )
         .into(),
     );
+    for timing in ordered_cycle_timings {
+        append_log_and_broadcast(state, subscribers, format!("timing: {timing}").into());
+    }
 }
 
 fn broadcast_to_subscribers(
@@ -459,12 +473,20 @@ fn run_deck_mode(root_dir: &Path) -> Result<()> {
     let (state_tx, state_rx) = mpsc::channel::<DeckDaemonState>();
     let (log_tx, log_rx) = mpsc::channel::<SharedString>();
     let (graph_tx, graph_rx) = mpsc::channel::<SharedString>();
+    let (performance_tx, performance_rx) = mpsc::channel::<Vec<SharedString>>();
     let _ = state_tx.send(DeckDaemonState::Green);
 
     let endpoint_for_thread = endpoint.clone();
     thread::spawn(move || {
         if let Err(error) =
-            stream_issue_updates(&endpoint_for_thread, updates_tx, state_tx, log_tx, graph_tx)
+            stream_issue_updates(
+                &endpoint_for_thread,
+                updates_tx,
+                state_tx,
+                log_tx,
+                graph_tx,
+                performance_tx,
+            )
         {
             warn!(error = %error, "deck issue update stream ended");
         }
@@ -476,6 +498,7 @@ fn run_deck_mode(root_dir: &Path) -> Result<()> {
         Some(state_rx),
         Some(log_rx),
         Some(graph_rx),
+        Some(performance_rx),
     )
 }
 
@@ -544,6 +567,7 @@ fn stream_issue_updates(
     state_tx: mpsc::Sender<DeckDaemonState>,
     log_tx: mpsc::Sender<SharedString>,
     graph_tx: mpsc::Sender<SharedString>,
+    performance_tx: mpsc::Sender<Vec<SharedString>>,
 ) -> Result<()> {
     let mut connection = IpcConnection::connect(endpoint)?;
     connection.send(&WireMessage::Request {
@@ -609,6 +633,13 @@ fn stream_issue_updates(
                     break;
                 }
             }
+            WireMessage::Event {
+                event: DaemonEvent::PerformanceTimings(timings),
+            } => {
+                if performance_tx.send(timings).is_err() {
+                    break;
+                }
+            }
             _ => {}
         }
     }
@@ -624,6 +655,22 @@ fn map_lifecycle_state_to_deck(state: &str) -> DeckDaemonState {
         "Failed" => DeckDaemonState::Failed,
         _ => DeckDaemonState::Disconnected,
     }
+}
+
+fn format_cycle_timings(cycle_timings: &[TaskTiming]) -> Vec<SharedString> {
+    let mut ordered = cycle_timings.to_vec();
+    ordered.sort_by(|left, right| right.elapsed.cmp(&left.elapsed));
+    ordered
+        .into_iter()
+        .map(|timing| {
+            format!(
+                "{:.3}ms {}",
+                timing.elapsed.as_secs_f64() * 1000.0,
+                timing.task_name
+            )
+            .into()
+        })
+        .collect()
 }
 
 fn build_dependency_graph(root_dir: &Path) -> Result<SharedString> {
@@ -950,6 +997,7 @@ struct DaemonSharedState {
     daemon_state: SharedString,
     logs: Vec<SharedString>,
     dependency_graph: SharedString,
+    performance_timings: Vec<SharedString>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
