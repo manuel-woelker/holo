@@ -45,6 +45,8 @@ pub enum DaemonEvent {
     CycleReport(String),
     /// Emitted when issue set changes.
     IssuesUpdated(Vec<ProjectIssue>),
+    /// Emitted when the dependency graph representation changes.
+    DependencyGraph(String),
     /// Emitted when daemon lifecycle changes.
     Lifecycle(String),
 }
@@ -246,5 +248,14 @@ mod tests {
         let issue_event_round_trip: WireMessage =
             serde_json::from_str(&issue_event_json).expect("issue event should deserialize");
         assert_eq!(issue_event_round_trip, issue_event);
+
+        let graph_event = WireMessage::Event {
+            event: DaemonEvent::DependencyGraph("a.holo -> parser".to_owned()),
+        };
+        let graph_event_json =
+            serde_json::to_string(&graph_event).expect("graph event should serialize");
+        let graph_event_round_trip: WireMessage =
+            serde_json::from_str(&graph_event_json).expect("graph event should deserialize");
+        assert_eq!(graph_event_round_trip, graph_event);
     }
 }

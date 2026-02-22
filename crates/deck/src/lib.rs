@@ -14,8 +14,10 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs, Wrap};
 use ratatui::Terminal;
+
+const MAX_LOG_ENTRIES: usize = 500;
 
 /// Project issue payload shown by the deck TUI.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,14 +79,16 @@ impl ProjectIssueSeverity {
 
 /// Opens deck TUI with static example data.
 pub fn run() -> Result<()> {
-    run_with_updates(example_issues(), None, None)
+    run_with_updates(example_issues(), None, None, None, None)
 }
 
 /// Opens deck TUI with initial issues and optional live updates.
 pub fn run_with_updates(
     initial_issues: Vec<ProjectIssue>,
-    updates: Option<Receiver<Vec<ProjectIssue>>>,
+    issue_updates: Option<Receiver<Vec<ProjectIssue>>>,
     daemon_state_updates: Option<Receiver<DaemonState>>,
+    log_updates: Option<Receiver<String>>,
+    dependency_graph_updates: Option<Receiver<String>>,
 ) -> Result<()> {
     enable_raw_mode()
         .map_err(|error| holo_message_error!("failed to enable raw mode").with_std_source(error))?;
@@ -99,13 +103,17 @@ pub fn run_with_updates(
     })?;
 
     let mut app = DeckApp::new(initial_issues);
-    let mut updates = updates;
+    let mut issue_updates = issue_updates;
     let mut daemon_state_updates = daemon_state_updates;
+    let mut log_updates = log_updates;
+    let mut dependency_graph_updates = dependency_graph_updates;
     let result = run_loop(
         &mut terminal,
         &mut app,
-        &mut updates,
+        &mut issue_updates,
         &mut daemon_state_updates,
+        &mut log_updates,
+        &mut dependency_graph_updates,
     );
     restore_terminal(&mut terminal)?;
     result
@@ -114,18 +122,20 @@ pub fn run_with_updates(
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut DeckApp,
-    updates: &mut Option<Receiver<Vec<ProjectIssue>>>,
+    issue_updates: &mut Option<Receiver<Vec<ProjectIssue>>>,
     daemon_state_updates: &mut Option<Receiver<DaemonState>>,
+    log_updates: &mut Option<Receiver<String>>,
+    dependency_graph_updates: &mut Option<Receiver<String>>,
 ) -> Result<()> {
     loop {
-        if let Some(receiver) = updates.as_ref() {
+        if let Some(receiver) = issue_updates.as_ref() {
             loop {
                 match receiver.try_recv() {
                     Ok(next_issues) => app.replace_issues(next_issues),
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
                         app.daemon_state = DaemonState::Disconnected;
-                        *updates = None;
+                        *issue_updates = None;
                         break;
                     }
                 }
@@ -140,6 +150,33 @@ fn run_loop(
                     Err(TryRecvError::Disconnected) => {
                         app.daemon_state = DaemonState::Disconnected;
                         *daemon_state_updates = None;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(receiver) = log_updates.as_ref() {
+            loop {
+                match receiver.try_recv() {
+                    Ok(entry) => app.push_log(entry),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        app.push_log("log stream disconnected".to_owned());
+                        *log_updates = None;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(receiver) = dependency_graph_updates.as_ref() {
+            loop {
+                match receiver.try_recv() {
+                    Ok(graph) => app.set_dependency_graph(graph),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        *dependency_graph_updates = None;
                         break;
                     }
                 }
@@ -171,8 +208,18 @@ fn run_loop(
 
         match key_event.code {
             KeyCode::Esc | KeyCode::Char('q') => return Ok(()),
-            KeyCode::Down | KeyCode::Char('j') => app.select_next(),
-            KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
+            KeyCode::Left | KeyCode::Char('h') => app.select_previous_tab(),
+            KeyCode::Right | KeyCode::Char('l') => app.select_next_tab(),
+            KeyCode::Down | KeyCode::Char('j') => {
+                if app.active_tab == DeckTab::Issues {
+                    app.select_next();
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if app.active_tab == DeckTab::Issues {
+                    app.select_previous();
+                }
+            }
             _ => {}
         }
     }
@@ -193,17 +240,45 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 fn draw(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
         .split(area);
 
+    draw_tabs(rows[0], frame, app);
+    match app.active_tab {
+        DeckTab::Issues => draw_issues(rows[1], frame, app),
+        DeckTab::Log => draw_log(rows[1], frame, app),
+        DeckTab::DependencyGraph => draw_dependency_graph(rows[1], frame, app),
+    }
+    draw_daemon_status(rows[2], frame, app);
+}
+
+fn draw_tabs(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
+    let titles = DeckTab::titles()
+        .iter()
+        .map(|title| Line::from(*title))
+        .collect::<Vec<_>>();
+    let tabs = Tabs::new(titles)
+        .highlight_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .select(app.active_tab.as_index());
+    frame.render_widget(tabs, area);
+}
+
+fn draw_issues(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(rows[0]);
+        .split(area);
 
     draw_master(chunks[0], frame, app);
     draw_detail(chunks[1], frame, app);
-    draw_daemon_status(rows[1], frame, app);
 }
 
 fn draw_master(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
@@ -283,7 +358,7 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "Keys: ↑/k previous, ↓/j next, q/esc quit",
+            "Keys: left/right tab, up/down issue, q/esc quit",
             Style::default().fg(Color::DarkGray),
         )),
     ];
@@ -296,6 +371,30 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         )
         .wrap(Wrap { trim: false });
     frame.render_widget(detail, area);
+}
+
+fn draw_log(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
+    let items = app
+        .logs
+        .iter()
+        .rev()
+        .take(area.height.saturating_sub(2) as usize)
+        .rev()
+        .map(|entry| ListItem::new(entry.as_str()))
+        .collect::<Vec<_>>();
+    let list = List::new(items).block(Block::default().title("Daemon Log").borders(Borders::ALL));
+    frame.render_widget(list, area);
+}
+
+fn draw_dependency_graph(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
+    let graph = Paragraph::new(app.dependency_graph.as_str())
+        .block(
+            Block::default()
+                .title("Dependency Graph")
+                .borders(Borders::ALL),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(graph, area);
 }
 
 fn is_navigable_key_event(key_event: &KeyEvent) -> bool {
@@ -362,11 +461,31 @@ fn example_issues() -> Vec<ProjectIssue> {
     ]
 }
 
+fn example_logs() -> Vec<String> {
+    vec![
+        "daemon started".to_owned(),
+        "parsing startup sources".to_owned(),
+        "typechecking startup sources".to_owned(),
+        "running tests".to_owned(),
+    ]
+}
+
+fn example_dependency_graph() -> String {
+    [
+        "pipeline:",
+        "  source.holo -> lexer -> parser -> typechecker -> interpreter",
+    ]
+    .join("\n")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DeckApp {
     issues: Vec<ProjectIssue>,
     selected: usize,
     daemon_state: DaemonState,
+    logs: Vec<String>,
+    dependency_graph: String,
+    active_tab: DeckTab,
 }
 
 impl DeckApp {
@@ -375,6 +494,9 @@ impl DeckApp {
             issues,
             selected: 0,
             daemon_state: DaemonState::Disconnected,
+            logs: example_logs(),
+            dependency_graph: example_dependency_graph(),
+            active_tab: DeckTab::Issues,
         }
     }
 
@@ -412,8 +534,28 @@ impl DeckApp {
         }
     }
 
+    fn select_next_tab(&mut self) {
+        self.active_tab = self.active_tab.next();
+    }
+
+    fn select_previous_tab(&mut self) {
+        self.active_tab = self.active_tab.previous();
+    }
+
     fn current_issue(&self) -> Option<&ProjectIssue> {
         self.issues.get(self.selected)
+    }
+
+    fn push_log(&mut self, entry: String) {
+        self.logs.push(entry);
+        if self.logs.len() > MAX_LOG_ENTRIES {
+            let remove_count = self.logs.len() - MAX_LOG_ENTRIES;
+            self.logs.drain(0..remove_count);
+        }
+    }
+
+    fn set_dependency_graph(&mut self, graph: String) {
+        self.dependency_graph = graph;
     }
 
     fn failure_counts(&self) -> (usize, usize) {
@@ -429,6 +571,43 @@ impl DeckApp {
             }
         }
         (compilation_failures, test_failures)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeckTab {
+    Issues,
+    Log,
+    DependencyGraph,
+}
+
+impl DeckTab {
+    fn titles() -> [&'static str; 3] {
+        ["Issues", "Log", "Dependency Graph"]
+    }
+
+    fn as_index(self) -> usize {
+        match self {
+            Self::Issues => 0,
+            Self::Log => 1,
+            Self::DependencyGraph => 2,
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Issues => Self::Log,
+            Self::Log => Self::DependencyGraph,
+            Self::DependencyGraph => Self::Issues,
+        }
+    }
+
+    fn previous(self) -> Self {
+        match self {
+            Self::Issues => Self::DependencyGraph,
+            Self::Log => Self::Issues,
+            Self::DependencyGraph => Self::Log,
+        }
     }
 }
 
@@ -455,8 +634,8 @@ impl DaemonState {
 #[cfg(test)]
 mod tests {
     use super::{
-        example_issues, is_navigable_key_event, DaemonState, DeckApp, ProjectIssueKind,
-        ProjectIssueSeverity,
+        example_issues, is_navigable_key_event, DaemonState, DeckApp, DeckTab, ProjectIssueKind,
+        ProjectIssueSeverity, MAX_LOG_ENTRIES,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -545,5 +724,32 @@ mod tests {
         let (compilation, test) = app.failure_counts();
         assert_eq!(compilation, 2);
         assert_eq!(test, 1);
+    }
+
+    #[test]
+    fn tab_navigation_wraps() {
+        let mut app = DeckApp::with_example_data();
+        assert_eq!(app.active_tab, DeckTab::Issues);
+
+        app.select_next_tab();
+        assert_eq!(app.active_tab, DeckTab::Log);
+        app.select_next_tab();
+        assert_eq!(app.active_tab, DeckTab::DependencyGraph);
+        app.select_next_tab();
+        assert_eq!(app.active_tab, DeckTab::Issues);
+
+        app.select_previous_tab();
+        assert_eq!(app.active_tab, DeckTab::DependencyGraph);
+    }
+
+    #[test]
+    fn log_entries_are_capped() {
+        let mut app = DeckApp::with_example_data();
+        app.logs.clear();
+        for index in 0..(MAX_LOG_ENTRIES + 5) {
+            app.push_log(format!("entry-{index}"));
+        }
+        assert_eq!(app.logs.len(), MAX_LOG_ENTRIES);
+        assert_eq!(app.logs.first().map(String::as_str), Some("entry-5"));
     }
 }

@@ -62,6 +62,8 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
     let state = Arc::new(Mutex::new(DaemonSharedState {
         issues: Vec::new(),
         daemon_state: "Compiling".to_owned(),
+        logs: vec!["daemon started".to_owned()],
+        dependency_graph: "pipeline:\n  <no .holo files discovered>".to_owned(),
     }));
     let subscribers: Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -85,10 +87,22 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
             source_count = startup_sources.len(),
             "running initial daemon cycle"
         );
+        append_log_and_broadcast(
+            &state,
+            &subscribers,
+            format!("parsing {} changed file(s)", startup_sources.len()),
+        );
+        append_log_and_broadcast(
+            &state,
+            &subscribers,
+            format!("typechecking {} changed file(s)", startup_sources.len()),
+        );
         broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Compiling".to_owned()));
         daemon.enqueue_startup_sources(startup_sources, startup_now);
         let startup_update = daemon.process_ready(&mut core, startup_now)?;
         apply_update_to_state_and_subscribers(&startup_update, &state, &subscribers);
+        let dependency_graph = build_dependency_graph(root_dir)?;
+        set_dependency_graph_and_broadcast(&state, &subscribers, dependency_graph);
         println!("{}", startup_update.to_report());
     } else {
         info!("no .holo files found during daemon startup");
@@ -96,6 +110,11 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
             guard.daemon_state = "Green".to_owned();
         }
         broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Green".to_owned()));
+        set_dependency_graph_and_broadcast(
+            &state,
+            &subscribers,
+            "pipeline:\n  <no .holo files discovered>".to_owned(),
+        );
     }
 
     let (event_sender, event_receiver) = mpsc::channel();
@@ -133,8 +152,20 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
                     &subscribers,
                     DaemonEvent::Lifecycle("Compiling".to_owned()),
                 );
+                append_log_and_broadcast(
+                    &state,
+                    &subscribers,
+                    format!("parsing {changed_count} changed file(s)"),
+                );
+                append_log_and_broadcast(
+                    &state,
+                    &subscribers,
+                    format!("typechecking {changed_count} changed file(s)"),
+                );
                 let update = daemon.process_ready(&mut core, current_time_ms())?;
                 apply_update_to_state_and_subscribers(&update, &state, &subscribers);
+                let dependency_graph = build_dependency_graph(root_dir)?;
+                set_dependency_graph_and_broadcast(&state, &subscribers, dependency_graph);
                 println!("{}", update.to_report());
             }
             Ok(Err(error)) => {
@@ -221,11 +252,16 @@ fn handle_ipc_connection(
                     .push(tx);
             }
 
-            let (current_issues, current_state) = {
+            let (current_issues, current_state, current_logs, current_graph) = {
                 let guard = state
                     .lock()
                     .map_err(|_| holo_message_error!("daemon state lock poisoned"))?;
-                (guard.issues.clone(), guard.daemon_state.clone())
+                (
+                    guard.issues.clone(),
+                    guard.daemon_state.clone(),
+                    guard.logs.clone(),
+                    guard.dependency_graph.clone(),
+                )
             };
             connection.send(&WireMessage::Event {
                 event: DaemonEvent::IssuesUpdated(current_issues),
@@ -233,6 +269,14 @@ fn handle_ipc_connection(
             connection.send(&WireMessage::Event {
                 event: DaemonEvent::Lifecycle(current_state),
             })?;
+            connection.send(&WireMessage::Event {
+                event: DaemonEvent::DependencyGraph(current_graph),
+            })?;
+            for entry in current_logs {
+                connection.send(&WireMessage::Event {
+                    event: DaemonEvent::CycleReport(entry),
+                })?;
+            }
 
             for event in rx {
                 if connection.send(&WireMessage::Event { event }).is_err() {
@@ -275,6 +319,16 @@ fn apply_update_to_state_and_subscribers(
 
     broadcast_to_subscribers(subscribers, DaemonEvent::IssuesUpdated(issues));
     broadcast_to_subscribers(subscribers, DaemonEvent::Lifecycle(daemon_state));
+    append_log_and_broadcast(
+        state,
+        subscribers,
+        format!(
+            "cycle complete: files={} errors={} tests failed={}",
+            update.processed_files.len(),
+            update.errors.len(),
+            update.tests_failed
+        ),
+    );
 }
 
 fn broadcast_to_subscribers(
@@ -286,6 +340,32 @@ fn broadcast_to_subscribers(
         Err(_) => return,
     };
     guard.retain(|sender| sender.send(event.clone()).is_ok());
+}
+
+fn append_log_and_broadcast(
+    state: &Arc<Mutex<DaemonSharedState>>,
+    subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
+    entry: String,
+) {
+    if let Ok(mut guard) = state.lock() {
+        guard.logs.push(entry.clone());
+        if guard.logs.len() > 500 {
+            let remove_count = guard.logs.len() - 500;
+            guard.logs.drain(0..remove_count);
+        }
+    }
+    broadcast_to_subscribers(subscribers, DaemonEvent::CycleReport(entry));
+}
+
+fn set_dependency_graph_and_broadcast(
+    state: &Arc<Mutex<DaemonSharedState>>,
+    subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
+    graph: String,
+) {
+    if let Ok(mut guard) = state.lock() {
+        guard.dependency_graph = graph.clone();
+    }
+    broadcast_to_subscribers(subscribers, DaemonEvent::DependencyGraph(graph));
 }
 
 fn daemon_state_label_for_update(update: &DaemonStatusUpdate) -> &'static str {
@@ -336,11 +416,15 @@ fn run_deck_mode(root_dir: &Path) -> Result<()> {
     let initial_issues = request_issues_snapshot(&endpoint)?;
     let (updates_tx, updates_rx) = mpsc::channel::<Vec<DeckIssue>>();
     let (state_tx, state_rx) = mpsc::channel::<DeckDaemonState>();
+    let (log_tx, log_rx) = mpsc::channel::<String>();
+    let (graph_tx, graph_rx) = mpsc::channel::<String>();
     let _ = state_tx.send(DeckDaemonState::Green);
 
     let endpoint_for_thread = endpoint.clone();
     thread::spawn(move || {
-        if let Err(error) = stream_issue_updates(&endpoint_for_thread, updates_tx, state_tx) {
+        if let Err(error) =
+            stream_issue_updates(&endpoint_for_thread, updates_tx, state_tx, log_tx, graph_tx)
+        {
             warn!(error = %error, "deck issue update stream ended");
         }
     });
@@ -349,6 +433,8 @@ fn run_deck_mode(root_dir: &Path) -> Result<()> {
         map_ipc_issues_to_deck(initial_issues),
         Some(updates_rx),
         Some(state_rx),
+        Some(log_rx),
+        Some(graph_rx),
     )
 }
 
@@ -415,6 +501,8 @@ fn stream_issue_updates(
     endpoint: &str,
     updates_tx: mpsc::Sender<Vec<DeckIssue>>,
     state_tx: mpsc::Sender<DeckDaemonState>,
+    log_tx: mpsc::Sender<String>,
+    graph_tx: mpsc::Sender<String>,
 ) -> Result<()> {
     let mut connection = IpcConnection::connect(endpoint)?;
     connection.send(&WireMessage::Request {
@@ -466,6 +554,20 @@ fn stream_issue_updates(
                     break;
                 }
             }
+            WireMessage::Event {
+                event: DaemonEvent::CycleReport(entry),
+            } => {
+                if log_tx.send(entry).is_err() {
+                    break;
+                }
+            }
+            WireMessage::Event {
+                event: DaemonEvent::DependencyGraph(graph),
+            } => {
+                if graph_tx.send(graph).is_err() {
+                    break;
+                }
+            }
             _ => {}
         }
     }
@@ -481,6 +583,25 @@ fn map_lifecycle_state_to_deck(state: &str) -> DeckDaemonState {
         "Failed" => DeckDaemonState::Failed,
         _ => DeckDaemonState::Disconnected,
     }
+}
+
+fn build_dependency_graph(root_dir: &Path) -> Result<String> {
+    let mut paths = Vec::new();
+    collect_holo_paths_recursive(root_dir, &mut paths)?;
+    paths.sort();
+
+    if paths.is_empty() {
+        return Ok("pipeline:\n  <no .holo files discovered>".to_owned());
+    }
+
+    let mut lines = vec!["pipeline:".to_owned()];
+    for path in paths {
+        let display = display_source_path(root_dir, &path);
+        lines.push(format!(
+            "  {display} -> lexer -> parser -> typechecker -> interpreter"
+        ));
+    }
+    Ok(lines.join("\n"))
 }
 
 fn map_ipc_issues_to_deck(issues: Vec<ProjectIssue>) -> Vec<DeckIssue> {
@@ -679,13 +800,16 @@ fn main() {
 struct DaemonSharedState {
     issues: Vec<ProjectIssue>,
     daemon_state: String,
+    logs: Vec<String>,
+    dependency_graph: String,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_holo_sources, daemon_endpoint_name, display_source_path, is_holo_file,
-        map_lifecycle_state_to_deck, parse_cli_mode, path_arg_or_default, run_build_once, CliMode,
+        build_dependency_graph, collect_holo_sources, daemon_endpoint_name, display_source_path,
+        is_holo_file, map_lifecycle_state_to_deck, parse_cli_mode, path_arg_or_default,
+        run_build_once, CliMode,
     };
     use holo_deck::DaemonState as DeckDaemonState;
     use std::fs;
@@ -799,6 +923,24 @@ mod tests {
             map_lifecycle_state_to_deck("Unknown"),
             DeckDaemonState::Disconnected
         );
+    }
+
+    #[test]
+    fn builds_dependency_graph_for_holo_files() {
+        let temp = temp_source_dir("builds_dependency_graph_for_holo_files");
+        fs::write(temp.join("a.holo"), "#[test] fn a() { assert(true); }").expect("should write");
+        fs::create_dir_all(temp.join("nested")).expect("should create nested");
+        fs::write(
+            temp.join("nested").join("b.holo"),
+            "#[test] fn b() { assert(true); }",
+        )
+        .expect("should write");
+
+        let graph = build_dependency_graph(&temp).expect("graph should build");
+        assert!(graph.contains("a.holo -> lexer -> parser -> typechecker -> interpreter"));
+        assert!(graph.contains("b.holo -> lexer -> parser -> typechecker -> interpreter"));
+
+        fs::remove_dir_all(temp).expect("cleanup should succeed");
     }
 
     #[test]
