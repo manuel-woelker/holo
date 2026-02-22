@@ -1,0 +1,10 @@
+[package]
+name = "holo-ast"
+version = "0.1.0"
+edition = "2021"
+description = "AST types for holo source files"
+license = "MIT"
+publish = false
+
+[dependencies]
+holo-base = { path = "../base" }

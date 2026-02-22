@@ -1,0 +1,10 @@
+[package]
+name = "holo-lexer"
+version = "0.1.0"
+edition = "2021"
+description = "Lexing interfaces for holo source files"
+license = "MIT"
+publish = false
+
+[dependencies]
+holo-base = { path = "../base" }

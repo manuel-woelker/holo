@@ -1,4 +1,16 @@
 [workspace]
 resolver = "2"
-members = ["base", "cli", "db", "fs"]
+members = [
+    "ast",
+    "base",
+    "cli",
+    "core",
+    "db",
+    "fs",
+    "interpreter",
+    "lexer",
+    "parser",
+    "query",
+    "typechecker",
+]
 default-members = ["cli"]

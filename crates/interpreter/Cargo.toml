@@ -1,0 +1,11 @@
+[package]
+name = "holo-interpreter"
+version = "0.1.0"
+edition = "2021"
+description = "Interpreter for running minimal holo tests"
+license = "MIT"
+publish = false
+
+[dependencies]
+holo-ast = { path = "../ast" }
+holo-base = { path = "../base" }

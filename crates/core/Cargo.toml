@@ -1,0 +1,15 @@
+[package]
+name = "holo-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core coordination crate for holo compilation and test execution"
+license = "MIT"
+publish = false
+
+[dependencies]
+holo-base = { path = "../base" }
+holo-interpreter = { path = "../interpreter" }
+holo-lexer = { path = "../lexer" }
+holo-parser = { path = "../parser" }
+holo-query = { path = "../query" }
+holo-typechecker = { path = "../typechecker" }

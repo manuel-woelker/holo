@@ -1,0 +1,11 @@
+[package]
+name = "holo-typechecker"
+version = "0.1.0"
+edition = "2021"
+description = "Typechecking interfaces for holo modules"
+license = "MIT"
+publish = false
+
+[dependencies]
+holo-ast = { path = "../ast" }
+holo-base = { path = "../base" }

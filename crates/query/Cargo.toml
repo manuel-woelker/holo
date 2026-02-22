@@ -1,0 +1,9 @@
+[package]
+name = "holo-query"
+version = "0.1.0"
+edition = "2021"
+description = "Query engine interfaces and in-memory store for holo"
+license = "MIT"
+publish = false
+
+[dependencies]

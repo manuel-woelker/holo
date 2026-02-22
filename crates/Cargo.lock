@@ -156,6 +156,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
+name = "holo-ast"
+version = "0.1.0"
+dependencies = [
+ "holo-base",
+]
+
+[[package]]
 name = "holo-base"
 version = "0.1.0"
 dependencies = [
@@ -167,6 +174,18 @@ dependencies = [
 [[package]]
 name = "holo-cli"
 version = "0.1.0"
+
+[[package]]
+name = "holo-core"
+version = "0.1.0"
+dependencies = [
+ "holo-base",
+ "holo-interpreter",
+ "holo-lexer",
+ "holo-parser",
+ "holo-query",
+ "holo-typechecker",
+]
 
 [[package]]
 name = "holo-db"
@@ -181,6 +200,42 @@ dependencies = [
 name = "holo-fs"
 version = "0.1.0"
 dependencies = [
+ "holo-base",
+]
+
+[[package]]
+name = "holo-interpreter"
+version = "0.1.0"
+dependencies = [
+ "holo-ast",
+ "holo-base",
+]
+
+[[package]]
+name = "holo-lexer"
+version = "0.1.0"
+dependencies = [
+ "holo-base",
+]
+
+[[package]]
+name = "holo-parser"
+version = "0.1.0"
+dependencies = [
+ "holo-ast",
+ "holo-base",
+ "holo-lexer",
+]
+
+[[package]]
+name = "holo-query"
+version = "0.1.0"
+
+[[package]]
+name = "holo-typechecker"
+version = "0.1.0"
+dependencies = [
+ "holo-ast",
  "holo-base",
 ]
 

@@ -1,0 +1,12 @@
+[package]
+name = "holo-parser"
+version = "0.1.0"
+edition = "2021"
+description = "Parsing interfaces for holo source files"
+license = "MIT"
+publish = false
+
+[dependencies]
+holo-ast = { path = "../ast" }
+holo-base = { path = "../base" }
+holo-lexer = { path = "../lexer" }
