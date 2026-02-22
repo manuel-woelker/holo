@@ -439,6 +439,7 @@ fn find_line_for_offset(excerpt: &SourceExcerpt, offset: usize) -> Option<(usize
 mod tests {
     use super::{display_source_diagnostics, DiagnosticKind, SourceDiagnostic, SourceExcerpt};
     use crate::Span;
+    use expect_test::expect;
 
     #[test]
     fn creates_source_diagnostic_with_annotations() {
@@ -461,11 +462,12 @@ mod tests {
             .with_source_excerpt(SourceExcerpt::new("assert(true;\n", 10, 120))
             .with_annotated_span(Span::new(126, 127), "missing closing parenthesis");
         let rendered = diagnostic.render_annotated();
-
-        assert!(rendered.contains("parsing error: expected ')'"));
-        assert!(rendered.contains("--> line 10, column 7"));
-        assert!(rendered.contains("10 | assert(true;"));
-        assert!(rendered.contains("missing closing parenthesis"));
+        expect![[r#"
+            parsing error: expected ')'
+            --> line 10, column 7
+              10 | assert(true;
+                 |       ^ missing closing parenthesis"#]]
+        .assert_eq(rendered.as_str());
     }
 
     #[test]
@@ -479,17 +481,15 @@ mod tests {
                     .with_annotated_span(Span::new(307, 308), "missing expression"),
             ];
         let rendered = display_source_diagnostics(&diagnostics);
+        let rendered = strip_ansi_sequences(&rendered);
+        expect![[r#"
+            ⚒️ Parsing: expected expression
 
-        assert!(rendered.contains("⚒️ Parsing"));
-        assert!(!rendered.contains("--> line"));
-        assert!(!rendered.contains("├─"));
-        assert!(rendered.contains(" │ "));
-        assert!(rendered.contains("assert();"));
-        assert!(rendered.contains("sample.holo:20"));
-        assert!(rendered.contains("─"));
-        assert!(!rendered.contains("──"));
-        assert!(rendered.contains("\u{1b}[31m"));
-        assert!(rendered.contains("\u{1b}[1m"));
+            sample.holo:20
+              20 │ assert();
+                 │        ─ missing expression
+"#]]
+        .assert_eq(&rendered);
     }
 
     #[test]
@@ -532,23 +532,32 @@ mod tests {
             ],
         )];
         let rendered = display_source_diagnostics(&diagnostics);
+        let rendered = strip_ansi_sequences(&rendered);
+        expect![[r#"
+            ⚒️ Typecheck: arithmetic operands must have the same type
 
-        assert_eq!(rendered.matches("assert(1i64 + 2.0f64);").count(), 1);
-        assert!(rendered.contains("left operand has type `i64`"));
-        assert!(rendered.contains("right operand has type `f64`"));
-        let right_index = rendered
-            .find("right operand has type `f64`")
-            .expect("missing right annotation");
-        let left_index = rendered
-            .find("left operand has type `i64`")
-            .expect("missing left annotation");
-        assert!(
-            right_index < left_index,
-            "annotations should render from right to left:\n{rendered}"
-        );
-        assert!(
-            !rendered.contains("┬  └─"),
-            "first annotation connector should begin at the anchor without a gap:\n{rendered}"
-        );
+               1 │ assert(1i64 + 2.0f64);
+                 │        ───┬   ────── right operand has type `f64`
+                 │           └─ left operand has type `i64`
+"#]]
+        .assert_eq(&rendered);
+    }
+
+    fn strip_ansi_sequences(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let mut chars = input.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+                chars.next();
+                for next in chars.by_ref() {
+                    if ('@'..='~').contains(&next) {
+                        break;
+                    }
+                }
+                continue;
+            }
+            out.push(ch);
+        }
+        out
     }
 }

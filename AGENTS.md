@@ -116,6 +116,7 @@ Tests should be colocated with the code, i.e., in the same file.
 Always run these tests after completing a feature.
 
 Use snapshot tests where appropriate (using expect_test).
+Prefer `expect_test` snapshots for user-facing text output (diagnostics, reports, UI strings) instead of fragmented `contains(...)` assertions.
 
 Prefer data driven tests to reduce code duplication.
 

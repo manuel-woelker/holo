@@ -14,3 +14,6 @@ relative-path = { version = "1.9", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+expect-test = "1"
