@@ -387,10 +387,13 @@ dependencies = [
 name = "holo-cli"
 version = "0.1.0"
 dependencies = [
+ "holo-ast",
  "holo-base",
  "holo-core",
  "holo-deck",
  "holo-ipc",
+ "holo-lexer",
+ "holo-parser",
  "notify",
  "tracing",
 ]
