@@ -64,6 +64,20 @@ pub trait Typechecker {
 pub struct BasicTypechecker;
 
 impl BasicTypechecker {
+    fn type_name(ty: Type) -> &'static str {
+        match ty {
+            Type::Bool => "bool",
+            Type::U32 => "u32",
+            Type::U64 => "u64",
+            Type::I32 => "i32",
+            Type::I64 => "i64",
+            Type::F32 => "f32",
+            Type::F64 => "f64",
+            Type::Unit => "()",
+            Type::Unknown => "<unknown>",
+        }
+    }
+
     fn type_from_ref(type_ref: TypeRef) -> Type {
         match type_ref {
             TypeRef::Bool => Type::Bool,
@@ -120,8 +134,14 @@ impl BasicTypechecker {
         }
         diagnostics.push(
             SourceDiagnostic::new(DiagnosticKind::Typecheck, message)
-                .with_annotated_span(left_span, "left operand/type")
-                .with_annotated_span(right_span, "right operand/type")
+                .with_annotated_span(
+                    left_span,
+                    format!("left operand has type `{}`", Self::type_name(left)),
+                )
+                .with_annotated_span(
+                    right_span,
+                    format!("right operand has type `{}`", Self::type_name(right)),
+                )
                 .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
         );
         false
@@ -300,8 +320,14 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "arithmetic operators require numeric operands",
                         )
-                        .with_annotated_span(binary.left.span, "left operand is not numeric")
-                        .with_annotated_span(binary.right.span, "right operand is not numeric")
+                        .with_annotated_span(
+                            binary.left.span,
+                            format!("left operand has type `{}`", Self::type_name(left_type)),
+                        )
+                        .with_annotated_span(
+                            binary.right.span,
+                            format!("right operand has type `{}`", Self::type_name(right_type)),
+                        )
                         .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                     );
                     return Type::Unknown;
@@ -325,7 +351,13 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "operator `%` is only valid for integer types",
                         )
-                        .with_annotated_span(expression.span, "non-integer modulo operation")
+                        .with_annotated_span(
+                            expression.span,
+                            format!(
+                                "operands have type `{}` but `%` requires integer types",
+                                Self::type_name(left_type)
+                            ),
+                        )
                         .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                     );
                     return Type::Unknown;
@@ -658,6 +690,15 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("same type")));
+        let rendered = holo_base::display_source_diagnostics(&result.diagnostics);
+        assert!(
+            rendered.contains("left operand has type `i64`"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("right operand has type `f64`"),
+            "{rendered}"
+        );
     }
 
     #[test]
@@ -784,6 +825,15 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("require numeric operands")));
+        let rendered = holo_base::display_source_diagnostics(&result.diagnostics);
+        assert!(
+            rendered.contains("left operand has type `bool`"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains("right operand has type `bool`"),
+            "{rendered}"
+        );
     }
 
     #[test]
@@ -810,5 +860,7 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("only valid for integer types")));
+        let rendered = holo_base::display_source_diagnostics(&result.diagnostics);
+        assert!(rendered.contains("operands have type `f64`"), "{rendered}");
     }
 }
