@@ -2,10 +2,12 @@
 
 pub mod error;
 pub mod logging;
+pub mod source_diagnostic;
 pub mod span;
 
 pub use error::{ErrorKind, HoloError, Result};
 pub use parking_lot::Mutex;
+pub use source_diagnostic::{AnnotatedSpan, DiagnosticKind, SourceDiagnostic};
 pub use span::Span;
 pub type SharedString = ecow::EcoString;
 

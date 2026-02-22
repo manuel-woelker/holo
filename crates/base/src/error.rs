@@ -35,6 +35,8 @@ impl Display for ErrorKind {
 ///
 /// # How should this error type be used?
 ///
+/// - Use [`crate::SourceDiagnostic`] for lexing/parsing/typecheck compilation
+///   diagnostics, including annotated spans.
 /// - Use [`ErrorKind::Message`] for domain-level messages created by holo code.
 /// - Use [`ErrorKind::Io`] when the top-level failure category is I/O.
 /// - Use [`ErrorKind::Std`] to wrap external library errors that do not have a
@@ -47,10 +49,11 @@ impl Display for ErrorKind {
 /// # What is a recommended construction pattern?
 ///
 /// ```rust
-/// use holo_base::Result;
+/// use holo_base::{Result, SharedString};
 ///
 /// fn read_config() -> Result<SharedString> {
 ///     std::fs::read_to_string("holo.toml")
+///         .map(Into::into)
 ///         .map_err(|error| holo_base::holo_message_error!("failed to read {}", "holo.toml").with_std_source(error))
 /// }
 /// ```
