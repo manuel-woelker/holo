@@ -1,3 +1,4 @@
 [workspace]
 resolver = "2"
-members = ["base", "db", "fs"]
+members = ["base", "cli", "db", "fs"]
+default-members = ["cli"]

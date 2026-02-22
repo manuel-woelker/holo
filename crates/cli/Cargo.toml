@@ -1,0 +1,9 @@
+[package]
+name = "holo-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Main CLI entry point for holo"
+license = "MIT"
+publish = false
+
+[dependencies]
