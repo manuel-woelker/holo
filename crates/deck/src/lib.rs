@@ -11,7 +11,7 @@ use crossterm::terminal::{
 };
 use holo_base::{holo_message_error, Result};
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
@@ -77,13 +77,14 @@ impl ProjectIssueSeverity {
 
 /// Opens deck TUI with static example data.
 pub fn run() -> Result<()> {
-    run_with_updates(example_issues(), None)
+    run_with_updates(example_issues(), None, None)
 }
 
 /// Opens deck TUI with initial issues and optional live updates.
 pub fn run_with_updates(
     initial_issues: Vec<ProjectIssue>,
     updates: Option<Receiver<Vec<ProjectIssue>>>,
+    daemon_state_updates: Option<Receiver<DaemonState>>,
 ) -> Result<()> {
     enable_raw_mode()
         .map_err(|error| holo_message_error!("failed to enable raw mode").with_std_source(error))?;
@@ -99,7 +100,13 @@ pub fn run_with_updates(
 
     let mut app = DeckApp::new(initial_issues);
     let mut updates = updates;
-    let result = run_loop(&mut terminal, &mut app, &mut updates);
+    let mut daemon_state_updates = daemon_state_updates;
+    let result = run_loop(
+        &mut terminal,
+        &mut app,
+        &mut updates,
+        &mut daemon_state_updates,
+    );
     restore_terminal(&mut terminal)?;
     result
 }
@@ -108,6 +115,7 @@ fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut DeckApp,
     updates: &mut Option<Receiver<Vec<ProjectIssue>>>,
+    daemon_state_updates: &mut Option<Receiver<DaemonState>>,
 ) -> Result<()> {
     loop {
         if let Some(receiver) = updates.as_ref() {
@@ -116,7 +124,22 @@ fn run_loop(
                     Ok(next_issues) => app.replace_issues(next_issues),
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
+                        app.daemon_state = DaemonState::Disconnected;
                         *updates = None;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if let Some(receiver) = daemon_state_updates.as_ref() {
+            loop {
+                match receiver.try_recv() {
+                    Ok(next_state) => app.daemon_state = next_state,
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        app.daemon_state = DaemonState::Disconnected;
+                        *daemon_state_updates = None;
                         break;
                     }
                 }
@@ -168,13 +191,19 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Re
 }
 
 fn draw(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(area);
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(area);
+        .split(rows[0]);
 
     draw_master(chunks[0], frame, app);
     draw_detail(chunks[1], frame, app);
+    draw_daemon_status(rows[1], frame, app);
 }
 
 fn draw_master(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
@@ -273,6 +302,23 @@ fn is_navigable_key_event(key_event: &KeyEvent) -> bool {
     key_event.kind == KeyEventKind::Press
 }
 
+fn draw_daemon_status(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
+    let (icon, label, color) = app.daemon_state.display_parts();
+    let (compilation_failures, test_failures) = app.failure_counts();
+    let status = Paragraph::new(Line::from(vec![
+        Span::styled(icon, Style::default().fg(color)),
+        Span::raw(" "),
+        Span::styled(label, Style::default().fg(color)),
+        Span::raw(" "),
+        Span::styled(
+            format!("C:{compilation_failures} T:{test_failures}"),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]))
+    .alignment(Alignment::Right);
+    frame.render_widget(status, area);
+}
+
 fn example_issues() -> Vec<ProjectIssue> {
     vec![
         ProjectIssue {
@@ -320,6 +366,7 @@ fn example_issues() -> Vec<ProjectIssue> {
 struct DeckApp {
     issues: Vec<ProjectIssue>,
     selected: usize,
+    daemon_state: DaemonState,
 }
 
 impl DeckApp {
@@ -327,6 +374,7 @@ impl DeckApp {
         Self {
             issues,
             selected: 0,
+            daemon_state: DaemonState::Disconnected,
         }
     }
 
@@ -367,12 +415,48 @@ impl DeckApp {
     fn current_issue(&self) -> Option<&ProjectIssue> {
         self.issues.get(self.selected)
     }
+
+    fn failure_counts(&self) -> (usize, usize) {
+        let mut compilation_failures = 0usize;
+        let mut test_failures = 0usize;
+        for issue in &self.issues {
+            if issue.severity != ProjectIssueSeverity::Error {
+                continue;
+            }
+            match issue.kind {
+                ProjectIssueKind::Compilation => compilation_failures += 1,
+                ProjectIssueKind::Test => test_failures += 1,
+            }
+        }
+        (compilation_failures, test_failures)
+    }
+}
+
+/// Daemon connection/activity state shown in deck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonState {
+    Disconnected,
+    Green,
+    Compiling,
+    Failed,
+}
+
+impl DaemonState {
+    fn display_parts(self) -> (&'static str, &'static str, Color) {
+        match self {
+            Self::Disconnected => ("●", "Disconnected", Color::DarkGray),
+            Self::Green => ("●", "Green", Color::Green),
+            Self::Compiling => ("●", "Compiling", Color::Yellow),
+            Self::Failed => ("●", "Failed", Color::Red),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        example_issues, is_navigable_key_event, DeckApp, ProjectIssueKind, ProjectIssueSeverity,
+        example_issues, is_navigable_key_event, DaemonState, DeckApp, ProjectIssueKind,
+        ProjectIssueSeverity,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -445,5 +529,21 @@ mod tests {
         app.selected = 3;
         app.replace_issues(vec![example_issues()[0].clone()]);
         assert_eq!(app.selected, 0);
+    }
+
+    #[test]
+    fn daemon_state_has_expected_labels() {
+        assert_eq!(DaemonState::Disconnected.display_parts().1, "Disconnected");
+        assert_eq!(DaemonState::Green.display_parts().1, "Green");
+        assert_eq!(DaemonState::Compiling.display_parts().1, "Compiling");
+        assert_eq!(DaemonState::Failed.display_parts().1, "Failed");
+    }
+
+    #[test]
+    fn failure_counts_include_only_error_issues() {
+        let app = DeckApp::with_example_data();
+        let (compilation, test) = app.failure_counts();
+        assert_eq!(compilation, 2);
+        assert_eq!(test, 1);
     }
 }
