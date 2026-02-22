@@ -15,6 +15,10 @@ pub enum Request {
     Build,
     /// Requests current daemon status information.
     GetStatus,
+    /// Requests current issue snapshot for deck/client views.
+    GetIssues,
+    /// Subscribes to daemon-initiated issue update events.
+    SubscribeIssues,
     /// Requests daemon shutdown.
     Shutdown,
 }
@@ -27,6 +31,8 @@ pub enum Response {
     Ok,
     /// Daemon status report output.
     StatusReport(String),
+    /// Current issue snapshot.
+    IssuesSnapshot(Vec<ProjectIssue>),
     /// Error response with message.
     Error(String),
 }
@@ -37,8 +43,43 @@ pub enum Response {
 pub enum DaemonEvent {
     /// Emitted when a daemon cycle report is produced.
     CycleReport(String),
+    /// Emitted when issue set changes.
+    IssuesUpdated(Vec<ProjectIssue>),
     /// Emitted when daemon lifecycle changes.
     Lifecycle(String),
+}
+
+/// Project issue payload exchanged over IPC.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectIssue {
+    /// Short issue title.
+    pub title: String,
+    /// Source file path for the issue.
+    pub file: String,
+    /// 1-based line number.
+    pub line: usize,
+    /// High-level issue category.
+    pub kind: ProjectIssueKind,
+    /// Severity category.
+    pub severity: ProjectIssueSeverity,
+    /// Compact summary text.
+    pub summary: String,
+    /// Detailed human-readable message.
+    pub detail: String,
+}
+
+/// High-level issue category.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectIssueKind {
+    Compilation,
+    Test,
+}
+
+/// Issue severity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectIssueSeverity {
+    Error,
+    Warning,
 }
 
 /// Bidirectional wire message envelope for JSON transport.
@@ -143,7 +184,10 @@ impl IpcConnection {
 
 #[cfg(test)]
 mod tests {
-    use super::{DaemonEvent, Request, Response, WireMessage};
+    use super::{
+        DaemonEvent, ProjectIssue, ProjectIssueKind, ProjectIssueSeverity, Request, Response,
+        WireMessage,
+    };
 
     #[test]
     fn serializes_request_response_and_event_messages() {
@@ -174,5 +218,33 @@ mod tests {
         let event_round_trip: WireMessage =
             serde_json::from_str(&event_json).expect("event should deserialize");
         assert_eq!(event_round_trip, event_message);
+
+        let issue = ProjectIssue {
+            title: "assertion failed".to_owned(),
+            file: "tests/auth.holo".to_owned(),
+            line: 10,
+            kind: ProjectIssueKind::Test,
+            severity: ProjectIssueSeverity::Error,
+            summary: "login test failed".to_owned(),
+            detail: "assert(false) evaluated to false".to_owned(),
+        };
+        let issue_response = WireMessage::Response {
+            request_id: 8,
+            response: Response::IssuesSnapshot(vec![issue.clone()]),
+        };
+        let issue_response_json =
+            serde_json::to_string(&issue_response).expect("issue response should serialize");
+        let issue_response_round_trip: WireMessage =
+            serde_json::from_str(&issue_response_json).expect("issue response should deserialize");
+        assert_eq!(issue_response_round_trip, issue_response);
+
+        let issue_event = WireMessage::Event {
+            event: DaemonEvent::IssuesUpdated(vec![issue]),
+        };
+        let issue_event_json =
+            serde_json::to_string(&issue_event).expect("issue event should serialize");
+        let issue_event_round_trip: WireMessage =
+            serde_json::from_str(&issue_event_json).expect("issue event should deserialize");
+        assert_eq!(issue_event_round_trip, issue_event);
     }
 }

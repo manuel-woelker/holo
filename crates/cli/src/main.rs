@@ -1,16 +1,28 @@
+use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Component;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use holo_base::{holo_message_error, Result};
-use holo_core::daemon::CoreDaemon;
+use holo_core::daemon::{CoreDaemon, DaemonStatusUpdate};
 use holo_core::CompilerCore;
-use holo_deck::run as run_deck;
+use holo_deck::{
+    run_with_updates as run_deck_with_updates, ProjectIssueSeverity as DeckIssueSeverity,
+};
+use holo_deck::{ProjectIssue as DeckIssue, ProjectIssueKind as DeckIssueKind};
+use holo_ipc::{
+    DaemonEvent, IpcConnection, IpcServer, ProjectIssue, ProjectIssueKind, ProjectIssueSeverity,
+    Request, Response, WireMessage,
+};
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 #[instrument(skip_all, fields(root_dir = %root_dir.display()))]
 fn run_build_once(root_dir: &Path) -> Result<String> {
@@ -43,6 +55,22 @@ fn run_build_once(root_dir: &Path) -> Result<String> {
 
 #[instrument(skip_all, fields(root_dir = %root_dir.display()))]
 fn run_daemon_mode(root_dir: &Path) -> Result<()> {
+    let endpoint = daemon_endpoint_name(root_dir)?;
+    let server = IpcServer::bind(&endpoint)?;
+
+    let state = Arc::new(Mutex::new(DaemonSharedState { issues: Vec::new() }));
+    let subscribers: Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>> = Arc::new(Mutex::new(Vec::new()));
+
+    {
+        let state = Arc::clone(&state);
+        let subscribers = Arc::clone(&subscribers);
+        thread::spawn(move || {
+            if let Err(error) = run_ipc_accept_loop(server, state, subscribers) {
+                error!(error = %error, "ipc accept loop failed");
+            }
+        });
+    }
+
     let mut daemon = CoreDaemon::new(0);
     let mut core = CompilerCore::with_persistent_cache(root_dir)?;
 
@@ -55,6 +83,7 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
         );
         daemon.enqueue_startup_sources(startup_sources, startup_now);
         let startup_update = daemon.process_ready(&mut core, startup_now)?;
+        apply_update_to_state_and_subscribers(&startup_update, &state, &subscribers);
         println!("{}", startup_update.to_report());
     } else {
         info!("no .holo files found during daemon startup");
@@ -79,6 +108,7 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
 
     info!(
         root_dir = %root_dir.display(),
+        endpoint = %endpoint,
         "daemon mode started; waiting for file changes"
     );
     loop {
@@ -91,6 +121,7 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
                 }
 
                 let update = daemon.process_ready(&mut core, current_time_ms())?;
+                apply_update_to_state_and_subscribers(&update, &state, &subscribers);
                 println!("{}", update.to_report());
             }
             Ok(Err(error)) => {
@@ -104,6 +135,324 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
             }
         }
     }
+}
+
+fn run_ipc_accept_loop(
+    server: IpcServer,
+    state: Arc<Mutex<DaemonSharedState>>,
+    subscribers: Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
+) -> Result<()> {
+    loop {
+        let connection = server.accept();
+        let Ok(mut connection) = connection else {
+            if let Err(error) = connection {
+                warn!(error = %error, "failed to accept IPC connection");
+            }
+            continue;
+        };
+
+        let state = Arc::clone(&state);
+        let subscribers = Arc::clone(&subscribers);
+        thread::spawn(move || {
+            if let Err(error) = handle_ipc_connection(&mut connection, state, subscribers) {
+                warn!(error = %error, "failed to handle IPC connection");
+            }
+        });
+    }
+}
+
+fn handle_ipc_connection(
+    connection: &mut IpcConnection,
+    state: Arc<Mutex<DaemonSharedState>>,
+    subscribers: Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
+) -> Result<()> {
+    let Some(message) = connection.receive()? else {
+        return Ok(());
+    };
+
+    let (request_id, request) = match message {
+        WireMessage::Request {
+            request_id,
+            request,
+        } => (request_id, request),
+        _ => {
+            return Err(holo_message_error!(
+                "expected request wire message when handling IPC client"
+            ));
+        }
+    };
+
+    match request {
+        Request::GetIssues => {
+            let issues = state
+                .lock()
+                .map_err(|_| holo_message_error!("daemon state lock poisoned"))?
+                .issues
+                .clone();
+            connection.send(&WireMessage::Response {
+                request_id,
+                response: Response::IssuesSnapshot(issues),
+            })
+        }
+        Request::SubscribeIssues => {
+            connection.send(&WireMessage::Response {
+                request_id,
+                response: Response::Ok,
+            })?;
+
+            let (tx, rx) = mpsc::channel::<DaemonEvent>();
+            {
+                subscribers
+                    .lock()
+                    .map_err(|_| holo_message_error!("subscriber lock poisoned"))?
+                    .push(tx);
+            }
+
+            let current_issues = state
+                .lock()
+                .map_err(|_| holo_message_error!("daemon state lock poisoned"))?
+                .issues
+                .clone();
+            connection.send(&WireMessage::Event {
+                event: DaemonEvent::IssuesUpdated(current_issues),
+            })?;
+
+            for event in rx {
+                if connection.send(&WireMessage::Event { event }).is_err() {
+                    break;
+                }
+            }
+            Ok(())
+        }
+        Request::GetStatus => {
+            let issue_count = state
+                .lock()
+                .map_err(|_| holo_message_error!("daemon state lock poisoned"))?
+                .issues
+                .len();
+            connection.send(&WireMessage::Response {
+                request_id,
+                response: Response::StatusReport(format!("issues: {issue_count}")),
+            })
+        }
+        Request::Build | Request::Shutdown => connection.send(&WireMessage::Response {
+            request_id,
+            response: Response::Error(
+                "request is not supported by this daemon endpoint".to_owned(),
+            ),
+        }),
+    }
+}
+
+fn apply_update_to_state_and_subscribers(
+    update: &DaemonStatusUpdate,
+    state: &Arc<Mutex<DaemonSharedState>>,
+    subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
+) {
+    let issues = derive_issues(update);
+    if let Ok(mut guard) = state.lock() {
+        guard.issues = issues.clone();
+    }
+
+    let mut guard = match subscribers.lock() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+    guard.retain(|sender| {
+        sender
+            .send(DaemonEvent::IssuesUpdated(issues.clone()))
+            .is_ok()
+    });
+}
+
+fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
+    let mut issues = Vec::new();
+
+    for error in &update.errors {
+        issues.push(ProjectIssue {
+            title: format!("Compilation error in {}", error.file_path),
+            file: error.file_path.clone(),
+            line: 1,
+            kind: ProjectIssueKind::Compilation,
+            severity: ProjectIssueSeverity::Error,
+            summary: error.message.clone(),
+            detail: error.message.clone(),
+        });
+    }
+
+    for failing_test in &update.failing_tests {
+        issues.push(ProjectIssue {
+            title: format!("Test failed: {failing_test}"),
+            file: "<test-suite>".to_owned(),
+            line: 1,
+            kind: ProjectIssueKind::Test,
+            severity: ProjectIssueSeverity::Error,
+            summary: format!("{failing_test} returned a failing assertion."),
+            detail: format!(
+                "Daemon reported failing test `{failing_test}` in the most recent cycle."
+            ),
+        });
+    }
+
+    issues
+}
+
+#[instrument(skip_all, fields(root_dir = %root_dir.display()))]
+fn run_deck_mode(root_dir: &Path) -> Result<()> {
+    let endpoint = daemon_endpoint_name(root_dir)?;
+    ensure_daemon_running(root_dir, &endpoint)?;
+
+    let initial_issues = request_issues_snapshot(&endpoint)?;
+    let (updates_tx, updates_rx) = mpsc::channel::<Vec<DeckIssue>>();
+
+    let endpoint_for_thread = endpoint.clone();
+    thread::spawn(move || {
+        if let Err(error) = stream_issue_updates(&endpoint_for_thread, updates_tx) {
+            warn!(error = %error, "deck issue update stream ended");
+        }
+    });
+
+    run_deck_with_updates(map_ipc_issues_to_deck(initial_issues), Some(updates_rx))
+}
+
+fn ensure_daemon_running(root_dir: &Path, endpoint: &str) -> Result<()> {
+    if IpcConnection::connect(endpoint).is_ok() {
+        return Ok(());
+    }
+
+    let executable = env::current_exe().map_err(|error| {
+        holo_message_error!("failed to determine current executable").with_std_source(error)
+    })?;
+    Command::new(executable)
+        .arg("daemon")
+        .arg(root_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| {
+            holo_message_error!("failed to spawn daemon process").with_std_source(error)
+        })?;
+
+    for _ in 0..50 {
+        if IpcConnection::connect(endpoint).is_ok() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    Err(holo_message_error!(
+        "daemon did not become available on endpoint {endpoint}"
+    ))
+}
+
+fn request_issues_snapshot(endpoint: &str) -> Result<Vec<ProjectIssue>> {
+    let mut connection = IpcConnection::connect(endpoint)?;
+    connection.send(&WireMessage::Request {
+        request_id: 1,
+        request: Request::GetIssues,
+    })?;
+
+    let Some(message) = connection.receive()? else {
+        return Err(holo_message_error!(
+            "daemon closed connection before responding"
+        ));
+    };
+
+    match message {
+        WireMessage::Response {
+            request_id: 1,
+            response: Response::IssuesSnapshot(issues),
+        } => Ok(issues),
+        WireMessage::Response {
+            request_id: 1,
+            response: Response::Error(error),
+        } => Err(holo_message_error!("daemon returned error: {error}")),
+        other => Err(holo_message_error!(
+            "unexpected daemon response when requesting issues: {other:?}"
+        )),
+    }
+}
+
+fn stream_issue_updates(endpoint: &str, updates_tx: mpsc::Sender<Vec<DeckIssue>>) -> Result<()> {
+    let mut connection = IpcConnection::connect(endpoint)?;
+    connection.send(&WireMessage::Request {
+        request_id: 2,
+        request: Request::SubscribeIssues,
+    })?;
+
+    let Some(first_message) = connection.receive()? else {
+        return Err(holo_message_error!(
+            "daemon closed connection before subscribe acknowledgement"
+        ));
+    };
+    match first_message {
+        WireMessage::Response {
+            request_id: 2,
+            response: Response::Ok,
+        } => {}
+        WireMessage::Response {
+            request_id: 2,
+            response: Response::Error(error),
+        } => {
+            return Err(holo_message_error!(
+                "daemon rejected issue subscription: {error}"
+            ));
+        }
+        other => {
+            return Err(holo_message_error!(
+                "unexpected subscribe acknowledgement: {other:?}"
+            ));
+        }
+    }
+
+    while let Some(message) = connection.receive()? {
+        if let WireMessage::Event {
+            event: DaemonEvent::IssuesUpdated(issues),
+        } = message
+        {
+            if updates_tx.send(map_ipc_issues_to_deck(issues)).is_err() {
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn map_ipc_issues_to_deck(issues: Vec<ProjectIssue>) -> Vec<DeckIssue> {
+    issues
+        .into_iter()
+        .map(|issue| DeckIssue {
+            title: issue.title,
+            file: issue.file,
+            line: issue.line,
+            kind: match issue.kind {
+                ProjectIssueKind::Compilation => DeckIssueKind::Compilation,
+                ProjectIssueKind::Test => DeckIssueKind::Test,
+            },
+            severity: match issue.severity {
+                ProjectIssueSeverity::Error => DeckIssueSeverity::Error,
+                ProjectIssueSeverity::Warning => DeckIssueSeverity::Warning,
+            },
+            summary: issue.summary,
+            detail: issue.detail,
+        })
+        .collect()
+}
+
+fn daemon_endpoint_name(root_dir: &Path) -> Result<String> {
+    let canonical = root_dir.canonicalize().map_err(|error| {
+        holo_message_error!(
+            "failed to canonicalize root directory {}",
+            root_dir.display()
+        )
+        .with_std_source(error)
+    })?;
+    let canonical_string = canonical.to_string_lossy();
+    let mut hasher = DefaultHasher::new();
+    canonical_string.hash(&mut hasher);
+    Ok(format!("holo-daemon-{:016x}", hasher.finish()))
 }
 
 fn record_changed_holo_files(
@@ -154,27 +503,24 @@ fn current_time_ms() -> u64 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CliMode {
     Build(PathBuf),
-    Deck,
+    Deck(PathBuf),
     Daemon(PathBuf),
 }
 
 fn parse_cli_mode(args: &[String]) -> CliMode {
-    if args.get(1).is_some_and(|arg| arg == "deck") {
-        return CliMode::Deck;
+    match args.get(1).map(String::as_str) {
+        Some("build") => CliMode::Build(path_arg_or_default(args, 2)),
+        Some("daemon") => CliMode::Daemon(path_arg_or_default(args, 2)),
+        Some("deck") => CliMode::Deck(path_arg_or_default(args, 2)),
+        Some(path) => CliMode::Deck(PathBuf::from(path)),
+        None => CliMode::Deck(PathBuf::from(".")),
     }
+}
 
-    if args.get(1).is_some_and(|arg| arg == "build") {
-        if let Some(path) = args.get(2) {
-            return CliMode::Build(PathBuf::from(path));
-        }
-        return CliMode::Build(PathBuf::from("."));
-    }
-
-    if let Some(path) = args.get(1) {
-        return CliMode::Daemon(PathBuf::from(path));
-    }
-
-    CliMode::Daemon(PathBuf::from("."))
+fn path_arg_or_default(args: &[String], index: usize) -> PathBuf {
+    args.get(index)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 #[instrument(skip_all, fields(root_dir = %root_dir.display()))]
@@ -249,9 +595,9 @@ fn main() {
                 }
             }
         }
-        CliMode::Deck => {
-            info!("running holo CLI deck mode");
-            if let Err(error) = run_deck() {
+        CliMode::Deck(root_dir) => {
+            info!(root_dir = %root_dir.display(), "running holo CLI deck mode");
+            if let Err(error) = run_deck_mode(&root_dir) {
                 eprintln!("{error}");
                 std::process::exit(1);
             }
@@ -266,11 +612,16 @@ fn main() {
     }
 }
 
+#[derive(Debug, Clone)]
+struct DaemonSharedState {
+    issues: Vec<ProjectIssue>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_holo_sources, display_source_path, is_holo_file, parse_cli_mode, run_build_once,
-        CliMode,
+        collect_holo_sources, daemon_endpoint_name, display_source_path, is_holo_file,
+        parse_cli_mode, path_arg_or_default, run_build_once, CliMode,
     };
     use std::fs;
     use std::path::Path;
@@ -305,8 +656,44 @@ mod tests {
     }
 
     #[test]
-    fn parses_daemon_mode_with_default_path() {
+    fn parses_deck_mode_with_default_path() {
         let args = vec!["holo-cli".to_owned()];
+        assert_eq!(
+            parse_cli_mode(&args),
+            CliMode::Deck(Path::new(".").to_owned())
+        );
+    }
+
+    #[test]
+    fn parses_deck_mode_with_custom_path() {
+        let args = vec!["holo-cli".to_owned(), "project".to_owned()];
+        assert_eq!(
+            parse_cli_mode(&args),
+            CliMode::Deck(Path::new("project").to_owned())
+        );
+    }
+
+    #[test]
+    fn parses_deck_subcommand_with_default_path() {
+        let args = vec!["holo-cli".to_owned(), "deck".to_owned()];
+        assert_eq!(
+            parse_cli_mode(&args),
+            CliMode::Deck(Path::new(".").to_owned())
+        );
+    }
+
+    #[test]
+    fn parses_deck_subcommand_with_custom_path() {
+        let args = vec!["holo-cli".to_owned(), "deck".to_owned(), "repo".to_owned()];
+        assert_eq!(
+            parse_cli_mode(&args),
+            CliMode::Deck(Path::new("repo").to_owned())
+        );
+    }
+
+    #[test]
+    fn parses_daemon_subcommand_with_default_path() {
+        let args = vec!["holo-cli".to_owned(), "daemon".to_owned()];
         assert_eq!(
             parse_cli_mode(&args),
             CliMode::Daemon(Path::new(".").to_owned())
@@ -314,12 +701,22 @@ mod tests {
     }
 
     #[test]
-    fn parses_daemon_mode_with_custom_path() {
-        let args = vec!["holo-cli".to_owned(), "project".to_owned()];
+    fn parses_daemon_subcommand_with_custom_path() {
+        let args = vec![
+            "holo-cli".to_owned(),
+            "daemon".to_owned(),
+            "repo".to_owned(),
+        ];
         assert_eq!(
             parse_cli_mode(&args),
-            CliMode::Daemon(Path::new("project").to_owned())
+            CliMode::Daemon(Path::new("repo").to_owned())
         );
+    }
+
+    #[test]
+    fn path_arg_defaults_when_missing() {
+        let args = vec!["holo-cli".to_owned(), "daemon".to_owned()];
+        assert_eq!(path_arg_or_default(&args, 2), Path::new(".").to_owned());
     }
 
     #[test]
@@ -377,6 +774,14 @@ mod tests {
         assert!(rendered == ".\\src\\main.holo" || rendered == ".\\src/main.holo");
     }
 
+    #[test]
+    fn endpoint_name_depends_on_root_path() {
+        let one = daemon_endpoint_name(Path::new(".")).expect("endpoint should build");
+        let two = daemon_endpoint_name(Path::new(".")).expect("endpoint should build");
+        assert_eq!(one, two);
+        assert!(one.starts_with("holo-daemon-"));
+    }
+
     fn temp_source_dir(name: &str) -> std::path::PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -385,11 +790,5 @@ mod tests {
         let path = std::env::temp_dir().join(format!("holo-cli-{name}-{suffix}"));
         fs::create_dir_all(&path).expect("temp source dir should be created");
         path
-    }
-
-    #[test]
-    fn parses_deck_mode() {
-        let args = vec!["holo-cli".to_owned(), "deck".to_owned()];
-        assert_eq!(parse_cli_mode(&args), CliMode::Deck);
     }
 }

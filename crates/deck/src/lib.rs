@@ -1,6 +1,7 @@
 //! Terminal dashboard for viewing project compilation and test issues.
 
 use std::io;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -16,8 +17,74 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Terminal;
 
-/// Opens the deck TUI and keeps it running until quit.
+/// Project issue payload shown by the deck TUI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectIssue {
+    /// Short issue title.
+    pub title: String,
+    /// Source file path.
+    pub file: String,
+    /// 1-based line number.
+    pub line: usize,
+    /// Issue kind/category.
+    pub kind: ProjectIssueKind,
+    /// Severity level.
+    pub severity: ProjectIssueSeverity,
+    /// Brief summary text.
+    pub summary: String,
+    /// Detailed explanation text.
+    pub detail: String,
+}
+
+/// Issue category shown in deck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectIssueKind {
+    Compilation,
+    Test,
+}
+
+impl ProjectIssueKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Compilation => "Compilation",
+            Self::Test => "Test",
+        }
+    }
+
+    fn short_tag(self) -> &'static str {
+        match self {
+            Self::Compilation => "COMP",
+            Self::Test => "TEST",
+        }
+    }
+}
+
+/// Issue severity displayed in deck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectIssueSeverity {
+    Error,
+    Warning,
+}
+
+impl ProjectIssueSeverity {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Error => "Error",
+            Self::Warning => "Warning",
+        }
+    }
+}
+
+/// Opens deck TUI with static example data.
 pub fn run() -> Result<()> {
+    run_with_updates(example_issues(), None)
+}
+
+/// Opens deck TUI with initial issues and optional live updates.
+pub fn run_with_updates(
+    initial_issues: Vec<ProjectIssue>,
+    updates: Option<Receiver<Vec<ProjectIssue>>>,
+) -> Result<()> {
     enable_raw_mode()
         .map_err(|error| holo_message_error!("failed to enable raw mode").with_std_source(error))?;
     let mut stdout = io::stdout();
@@ -30,8 +97,9 @@ pub fn run() -> Result<()> {
         holo_message_error!("failed to initialize terminal backend").with_std_source(error)
     })?;
 
-    let mut app = DeckApp::with_example_data();
-    let result = run_loop(&mut terminal, &mut app);
+    let mut app = DeckApp::new(initial_issues);
+    let mut updates = updates;
+    let result = run_loop(&mut terminal, &mut app, &mut updates);
     restore_terminal(&mut terminal)?;
     result
 }
@@ -39,8 +107,22 @@ pub fn run() -> Result<()> {
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut DeckApp,
+    updates: &mut Option<Receiver<Vec<ProjectIssue>>>,
 ) -> Result<()> {
     loop {
+        if let Some(receiver) = updates.as_ref() {
+            loop {
+                match receiver.try_recv() {
+                    Ok(next_issues) => app.replace_issues(next_issues),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        *updates = None;
+                        break;
+                    }
+                }
+            }
+        }
+
         terminal
             .draw(|frame| draw(frame.area(), frame, app))
             .map_err(|error| {
@@ -73,10 +155,6 @@ fn run_loop(
     }
 }
 
-fn is_navigable_key_event(key_event: &KeyEvent) -> bool {
-    key_event.kind == KeyEventKind::Press
-}
-
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
     disable_raw_mode().map_err(|error| {
         holo_message_error!("failed to disable raw mode").with_std_source(error)
@@ -105,15 +183,16 @@ fn draw_master(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
         .iter()
         .map(|issue| {
             let severity_style = match issue.severity {
-                Severity::Error => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                Severity::Warning => Style::default().fg(Color::Yellow),
-            };
-            let kind_tag = match issue.kind {
-                IssueKind::Compilation => "COMP",
-                IssueKind::Test => "TEST",
+                ProjectIssueSeverity::Error => {
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                }
+                ProjectIssueSeverity::Warning => Style::default().fg(Color::Yellow),
             };
             ListItem::new(vec![Line::from(vec![
-                Span::styled(format!("[{kind_tag}] "), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("[{}] ", issue.kind.short_tag()),
+                    Style::default().fg(Color::Cyan),
+                ),
                 Span::styled(format!("[{}] ", issue.severity.label()), severity_style),
                 Span::raw(&issue.title),
             ])])
@@ -190,100 +269,78 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
     frame.render_widget(detail, area);
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DeckIssue {
-    title: String,
-    file: String,
-    line: usize,
-    kind: IssueKind,
-    severity: Severity,
-    summary: String,
-    detail: String,
+fn is_navigable_key_event(key_event: &KeyEvent) -> bool {
+    key_event.kind == KeyEventKind::Press
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum IssueKind {
-    Compilation,
-    Test,
-}
-
-impl IssueKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Compilation => "Compilation",
-            Self::Test => "Test",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Severity {
-    Error,
-    Warning,
-}
-
-impl Severity {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Error => "Error",
-            Self::Warning => "Warning",
-        }
-    }
+fn example_issues() -> Vec<ProjectIssue> {
+    vec![
+        ProjectIssue {
+            title: "Unknown token in test declaration".to_owned(),
+            file: "src/compiler/lexer.holo".to_owned(),
+            line: 12,
+            kind: ProjectIssueKind::Compilation,
+            severity: ProjectIssueSeverity::Error,
+            summary: "Lexer hit an unsupported symbol while parsing #[test] item.".to_owned(),
+            detail: "The parser expected `fn` after `#[test]`, but found `fna`. Fix the typo and rerun.".to_owned(),
+        },
+        ProjectIssue {
+            title: "Duplicate test name".to_owned(),
+            file: "tests/smoke.holo".to_owned(),
+            line: 34,
+            kind: ProjectIssueKind::Compilation,
+            severity: ProjectIssueSeverity::Error,
+            summary: "Two tests share the same function name.".to_owned(),
+            detail: "Rename either `fn startup_checks()` definition so each test item has a unique name.".to_owned(),
+        },
+        ProjectIssue {
+            title: "Assertion failed in login flow".to_owned(),
+            file: "tests/auth.holo".to_owned(),
+            line: 21,
+            kind: ProjectIssueKind::Test,
+            severity: ProjectIssueSeverity::Error,
+            summary: "Test `login_valid_credentials` evaluated to false.".to_owned(),
+            detail: "The test body executed `assert(false)`. Replace with expected boolean expression.".to_owned(),
+        },
+        ProjectIssue {
+            title: "Flaky startup timing test".to_owned(),
+            file: "tests/startup.holo".to_owned(),
+            line: 9,
+            kind: ProjectIssueKind::Test,
+            severity: ProjectIssueSeverity::Warning,
+            summary: "Intermittent failures detected over last 20 runs.".to_owned(),
+            detail:
+                "This warning is example data to demonstrate non-fatal test diagnostics in deck."
+                    .to_owned(),
+        },
+    ]
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DeckApp {
-    issues: Vec<DeckIssue>,
+    issues: Vec<ProjectIssue>,
     selected: usize,
 }
 
 impl DeckApp {
-    fn with_example_data() -> Self {
+    fn new(issues: Vec<ProjectIssue>) -> Self {
         Self {
-            issues: vec![
-                DeckIssue {
-                    title: "Unknown token in test declaration".to_owned(),
-                    file: "src/compiler/lexer.holo".to_owned(),
-                    line: 12,
-                    kind: IssueKind::Compilation,
-                    severity: Severity::Error,
-                    summary: "Lexer hit an unsupported symbol while parsing #[test] item."
-                        .to_owned(),
-                    detail: "The parser expected `fn` after `#[test]`, but found `fna`. Fix the typo and rerun."
-                        .to_owned(),
-                },
-                DeckIssue {
-                    title: "Duplicate test name".to_owned(),
-                    file: "tests/smoke.holo".to_owned(),
-                    line: 34,
-                    kind: IssueKind::Compilation,
-                    severity: Severity::Error,
-                    summary: "Two tests share the same function name.".to_owned(),
-                    detail: "Rename either `fn startup_checks()` definition so each test item has a unique name."
-                        .to_owned(),
-                },
-                DeckIssue {
-                    title: "Assertion failed in login flow".to_owned(),
-                    file: "tests/auth.holo".to_owned(),
-                    line: 21,
-                    kind: IssueKind::Test,
-                    severity: Severity::Error,
-                    summary: "Test `login_valid_credentials` evaluated to false.".to_owned(),
-                    detail: "The test body executed `assert(false)`. Replace with expected boolean expression."
-                        .to_owned(),
-                },
-                DeckIssue {
-                    title: "Flaky startup timing test".to_owned(),
-                    file: "tests/startup.holo".to_owned(),
-                    line: 9,
-                    kind: IssueKind::Test,
-                    severity: Severity::Warning,
-                    summary: "Intermittent failures detected over last 20 runs.".to_owned(),
-                    detail: "This warning is example data to demonstrate non-fatal test diagnostics in deck."
-                        .to_owned(),
-                },
-            ],
+            issues,
             selected: 0,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_example_data() -> Self {
+        Self::new(example_issues())
+    }
+
+    fn replace_issues(&mut self, issues: Vec<ProjectIssue>) {
+        self.issues = issues;
+        if self.issues.is_empty() {
+            self.selected = 0;
+        } else if self.selected >= self.issues.len() {
+            self.selected = self.issues.len() - 1;
         }
     }
 
@@ -307,14 +364,16 @@ impl DeckApp {
         }
     }
 
-    fn current_issue(&self) -> Option<&DeckIssue> {
+    fn current_issue(&self) -> Option<&ProjectIssue> {
         self.issues.get(self.selected)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_navigable_key_event, DeckApp, IssueKind, Severity};
+    use super::{
+        example_issues, is_navigable_key_event, DeckApp, ProjectIssueKind, ProjectIssueSeverity,
+    };
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     #[test]
@@ -323,8 +382,11 @@ mod tests {
         assert!(app
             .issues
             .iter()
-            .any(|issue| issue.kind == IssueKind::Compilation));
-        assert!(app.issues.iter().any(|issue| issue.kind == IssueKind::Test));
+            .any(|issue| issue.kind == ProjectIssueKind::Compilation));
+        assert!(app
+            .issues
+            .iter()
+            .any(|issue| issue.kind == ProjectIssueKind::Test));
     }
 
     #[test]
@@ -344,11 +406,11 @@ mod tests {
         assert!(app
             .issues
             .iter()
-            .any(|issue| issue.severity == Severity::Error));
+            .any(|issue| issue.severity == ProjectIssueSeverity::Error));
         assert!(app
             .issues
             .iter()
-            .any(|issue| issue.severity == Severity::Warning));
+            .any(|issue| issue.severity == ProjectIssueSeverity::Warning));
     }
 
     #[test]
@@ -375,5 +437,13 @@ mod tests {
         assert!(is_navigable_key_event(&press));
         assert!(!is_navigable_key_event(&release));
         assert!(!is_navigable_key_event(&repeat));
+    }
+
+    #[test]
+    fn replacing_issues_clamps_selection() {
+        let mut app = DeckApp::with_example_data();
+        app.selected = 3;
+        app.replace_issues(vec![example_issues()[0].clone()]);
+        assert_eq!(app.selected, 0);
     }
 }

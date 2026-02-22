@@ -390,6 +390,7 @@ dependencies = [
  "holo-base",
  "holo-core",
  "holo-deck",
+ "holo-ipc",
  "notify",
  "tracing",
 ]

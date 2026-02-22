@@ -10,5 +10,6 @@ publish = false
 holo-base = { path = "../base" }
 holo-core = { path = "../core" }
 holo-deck = { path = "../deck" }
+holo-ipc = { path = "../ipc" }
 notify = "8.2.0"
 tracing = "0.1"
