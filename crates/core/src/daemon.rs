@@ -183,12 +183,16 @@ impl CoreDaemon {
                         if test.status == holo_interpreter::TestStatus::Failed {
                             update.failing_tests.push(test.name.clone());
                             if let Some(span) = test.failure_span {
+                                let reason = test
+                                    .failure_reason
+                                    .clone()
+                                    .unwrap_or_else(|| "assertion failed".into());
                                 let diagnostic =
                                     SourceDiagnostic::new(
                                         DiagnosticKind::Test,
-                                        format!("test `{}` assertion failed", test.name),
+                                        format!("test `{}` {reason}", test.name),
                                     )
-                                    .with_annotated_span(span, "assertion failed")
+                                    .with_annotated_span(span, reason)
                                     .with_source_excerpt(
                                         SourceExcerpt::new(pending.source.clone(), 1, 0),
                                     );

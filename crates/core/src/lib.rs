@@ -343,6 +343,7 @@ struct PersistedTestResult {
     status: PersistedTestStatus,
     failure_span_start: Option<usize>,
     failure_span_end: Option<usize>,
+    failure_reason: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode)]
@@ -408,6 +409,7 @@ impl PersistedCycleSummary {
                     },
                     failure_span_start: result.failure_span.map(|span| span.start),
                     failure_span_end: result.failure_span.map(|span| span.end),
+                    failure_reason: result.failure_reason.as_ref().map(ToString::to_string),
                 })
                 .collect(),
             diagnostics: summary
@@ -459,6 +461,7 @@ impl PersistedCycleSummary {
                             (Some(start), Some(end)) => Some(Span::new(start, end)),
                             _ => None,
                         },
+                        failure_reason: result.failure_reason.map(Into::into),
                     })
                     .collect(),
                 timings: self
@@ -572,7 +575,7 @@ impl PersistedCache {
             bytes: bitcode::encode(&persisted),
             produced_at: 0,
             content_hash,
-            schema_version: 4,
+            schema_version: 5,
         };
         self.db
             .put_artifact(&CoreArtifactKind::CycleSummary, &key, record)
@@ -594,7 +597,7 @@ impl PersistedCache {
         if record.content_hash != content_hash {
             return Ok(None);
         }
-        if record.schema_version != 4 {
+        if record.schema_version != 5 {
             return Ok(None);
         }
 

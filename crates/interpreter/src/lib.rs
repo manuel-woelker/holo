@@ -22,6 +22,8 @@ pub struct TestResult {
     pub status: TestStatus,
     /// Span of the failing assertion when status is failed.
     pub failure_span: Option<Span>,
+    /// Failure reason when status is failed.
+    pub failure_reason: Option<SharedString>,
 }
 
 /// Aggregate outcome across a full module test run.
@@ -70,6 +72,7 @@ enum Value {
 #[derive(Debug, Clone)]
 struct RuntimeError {
     span: Span,
+    message: SharedString,
 }
 
 impl BasicInterpreter {
@@ -108,10 +111,12 @@ impl BasicInterpreter {
             ExprKind::NumberLiteral(literal) => {
                 Self::parse_number_literal(literal).ok_or(RuntimeError {
                     span: expression.span,
+                    message: "invalid number literal".into(),
                 })
             }
             ExprKind::Identifier(name) => locals.get(name).cloned().ok_or(RuntimeError {
                 span: expression.span,
+                message: format!("unknown identifier `{name}`").into(),
             }),
             ExprKind::Negation(inner) => {
                 let inner_value = Self::eval_expr(inner, locals, functions)?;
@@ -119,6 +124,7 @@ impl BasicInterpreter {
                     Value::Bool(value) => Ok(Value::Bool(!value)),
                     _ => Err(RuntimeError {
                         span: expression.span,
+                        message: "operator `!` expects bool".into(),
                     }),
                 }
             }
@@ -131,6 +137,7 @@ impl BasicInterpreter {
                     Value::F64(value) => Ok(Value::F64(-value)),
                     _ => Err(RuntimeError {
                         span: expression.span,
+                        message: "operator `-` expects signed numeric".into(),
                     }),
                 }
             }
@@ -143,16 +150,24 @@ impl BasicInterpreter {
                 let ExprKind::Identifier(callee_name) = &call.callee.kind else {
                     return Err(RuntimeError {
                         span: call.callee.span,
+                        message: "call target is not a function name".into(),
                     });
                 };
                 let Some(function) = functions.get(callee_name) else {
                     return Err(RuntimeError {
                         span: call.callee.span,
+                        message: format!("unknown function `{callee_name}`").into(),
                     });
                 };
                 if call.arguments.len() != function.parameters.len() {
                     return Err(RuntimeError {
                         span: expression.span,
+                        message: format!(
+                            "function `{callee_name}` expects {} argument(s) but got {}",
+                            function.parameters.len(),
+                            call.arguments.len()
+                        )
+                        .into(),
                     });
                 }
 
@@ -179,14 +194,20 @@ impl BasicInterpreter {
                 BinaryOperator::Multiply => Ok(Value::U32(left.wrapping_mul(right))),
                 BinaryOperator::Divide => {
                     if right == 0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "division by zero".into(),
+                        })
                     } else {
                         Ok(Value::U32(left / right))
                     }
                 }
                 BinaryOperator::Modulo => {
                     if right == 0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "modulo by zero".into(),
+                        })
                     } else {
                         Ok(Value::U32(left % right))
                     }
@@ -198,14 +219,20 @@ impl BasicInterpreter {
                 BinaryOperator::Multiply => Ok(Value::U64(left.wrapping_mul(right))),
                 BinaryOperator::Divide => {
                     if right == 0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "division by zero".into(),
+                        })
                     } else {
                         Ok(Value::U64(left / right))
                     }
                 }
                 BinaryOperator::Modulo => {
                     if right == 0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "modulo by zero".into(),
+                        })
                     } else {
                         Ok(Value::U64(left % right))
                     }
@@ -217,14 +244,20 @@ impl BasicInterpreter {
                 BinaryOperator::Multiply => Ok(Value::I32(left.wrapping_mul(right))),
                 BinaryOperator::Divide => {
                     if right == 0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "division by zero".into(),
+                        })
                     } else {
                         Ok(Value::I32(left / right))
                     }
                 }
                 BinaryOperator::Modulo => {
                     if right == 0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "modulo by zero".into(),
+                        })
                     } else {
                         Ok(Value::I32(left % right))
                     }
@@ -236,14 +269,20 @@ impl BasicInterpreter {
                 BinaryOperator::Multiply => Ok(Value::I64(left.wrapping_mul(right))),
                 BinaryOperator::Divide => {
                     if right == 0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "division by zero".into(),
+                        })
                     } else {
                         Ok(Value::I64(left / right))
                     }
                 }
                 BinaryOperator::Modulo => {
                     if right == 0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "modulo by zero".into(),
+                        })
                     } else {
                         Ok(Value::I64(left % right))
                     }
@@ -255,7 +294,10 @@ impl BasicInterpreter {
                 BinaryOperator::Multiply => Ok(Value::F32(left * right)),
                 BinaryOperator::Divide => {
                     if right == 0.0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "division by zero".into(),
+                        })
                     } else {
                         Ok(Value::F32(left / right))
                     }
@@ -268,14 +310,20 @@ impl BasicInterpreter {
                 BinaryOperator::Multiply => Ok(Value::F64(left * right)),
                 BinaryOperator::Divide => {
                     if right == 0.0 {
-                        Err(RuntimeError { span })
+                        Err(RuntimeError {
+                            span,
+                            message: "division by zero".into(),
+                        })
                     } else {
                         Ok(Value::F64(left / right))
                     }
                 }
                 BinaryOperator::Modulo => Ok(Value::F64(left % right)),
             },
-            _ => Err(RuntimeError { span }),
+            _ => Err(RuntimeError {
+                span,
+                message: "arithmetic operands are incompatible".into(),
+            }),
         }
     }
 
@@ -294,11 +342,13 @@ impl BasicInterpreter {
                         Value::Bool(false) => {
                             return Err(RuntimeError {
                                 span: assertion.expression.span,
+                                message: "assertion failed".into(),
                             });
                         }
                         _ => {
                             return Err(RuntimeError {
                                 span: assertion.expression.span,
+                                message: "assertion expression did not evaluate to bool".into(),
                             });
                         }
                     }
@@ -323,6 +373,7 @@ impl BasicInterpreter {
         let mut locals = HashMap::new();
         let mut status = TestStatus::Passed;
         let mut failure_span = None;
+        let mut failure_reason = None;
         for statement in &test.statements {
             match statement {
                 Statement::Assert(assertion) => {
@@ -332,16 +383,20 @@ impl BasicInterpreter {
                         Ok(Value::Bool(false)) => {
                             status = TestStatus::Failed;
                             failure_span = Some(assertion.expression.span);
+                            failure_reason = Some("assertion failed".into());
                             break;
                         }
                         Ok(_) => {
                             status = TestStatus::Failed;
                             failure_span = Some(assertion.expression.span);
+                            failure_reason =
+                                Some("assertion expression did not evaluate to bool".into());
                             break;
                         }
                         Err(error) => {
                             status = TestStatus::Failed;
                             failure_span = Some(error.span);
+                            failure_reason = Some(error.message);
                             break;
                         }
                     }
@@ -355,6 +410,7 @@ impl BasicInterpreter {
                         Err(error) => {
                             status = TestStatus::Failed;
                             failure_span = Some(error.span);
+                            failure_reason = Some(error.message);
                             break;
                         }
                     }
@@ -365,6 +421,7 @@ impl BasicInterpreter {
                     {
                         status = TestStatus::Failed;
                         failure_span = Some(error.span);
+                        failure_reason = Some(error.message);
                         break;
                     }
                 }
@@ -375,6 +432,7 @@ impl BasicInterpreter {
             name: test.name.clone(),
             status,
             failure_span,
+            failure_reason,
         }
     }
 

@@ -75,12 +75,12 @@ This plan focuses on language/frontend/runtime capability, not performance work.
 - Implement arithmetic evaluation with checked behavior and diagnostics.
 - Implement call frames, parameter binding, and return values.
 
-5. **Diagnostics + UX - In Progress**
+5. **Diagnostics + UX - Done**
 - Expand `SourceDiagnostic` usage for type and runtime errors in new constructs.
 - Add concise primary message plus annotated spans for operator/type mismatch and bad calls.
 - Ensure deck issue titles remain concise and line-addressable.
 
-6. **Core/daemon integration - Pending**
+6. **Core/daemon integration - In Progress**
 - Ensure compile-and-test cycles continue after non-fatal per-file diagnostics.
 - Keep dependency/query invalidation correct for function and expression changes.
 - Preserve persistent cache compatibility via schema bump where needed.
