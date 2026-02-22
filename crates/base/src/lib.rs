@@ -4,6 +4,7 @@ pub mod error;
 pub mod logging;
 pub mod source_diagnostic;
 pub mod span;
+pub mod timing;
 
 pub use error::{ErrorKind, HoloError, Result};
 pub use parking_lot::Mutex;
@@ -11,6 +12,7 @@ pub use source_diagnostic::{
     display_source_diagnostics, AnnotatedSpan, DiagnosticKind, SourceDiagnostic, SourceExcerpt,
 };
 pub use span::Span;
+pub use timing::{time_task, TaskTimer, TaskTiming};
 pub type SharedString = ecow::EcoString;
 
 /// Build-time project revision string.
