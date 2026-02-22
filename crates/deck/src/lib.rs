@@ -302,7 +302,7 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         return;
     };
 
-    let mut body = if issue.source_diagnostics.is_empty() {
+    let body = if issue.source_diagnostics.is_empty() {
         issue
             .detail
             .lines()
@@ -311,11 +311,6 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
     } else {
         ansi_colored_lines(&display_source_diagnostics(&issue.source_diagnostics))
     };
-    body.push(Line::from(""));
-    body.push(Line::from(Span::styled(
-        "Keys: left/right tab, up/down navigate, enter expand tree, q/esc quit",
-        Style::default().fg(Color::DarkGray),
-    )));
 
     let detail = Paragraph::new(body)
         .block(Block::default().title("Diagnostics").borders(Borders::ALL))
@@ -508,6 +503,12 @@ fn draw_daemon_status(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp)
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Left);
     frame.render_widget(version_widget, area);
+
+    let hints_widget =
+        Paragraph::new("Keys: left/right tab, up/down navigate, enter expand tree, q/esc quit")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center);
+    frame.render_widget(hints_widget, area);
 
     let (icon, label, color) = app.daemon_state.display_parts();
     let (compilation_failures, test_failures) = app.failure_counts();

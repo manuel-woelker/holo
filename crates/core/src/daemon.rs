@@ -185,7 +185,7 @@ impl CoreDaemon {
                                         DiagnosticKind::Test,
                                         format!("test `{}` assertion failed", test.name),
                                     )
-                                    .with_annotated_span(span, "failing assertion")
+                                    .with_annotated_span(span, "assertion failed")
                                     .with_source_excerpt(
                                         SourceExcerpt::new(pending.source.clone(), 1, 0),
                                     );

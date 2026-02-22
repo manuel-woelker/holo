@@ -10,6 +10,8 @@ pub enum DiagnosticKind {
     Parsing,
     /// Produced while checking semantic/type constraints.
     Typecheck,
+    /// Produced while running tests.
+    Test,
 }
 
 /// Span annotation attached to a source diagnostic.
@@ -164,6 +166,7 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
                     line = line_no,
                     column = column_no,
                 ));
+                output.push('\n');
                 output.push_str(&format!(
                     "{dim}│ {reset}{blue}{line:>4} │{reset} {source}\n",
                     dim = ANSI_DIM,
@@ -204,6 +207,7 @@ impl DiagnosticKind {
             Self::Lexing => "lexing error",
             Self::Parsing => "parsing error",
             Self::Typecheck => "typecheck error",
+            Self::Test => "test failure",
         }
     }
 
@@ -212,6 +216,7 @@ impl DiagnosticKind {
             Self::Lexing => (ANSI_YELLOW, "Lexing"),
             Self::Parsing => (ANSI_RED, "Parsing"),
             Self::Typecheck => (ANSI_MAGENTA, "Typecheck"),
+            Self::Test => (ANSI_RED, "Test"),
         }
     }
 }
