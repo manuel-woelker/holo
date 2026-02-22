@@ -397,19 +397,31 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
         });
     }
 
-    for failing_test in &update.failing_tests {
+    for failure in &update.test_failures {
+        let line = diagnostic_line_number(failure).unwrap_or(1);
+        let detail = failure
+            .styled_message
+            .as_ref()
+            .map(|message| strip_ansi_sequences(message))
+            .unwrap_or_else(|| failure.message.clone());
+        let source_diagnostics = failure
+            .source_diagnostic
+            .clone()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let summary = source_diagnostics
+            .first()
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_else(|| failure.message.clone());
         issues.push(ProjectIssue {
-            title: format!("Test failure at <test-suite>:1 ({failing_test})").into(),
-            file: "<test-suite>".into(),
-            line: 1,
+            title: format!("Test failure at {}:{line}", failure.file_path).into(),
+            file: failure.file_path.clone(),
+            line,
             kind: ProjectIssueKind::Test,
             severity: ProjectIssueSeverity::Error,
-            summary: format!("{failing_test} returned a failing assertion.").into(),
-            detail: format!(
-                "Daemon reported failing test `{failing_test}` in the most recent cycle."
-            )
-            .into(),
-            source_diagnostics: Vec::new(),
+            summary,
+            detail,
+            source_diagnostics,
         });
     }
 
@@ -938,11 +950,12 @@ struct TestDependency {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_dependency_graph, collect_holo_sources, daemon_endpoint_name, display_source_path,
-        is_holo_file, line_number_for_offset, map_lifecycle_state_to_deck, parse_cli_mode,
-        path_arg_or_default, run_build_once, strip_ansi_sequences, CliMode,
+        build_dependency_graph, collect_holo_sources, daemon_endpoint_name, derive_issues,
+        display_source_path, is_holo_file, line_number_for_offset, map_lifecycle_state_to_deck,
+        parse_cli_mode, path_arg_or_default, run_build_once, strip_ansi_sequences, CliMode,
     };
-    use holo_base::{SharedString, SourceExcerpt};
+    use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, Span};
+    use holo_core::daemon::{DaemonStatusUpdate, FileDiagnostic};
     use holo_deck::DaemonState as DeckDaemonState;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1154,6 +1167,39 @@ mod tests {
         assert_eq!(line_number_for_offset(&excerpt, 106), Some(11));
         assert_eq!(line_number_for_offset(&excerpt, 113), Some(12));
         assert_eq!(line_number_for_offset(&excerpt, 99), None);
+    }
+
+    #[test]
+    fn failing_tests_are_emitted_as_source_diagnostics() {
+        let diagnostic =
+            SourceDiagnostic::new(DiagnosticKind::Test, "test `sample_fail` assertion failed")
+                .with_annotated_span(Span::new(10, 22), "failing assertion")
+                .with_source_excerpt(SourceExcerpt::new(
+                    "#[test] fn sample_fail() { assert(false); }\n",
+                    1,
+                    0,
+                ));
+        let update = DaemonStatusUpdate {
+            failing_tests: vec!["sample_fail".into()],
+            test_failures: vec![FileDiagnostic {
+                file_path: "tests/sample.holo".into(),
+                message: diagnostic.render_annotated(),
+                styled_message: Some(holo_base::display_source_diagnostics(std::slice::from_ref(
+                    &diagnostic,
+                ))),
+                source_diagnostic: Some(diagnostic),
+            }],
+            ..DaemonStatusUpdate::default()
+        };
+        let issues = derive_issues(&update);
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].source_diagnostics.len(), 1);
+        assert_eq!(issues[0].file, "tests/sample.holo");
+        assert_eq!(issues[0].line, 1);
+        assert!(issues[0].source_diagnostics[0]
+            .message
+            .contains("sample_fail"));
     }
 
     fn temp_source_dir(name: &str) -> std::path::PathBuf {

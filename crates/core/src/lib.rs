@@ -302,6 +302,8 @@ struct PersistedCycleSummary {
 struct PersistedTestResult {
     name: String,
     status: PersistedTestStatus,
+    failure_span_start: Option<usize>,
+    failure_span_end: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode)]
@@ -322,6 +324,7 @@ enum PersistedDiagnosticKind {
     Lexing,
     Parsing,
     Typecheck,
+    Test,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
@@ -350,6 +353,8 @@ impl PersistedCycleSummary {
                         TestStatus::Passed => PersistedTestStatus::Passed,
                         TestStatus::Failed => PersistedTestStatus::Failed,
                     },
+                    failure_span_start: result.failure_span.map(|span| span.start),
+                    failure_span_end: result.failure_span.map(|span| span.end),
                 })
                 .collect(),
             diagnostics: summary
@@ -380,6 +385,10 @@ impl PersistedCycleSummary {
                             PersistedTestStatus::Passed => TestStatus::Passed,
                             PersistedTestStatus::Failed => TestStatus::Failed,
                         },
+                        failure_span: match (result.failure_span_start, result.failure_span_end) {
+                            (Some(start), Some(end)) => Some(Span::new(start, end)),
+                            _ => None,
+                        },
                     })
                     .collect(),
             },
@@ -399,6 +408,7 @@ impl PersistedDiagnostic {
                 DiagnosticKind::Lexing => PersistedDiagnosticKind::Lexing,
                 DiagnosticKind::Parsing => PersistedDiagnosticKind::Parsing,
                 DiagnosticKind::Typecheck => PersistedDiagnosticKind::Typecheck,
+                DiagnosticKind::Test => PersistedDiagnosticKind::Test,
             },
             message: diagnostic.message.to_string(),
             annotated_spans: diagnostic
@@ -419,6 +429,7 @@ impl PersistedDiagnostic {
                 PersistedDiagnosticKind::Lexing => DiagnosticKind::Lexing,
                 PersistedDiagnosticKind::Parsing => DiagnosticKind::Parsing,
                 PersistedDiagnosticKind::Typecheck => DiagnosticKind::Typecheck,
+                PersistedDiagnosticKind::Test => DiagnosticKind::Test,
             },
             self.message,
         );

@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 
-use holo_base::{display_source_diagnostics, Result, SharedString, SourceDiagnostic};
+use holo_base::{
+    display_source_diagnostics, DiagnosticKind, Result, SharedString, SourceDiagnostic,
+    SourceExcerpt,
+};
 use tracing::{info, instrument, warn};
 
 use crate::{CompilerCore, CoreCycleSummary};
@@ -44,6 +47,8 @@ pub struct DaemonStatusUpdate {
     pub tests_failed: usize,
     /// Names of failing tests.
     pub failing_tests: Vec<SharedString>,
+    /// Test assertion failures represented as source diagnostics.
+    pub test_failures: Vec<FileDiagnostic>,
 }
 
 impl DaemonStatusUpdate {
@@ -174,6 +179,25 @@ impl CoreDaemon {
                     for test in &summary.tests.results {
                         if test.status == holo_interpreter::TestStatus::Failed {
                             update.failing_tests.push(test.name.clone());
+                            if let Some(span) = test.failure_span {
+                                let diagnostic =
+                                    SourceDiagnostic::new(
+                                        DiagnosticKind::Test,
+                                        format!("test `{}` assertion failed", test.name),
+                                    )
+                                    .with_annotated_span(span, "failing assertion")
+                                    .with_source_excerpt(
+                                        SourceExcerpt::new(pending.source.clone(), 1, 0),
+                                    );
+                                update.test_failures.push(FileDiagnostic {
+                                    file_path: file_path.clone(),
+                                    message: diagnostic.render_annotated(),
+                                    styled_message: Some(display_source_diagnostics(
+                                        std::slice::from_ref(&diagnostic),
+                                    )),
+                                    source_diagnostic: Some(diagnostic),
+                                });
+                            }
                         }
                     }
                     update
@@ -220,7 +244,7 @@ mod tests {
     use crate::CompilerCore;
     use crate::CoreCycleSummary;
     use holo_base::SharedString;
-    use holo_interpreter::{TestResult, TestRunSummary, TestStatus};
+    use holo_interpreter::{TestRunSummary, TestStatus};
     use holo_typechecker::TypecheckSummary;
 
     #[test]
@@ -325,6 +349,7 @@ mod tests {
             tests_passed: 1,
             tests_failed: 1,
             failing_tests: vec!["fail_b".into(), "fail_a".into()],
+            test_failures: Vec::new(),
         };
 
         let report = update.to_report();
@@ -356,15 +381,15 @@ error: z.holo: typecheck failed";
 
         assert!(report.contains("tests: run=2 passed=1 failed=1"));
         assert!(report.contains("failing_tests: fail_case"));
-        assert_eq!(
-            update
-                .processed_files
-                .first()
-                .and_then(|file| file.summary.tests.results.get(1)),
-            Some(&TestResult {
-                name: "fail_case".into(),
-                status: TestStatus::Failed
-            })
-        );
+        let result = update
+            .processed_files
+            .first()
+            .and_then(|file| file.summary.tests.results.get(1))
+            .expect("second test result should exist");
+        assert_eq!(result.name, "fail_case");
+        assert_eq!(result.status, TestStatus::Failed);
+        assert!(result.failure_span.is_some());
+        assert_eq!(update.test_failures.len(), 1);
+        assert_eq!(update.test_failures[0].file_path, "suite.holo");
     }
 }

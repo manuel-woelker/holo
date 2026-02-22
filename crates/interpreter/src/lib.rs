@@ -1,7 +1,7 @@
 //! Test interpreter for the minimal holo language.
 
 use holo_ast::{Expr, ExprKind, Module, Statement, TestItem};
-use holo_base::SharedString;
+use holo_base::{SharedString, Span};
 
 /// Final status for a single test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +17,8 @@ pub struct TestResult {
     pub name: SharedString,
     /// Final pass/fail status.
     pub status: TestStatus,
+    /// Span of the failing assertion when status is failed.
+    pub failure_span: Option<Span>,
 }
 
 /// Aggregate outcome across a full module test run.
@@ -60,12 +62,17 @@ impl BasicInterpreter {
 impl Interpreter for BasicInterpreter {
     fn run_test(&self, test: &TestItem) -> TestResult {
         let mut status = TestStatus::Passed;
+        let mut failure_span = None;
         for statement in &test.statements {
-            let assertion_holds = match statement {
-                Statement::Assert(assertion) => Self::eval_expr(&assertion.expression),
+            let (assertion_holds, span) = match statement {
+                Statement::Assert(assertion) => (
+                    Self::eval_expr(&assertion.expression),
+                    Some(assertion.expression.span),
+                ),
             };
             if !assertion_holds {
                 status = TestStatus::Failed;
+                failure_span = span;
                 break;
             }
         }
@@ -73,6 +80,7 @@ impl Interpreter for BasicInterpreter {
         TestResult {
             name: test.name.clone(),
             status,
+            failure_span,
         }
     }
 
@@ -119,6 +127,7 @@ mod tests {
         assert_eq!(summary.executed, 1);
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.results[0].status, TestStatus::Failed);
+        assert_eq!(summary.results[0].failure_span, Some(Span::new(16, 21)));
     }
 
     #[test]
@@ -146,5 +155,7 @@ mod tests {
         assert_eq!(summary.executed, 2);
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.failed, 1);
+        assert_eq!(summary.results[0].failure_span, None);
+        assert_eq!(summary.results[1].failure_span, Some(Span::new(17, 22)));
     }
 }
