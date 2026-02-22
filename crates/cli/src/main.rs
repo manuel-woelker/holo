@@ -478,16 +478,14 @@ fn run_deck_mode(root_dir: &Path) -> Result<()> {
 
     let endpoint_for_thread = endpoint.clone();
     thread::spawn(move || {
-        if let Err(error) =
-            stream_issue_updates(
-                &endpoint_for_thread,
-                updates_tx,
-                state_tx,
-                log_tx,
-                graph_tx,
-                performance_tx,
-            )
-        {
+        if let Err(error) = stream_issue_updates(
+            &endpoint_for_thread,
+            updates_tx,
+            state_tx,
+            log_tx,
+            graph_tx,
+            performance_tx,
+        ) {
             warn!(error = %error, "deck issue update stream ended");
         }
     });
@@ -741,6 +739,7 @@ fn extract_test_dependencies_from_source(
             .iter()
             .map(|statement| match statement {
                 Statement::Assert(_) => "assert".into(),
+                Statement::Let(_) | Statement::Expr(_) => "expr".into(),
             })
             .collect::<Vec<_>>();
         used_functions.sort();

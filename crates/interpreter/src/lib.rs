@@ -58,6 +58,11 @@ impl BasicInterpreter {
         match &expression.kind {
             ExprKind::BoolLiteral(value) => *value,
             ExprKind::Negation(inner) => !Self::eval_expr(inner),
+            ExprKind::NumberLiteral(_)
+            | ExprKind::Identifier(_)
+            | ExprKind::UnaryMinus(_)
+            | ExprKind::Binary(_)
+            | ExprKind::Call(_) => false,
         }
     }
 }
@@ -72,6 +77,7 @@ impl Interpreter for BasicInterpreter {
                     Self::eval_expr(&assertion.expression),
                     Some(assertion.expression.span),
                 ),
+                Statement::Let(_) | Statement::Expr(_) => continue,
             };
             if !assertion_holds {
                 status = TestStatus::Failed;
@@ -123,6 +129,7 @@ mod tests {
     #[test]
     fn marks_false_assertion_as_failed_test() {
         let module = Module {
+            functions: Vec::new(),
             tests: vec![TestItem {
                 name: "fails".into(),
                 statements: vec![Statement::Assert(AssertStatement {

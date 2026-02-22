@@ -10,6 +10,7 @@ use tracing::info;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     Bool,
+    Unknown,
 }
 
 /// Summary result returned by module typechecking.
@@ -47,9 +48,14 @@ impl BasicTypechecker {
         match &expression.kind {
             ExprKind::BoolLiteral(_) => Type::Bool,
             ExprKind::Negation(inner) => {
-                let _inner_type = Self::typecheck_expression(inner);
+                let _ = Self::typecheck_expression(inner);
                 Type::Bool
             }
+            ExprKind::NumberLiteral(_)
+            | ExprKind::Identifier(_)
+            | ExprKind::UnaryMinus(_)
+            | ExprKind::Binary(_)
+            | ExprKind::Call(_) => Type::Unknown,
         }
     }
 }
@@ -98,6 +104,7 @@ impl Typechecker for BasicTypechecker {
 
                         assertion_count += 1;
                     }
+                    Statement::Let(_) | Statement::Expr(_) => {}
                 }
             }
 
@@ -131,6 +138,7 @@ mod tests {
     #[test]
     fn typechecks_assertion_count_for_module() {
         let module = Module {
+            functions: Vec::new(),
             tests: vec![TestItem {
                 name: "sample".into(),
                 statements: vec![Statement::Assert(AssertStatement {
@@ -150,6 +158,7 @@ mod tests {
     #[test]
     fn reports_duplicate_test_names_and_continues() {
         let module = Module {
+            functions: Vec::new(),
             tests: vec![
                 TestItem {
                     name: "same_name".into(),

@@ -8,7 +8,17 @@ pub enum TokenKind {
     True,
     False,
     Assert,
+    Let,
     Bang,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Equals,
+    Comma,
+    Colon,
+    Arrow,
     OpenParen,
     CloseParen,
     OpenBrace,
@@ -19,6 +29,7 @@ pub enum TokenKind {
     CloseBracket,
     Fn,
     Identifier,
+    Number,
 }
 
 /// Source token with kind and byte span.
@@ -80,6 +91,7 @@ impl Lexer for BasicLexer {
                     "true" => TokenKind::True,
                     "false" => TokenKind::False,
                     "assert" => TokenKind::Assert,
+                    "let" => TokenKind::Let,
                     "fn" => TokenKind::Fn,
                     _ => TokenKind::Identifier,
                 };
@@ -92,8 +104,56 @@ impl Lexer for BasicLexer {
                 continue;
             }
 
+            if byte.is_ascii_digit() {
+                let start = index;
+                index += 1;
+                while index < bytes.len() && bytes[index].is_ascii_digit() {
+                    index += 1;
+                }
+                if index < bytes.len()
+                    && bytes[index] == b'.'
+                    && index + 1 < bytes.len()
+                    && bytes[index + 1].is_ascii_digit()
+                {
+                    index += 1;
+                    while index < bytes.len() && bytes[index].is_ascii_digit() {
+                        index += 1;
+                    }
+                }
+                while index < bytes.len() && bytes[index].is_ascii_alphanumeric() {
+                    index += 1;
+                }
+
+                let lexeme = &source[start..index];
+                tokens.push(Token {
+                    kind: TokenKind::Number,
+                    span: Span::new(start, index),
+                    lexeme: lexeme.into(),
+                });
+                continue;
+            }
+
             let token = match byte {
                 b'!' => TokenKind::Bang,
+                b'+' => TokenKind::Plus,
+                b'-' => {
+                    if index + 1 < bytes.len() && bytes[index + 1] == b'>' {
+                        tokens.push(Token {
+                            kind: TokenKind::Arrow,
+                            span: Span::new(index, index + 2),
+                            lexeme: "->".into(),
+                        });
+                        index += 2;
+                        continue;
+                    }
+                    TokenKind::Minus
+                }
+                b'*' => TokenKind::Star,
+                b'/' => TokenKind::Slash,
+                b'%' => TokenKind::Percent,
+                b'=' => TokenKind::Equals,
+                b',' => TokenKind::Comma,
+                b':' => TokenKind::Colon,
                 b'(' => TokenKind::OpenParen,
                 b')' => TokenKind::CloseParen,
                 b'{' => TokenKind::OpenBrace,
@@ -149,7 +209,7 @@ mod tests {
     #[test]
     fn lexes_keywords_and_symbols() {
         let lexer = BasicLexer;
-        let result = lexer.lex("#[test] fn demo() { assert(!false); }");
+        let result = lexer.lex("#[test] fn demo(x: i64) -> i64 { let y = 1 + x; assert(!false); }");
         assert!(result.diagnostics.is_empty());
         let tokens = result.tokens;
         assert_eq!(
@@ -158,6 +218,9 @@ mod tests {
         );
         assert!(tokens.iter().any(|token| token.kind == TokenKind::Assert));
         assert!(tokens.iter().any(|token| token.kind == TokenKind::Bang));
+        assert!(tokens.iter().any(|token| token.kind == TokenKind::Let));
+        assert!(tokens.iter().any(|token| token.kind == TokenKind::Number));
+        assert!(tokens.iter().any(|token| token.kind == TokenKind::Arrow));
     }
 
     #[test]
