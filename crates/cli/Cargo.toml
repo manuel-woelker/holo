@@ -9,3 +9,4 @@ publish = false
 [dependencies]
 holo-base = { path = "../base" }
 holo-core = { path = "../core" }
+tracing = "0.1"

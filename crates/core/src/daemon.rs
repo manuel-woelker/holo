@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use holo_base::Result;
+use tracing::{info, instrument, warn};
 
 use crate::{CompilerCore, CoreCycleSummary};
 
@@ -119,6 +120,7 @@ impl CoreDaemon {
     }
 
     /// Processes files that are ready after debounce has elapsed.
+    #[instrument(skip_all, fields(now_ms = now_ms))]
     pub fn process_ready(
         &mut self,
         core: &mut CompilerCore,
@@ -132,9 +134,15 @@ impl CoreDaemon {
             }
         }
         ready_files.sort();
+        info!(
+            pending_files = self.pending_changes.len(),
+            ready_files = ready_files.len(),
+            "processing daemon tick"
+        );
 
         let mut update = DaemonStatusUpdate::default();
         for file_path in ready_files {
+            info!(file_path = %file_path, "processing changed file");
             let pending = self
                 .pending_changes
                 .remove(&file_path)
@@ -155,6 +163,11 @@ impl CoreDaemon {
                         .push(ProcessedFile { file_path, summary });
                 }
                 Err(error) => {
+                    warn!(
+                        file_path = %file_path,
+                        error = %error,
+                        "compile-and-test cycle failed for file"
+                    );
                     update.errors.push(FileDiagnostic {
                         file_path,
                         message: error.to_string(),
@@ -162,6 +175,15 @@ impl CoreDaemon {
                 }
             }
         }
+
+        info!(
+            processed_files = update.processed_files.len(),
+            errors = update.errors.len(),
+            tests_run = update.tests_run,
+            tests_passed = update.tests_passed,
+            tests_failed = update.tests_failed,
+            "daemon tick completed"
+        );
 
         Ok(update)
     }

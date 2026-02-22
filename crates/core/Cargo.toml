@@ -14,3 +14,4 @@ holo-lexer = { path = "../lexer" }
 holo-parser = { path = "../parser" }
 holo-query = { path = "../query" }
 holo-typechecker = { path = "../typechecker" }
+tracing = "0.1"

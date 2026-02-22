@@ -13,6 +13,7 @@ use holo_lexer::{BasicLexer, Lexer};
 use holo_parser::{BasicParser, Parser};
 use holo_query::{InMemoryQueryStore, QueryKey, QueryStage, QueryStore, QueryValue};
 use holo_typechecker::{BasicTypechecker, TypecheckSummary, Typechecker};
+use tracing::{debug, info, instrument};
 
 /// Per-file outcome of one compile-and-test cycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +43,9 @@ impl CompilerCore {
     }
 
     /// Runs lexing, parsing, typechecking, and test execution for one source file.
+    #[instrument(skip_all, fields(file_path = %file_path, source_len = source.len()))]
     pub fn process_source(&mut self, file_path: &str, source: &str) -> Result<CoreCycleSummary> {
+        info!("starting compile-and-test cycle");
         let content_hash = hash_content(source);
         if !self
             .query_store
@@ -53,13 +56,17 @@ impl CompilerCore {
                 .get(&(file_path.to_owned(), content_hash))
                 .cloned()
             {
+                info!("cache hit for unchanged source hash");
                 return Ok(summary);
             }
         } else {
             self.cycle_cache.retain(|(path, _), _| path != file_path);
+            info!("source changed; invalidated previous cache entries");
         }
 
+        info!("lexing source");
         let tokens = self.lexer.lex(source)?;
+        debug!(token_count = tokens.len(), "lexing completed");
         self.query_store.put(
             QueryKey {
                 file_path: file_path.to_owned(),
@@ -69,7 +76,9 @@ impl CompilerCore {
             QueryValue::Message(format!("{} token(s)", tokens.len())),
         );
 
+        info!("parsing tokens");
         let module = self.parser.parse_module(&tokens)?;
+        debug!(test_item_count = module.tests.len(), "parsing completed");
         self.query_store.put(
             QueryKey {
                 file_path: file_path.to_owned(),
@@ -79,7 +88,13 @@ impl CompilerCore {
             QueryValue::Complete,
         );
 
+        info!("typechecking module");
         let typecheck = self.typechecker.typecheck_module(&module)?;
+        debug!(
+            typechecked_tests = typecheck.test_count,
+            assertions = typecheck.assertion_count,
+            "typechecking completed"
+        );
         self.query_store.put(
             QueryKey {
                 file_path: file_path.to_owned(),
@@ -89,7 +104,12 @@ impl CompilerCore {
             QueryValue::Complete,
         );
 
+        info!("collecting tests");
         let collected_tests = Self::collect_tests(&module);
+        debug!(
+            collected_tests = collected_tests.len(),
+            "test collection completed"
+        );
         self.query_store.put(
             QueryKey {
                 file_path: file_path.to_owned(),
@@ -99,7 +119,14 @@ impl CompilerCore {
             QueryValue::Message(format!("{} collected test(s)", collected_tests.len())),
         );
 
+        info!("running tests");
         let tests = self.interpreter.run_collected_tests(&collected_tests);
+        info!(
+            tests_run = tests.executed,
+            tests_passed = tests.passed,
+            tests_failed = tests.failed,
+            "test execution completed"
+        );
         self.query_store.put(
             QueryKey {
                 file_path: file_path.to_owned(),
@@ -119,6 +146,7 @@ impl CompilerCore {
         };
         self.cycle_cache
             .insert((file_path.to_owned(), content_hash), summary.clone());
+        info!("compile-and-test cycle completed");
 
         Ok(summary)
     }

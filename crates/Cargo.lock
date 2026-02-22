@@ -177,6 +177,7 @@ version = "0.1.0"
 dependencies = [
  "holo-base",
  "holo-core",
+ "tracing",
 ]
 
 [[package]]
@@ -190,6 +191,7 @@ dependencies = [
  "holo-parser",
  "holo-query",
  "holo-typechecker",
+ "tracing",
 ]
 
 [[package]]
