@@ -1014,7 +1014,10 @@ mod tests {
             app.push_log(format!("entry-{index}").into());
         }
         assert_eq!(app.logs.len(), MAX_LOG_ENTRIES);
-        assert_eq!(app.logs.first().map(|entry| entry.as_str()), Some("entry-5"));
+        assert_eq!(
+            app.logs.first().map(|entry| entry.as_str()),
+            Some("entry-5")
+        );
     }
 
     #[test]
