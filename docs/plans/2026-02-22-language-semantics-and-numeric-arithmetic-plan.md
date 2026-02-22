@@ -60,12 +60,12 @@ This plan focuses on language/frontend/runtime capability, not performance work.
 - Implement expression precedence and associativity.
 - Add parser diagnostics/recovery for malformed arithmetic and calls.
 
-2. **Type system primitives - In Progress**
+2. **Type system primitives - Done**
 - Add `Type` variants: `Bool`, `U32`, `U64`, `I32`, `I64`, `F32`, `F64`, and `Unit`.
 - Define operator typing tables for unary/binary operations.
 - Introduce function type representation (param types + return type).
 
-3. **Name resolution + function checking - Pending**
+3. **Name resolution + function checking - In Progress**
 - Track variable scopes and function symbol table.
 - Validate `let` redefinitions/shadowing policy (allow shadowing in inner scopes only).
 - Validate function declarations and call sites (existence, arity, argument types, return type use).
