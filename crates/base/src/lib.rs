@@ -7,7 +7,9 @@ pub mod span;
 
 pub use error::{ErrorKind, HoloError, Result};
 pub use parking_lot::Mutex;
-pub use source_diagnostic::{AnnotatedSpan, DiagnosticKind, SourceDiagnostic, SourceExcerpt};
+pub use source_diagnostic::{
+    display_source_diagnostics, AnnotatedSpan, DiagnosticKind, SourceDiagnostic, SourceExcerpt,
+};
 pub use span::Span;
 pub type SharedString = ecow::EcoString;
 

@@ -124,12 +124,93 @@ impl SourceDiagnostic {
     }
 }
 
+/// Renders diagnostics with ANSI colors and Unicode drawing characters.
+///
+/// This output is intended for terminal UIs and CLI output.
+pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedString {
+    let mut output = String::new();
+
+    for (index, diagnostic) in diagnostics.iter().enumerate() {
+        if index > 0 {
+            output.push('\n');
+        }
+
+        let (kind_color, kind_label) = diagnostic.kind.ansi_label();
+        output.push_str(&format!(
+            "{bold}{color}● {label}{reset}{bold}: {reset}{message}\n",
+            bold = ANSI_BOLD,
+            color = kind_color,
+            label = kind_label,
+            reset = ANSI_RESET,
+            message = diagnostic.message,
+        ));
+
+        if diagnostic.annotated_spans.is_empty() {
+            continue;
+        }
+
+        for annotation in &diagnostic.annotated_spans {
+            if let Some((line_no, column_no, line_text, caret_offset, caret_len)) = diagnostic
+                .source_excerpts
+                .iter()
+                .find_map(|excerpt| render_info_with_excerpt(annotation, excerpt))
+            {
+                output.push_str(&format!(
+                    "{dim}├─{reset} {cyan}--> line {line}, column {column}{reset}\n",
+                    dim = ANSI_DIM,
+                    cyan = ANSI_CYAN,
+                    reset = ANSI_RESET,
+                    line = line_no,
+                    column = column_no,
+                ));
+                output.push_str(&format!(
+                    "{dim}│ {reset}{blue}{line:>4} │{reset} {source}\n",
+                    dim = ANSI_DIM,
+                    blue = ANSI_BLUE,
+                    reset = ANSI_RESET,
+                    line = line_no,
+                    source = line_text,
+                ));
+                output.push_str(&format!(
+                    "{dim}│ {reset}     │ {red}{spacing}{carets}{reset} {annotation}\n",
+                    dim = ANSI_DIM,
+                    red = ANSI_RED,
+                    reset = ANSI_RESET,
+                    spacing = " ".repeat(caret_offset),
+                    carets = "┄".repeat(caret_len),
+                    annotation = annotation.message,
+                ));
+                continue;
+            }
+
+            output.push_str(&format!(
+                "{dim}└─{reset} at bytes {start}..{end}: {annotation}\n",
+                dim = ANSI_DIM,
+                reset = ANSI_RESET,
+                start = annotation.span.start,
+                end = annotation.span.end,
+                annotation = annotation.message,
+            ));
+        }
+    }
+
+    output.into()
+}
+
 impl DiagnosticKind {
     fn label(self) -> &'static str {
         match self {
             Self::Lexing => "lexing error",
             Self::Parsing => "parsing error",
             Self::Typecheck => "typecheck error",
+        }
+    }
+
+    fn ansi_label(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Lexing => (ANSI_YELLOW, "Lexing"),
+            Self::Parsing => (ANSI_RED, "Parsing"),
+            Self::Typecheck => (ANSI_MAGENTA, "Typecheck"),
         }
     }
 }
@@ -161,6 +242,29 @@ fn render_annotation_with_excerpt(
     ))
 }
 
+fn render_info_with_excerpt(
+    annotation: &AnnotatedSpan,
+    excerpt: &SourceExcerpt,
+) -> Option<(usize, usize, String, usize, usize)> {
+    let (line_no, line_start, line_text) = find_line_for_offset(excerpt, annotation.span.start)?;
+    let start = annotation.span.start.max(line_start);
+    let end = annotation.span.end.max(start + 1);
+    let line_end = line_start + line_text.len();
+    let caret_start = start.saturating_sub(line_start);
+    let caret_end = end.min(line_end).max(start + 1);
+    let caret_len = caret_end.saturating_sub(start).max(1);
+    Some((line_no, caret_start + 1, line_text, caret_start, caret_len))
+}
+
+const ANSI_RESET: &str = "\x1b[0m";
+const ANSI_BOLD: &str = "\x1b[1m";
+const ANSI_DIM: &str = "\x1b[2m";
+const ANSI_RED: &str = "\x1b[31m";
+const ANSI_YELLOW: &str = "\x1b[33m";
+const ANSI_BLUE: &str = "\x1b[34m";
+const ANSI_MAGENTA: &str = "\x1b[35m";
+const ANSI_CYAN: &str = "\x1b[36m";
+
 fn find_line_for_offset(excerpt: &SourceExcerpt, offset: usize) -> Option<(usize, usize, String)> {
     if offset < excerpt.starting_offset {
         return None;
@@ -182,7 +286,7 @@ fn find_line_for_offset(excerpt: &SourceExcerpt, offset: usize) -> Option<(usize
 
 #[cfg(test)]
 mod tests {
-    use super::{DiagnosticKind, SourceDiagnostic, SourceExcerpt};
+    use super::{display_source_diagnostics, DiagnosticKind, SourceDiagnostic, SourceExcerpt};
     use crate::Span;
 
     #[test]
@@ -211,5 +315,23 @@ mod tests {
         assert!(rendered.contains("--> line 10, column 7"));
         assert!(rendered.contains("10 | assert(true;"));
         assert!(rendered.contains("missing closing parenthesis"));
+    }
+
+    #[test]
+    fn displays_diagnostics_with_unicode_and_ansi() {
+        let diagnostics =
+            vec![
+                SourceDiagnostic::new(DiagnosticKind::Parsing, "expected expression")
+                    .with_source_excerpt(SourceExcerpt::new("assert();\n", 20, 300))
+                    .with_annotated_span(Span::new(307, 308), "missing expression"),
+            ];
+        let rendered = display_source_diagnostics(&diagnostics);
+
+        assert!(rendered.contains("● Parsing"));
+        assert!(rendered.contains("├─"));
+        assert!(rendered.contains("│"));
+        assert!(rendered.contains("┄"));
+        assert!(rendered.contains("\u{1b}[31m"));
+        assert!(rendered.contains("\u{1b}[1m"));
     }
 }
