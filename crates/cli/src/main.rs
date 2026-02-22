@@ -379,6 +379,11 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
     let mut issues = Vec::new();
 
     for error in &update.errors {
+        let detail = error
+            .styled_message
+            .as_ref()
+            .map(|message| strip_ansi_sequences(message))
+            .unwrap_or_else(|| error.message.clone());
         issues.push(ProjectIssue {
             title: format!("Compilation error in {}", error.file_path).into(),
             file: error.file_path.clone(),
@@ -386,7 +391,7 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
             kind: ProjectIssueKind::Compilation,
             severity: ProjectIssueSeverity::Error,
             summary: error.message.clone(),
-            detail: error.message.clone(),
+            detail,
         });
     }
 
@@ -689,6 +694,24 @@ fn map_ipc_issues_to_deck(issues: Vec<ProjectIssue>) -> Vec<DeckIssue> {
         .collect()
 }
 
+fn strip_ansi_sequences(input: &str) -> SharedString {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if ('@'..='~').contains(&next) {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    out.into()
+}
+
 fn daemon_endpoint_name(root_dir: &Path) -> Result<SharedString> {
     let canonical = root_dir.canonicalize().map_err(|error| {
         holo_message_error!(
@@ -885,7 +908,7 @@ mod tests {
     use super::{
         build_dependency_graph, collect_holo_sources, daemon_endpoint_name, display_source_path,
         is_holo_file, map_lifecycle_state_to_deck, parse_cli_mode, path_arg_or_default,
-        run_build_once, CliMode,
+        run_build_once, strip_ansi_sequences, CliMode,
     };
     use holo_base::SharedString;
     use holo_deck::DaemonState as DeckDaemonState;
@@ -1084,6 +1107,12 @@ mod tests {
         let two = daemon_endpoint_name(Path::new(".")).expect("endpoint should build");
         assert_eq!(one, two);
         assert!(one.starts_with("holo-daemon-"));
+    }
+
+    #[test]
+    fn strips_ansi_escape_sequences() {
+        let input = "\u{1b}[31merror\u{1b}[0m";
+        assert_eq!(strip_ansi_sequences(input), "error");
     }
 
     fn temp_source_dir(name: &str) -> std::path::PathBuf {
