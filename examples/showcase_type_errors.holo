@@ -1,0 +1,16 @@
+fn plus_i64(a: i64, b: i64) -> i64 { a + b; }
+
+fn bad_expressions() -> i64 {
+    let mixed = 1i64 + 2.0f64;
+    let bad_mod = 7.0f64 % 2.0f64;
+    mixed;
+    bad_mod;
+    missing_value;
+}
+
+#[test]
+fn type_errors_are_reported() {
+    plus_i64(1i64);
+    unknown_fn();
+    assert(true + false);
+}

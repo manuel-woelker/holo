@@ -1,0 +1,15 @@
+fn always_false() -> bool { false; }
+fn divide_by_zero_then_true() -> bool {
+    1i64 / 0i64;
+    true;
+}
+
+#[test]
+fn failing_assertion_example() {
+    assert(always_false());
+}
+
+#[test]
+fn runtime_error_example() {
+    assert(divide_by_zero_then_true());
+}

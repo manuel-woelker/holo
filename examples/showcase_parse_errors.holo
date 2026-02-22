@@ -1,0 +1,6 @@
+fn broken(a i64) -> i64 { a + ; }
+
+#[test]
+fn parse_error_case( {
+    assert(true);
+}

@@ -1,0 +1,29 @@
+fn add_i64(a: i64, b: i64) -> i64 { a + b; }
+fn mul_i32(a: i32, b: i32) -> i32 { a * b; }
+fn div_f64(a: f64, b: f64) -> f64 { a / b; }
+fn rem_u32(a: u32, b: u32) -> u32 { a % b; }
+fn rem_u64(a: u64, b: u64) -> u64 { a % b; }
+fn mul_f32(a: f32, b: f32) -> f32 { a * b; }
+
+#[test]
+fn numeric_functions_run() {
+    let sum: i64 = add_i64(10i64, 20i64);
+    let prod: i32 = mul_i32(2i32, 3i32);
+    let ratio: f64 = div_f64(9.0f64, 3.0f64);
+    let r1: u32 = rem_u32(9u32, 4u32);
+    let r2: u64 = rem_u64(10u64, 3u64);
+    let f: f32 = mul_f32(2.0f32, 5.0f32);
+
+    sum;
+    prod;
+    ratio;
+    r1;
+    r2;
+    f;
+    assert(true);
+}
+
+#[test]
+fn boolean_test_still_works() {
+    assert(!false);
+}
