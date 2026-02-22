@@ -113,6 +113,25 @@ impl SourceDiagnostic {
         self
     }
 
+    /// Attaches a single source excerpt and multiple annotations associated with it.
+    pub fn with_source_excerpt_annotations<I, M>(
+        mut self,
+        excerpt: SourceExcerpt,
+        annotations: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = (Span, M)>,
+        M: Into<SharedString>,
+    {
+        self.source_excerpts.push(excerpt);
+        self.annotated_spans.extend(
+            annotations
+                .into_iter()
+                .map(|(span, message)| AnnotatedSpan::new(span, message)),
+        );
+        self
+    }
+
     /// Renders the diagnostic as a human-readable annotated message.
     pub fn render_annotated(&self) -> SharedString {
         let mut output = String::new();
@@ -169,40 +188,51 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
             continue;
         }
 
+        let mut unmatched_annotations: Vec<&AnnotatedSpan> = Vec::new();
+        let mut rendered_by_line: Vec<DisplayRenderedAnnotation> = Vec::new();
         for annotation in &diagnostic.annotated_spans {
             if let Some((line_no, line_text, caret_offset, caret_len, source_name)) = diagnostic
                 .source_excerpts
                 .iter()
                 .find_map(|excerpt| render_info_with_excerpt(annotation, excerpt))
             {
-                output.push('\n');
-                if let Some(source_name) = source_name {
-                    output.push_str(&format!(
-                        "{dim}{file}:{line}{reset}\n",
-                        dim = ANSI_DIM,
-                        file = source_name,
-                        line = line_no,
-                        reset = ANSI_RESET,
-                    ));
-                }
-                output.push_str(&format!(
-                    "{blue}{line:>4} │{reset} {source}\n",
-                    blue = ANSI_BLUE,
-                    reset = ANSI_RESET,
-                    line = line_no,
-                    source = line_text,
-                ));
-                output.push_str(&format!(
-                    "     │ {red}{spacing}{carets}{reset} {annotation}\n",
-                    red = ANSI_RED,
-                    reset = ANSI_RESET,
-                    spacing = " ".repeat(caret_offset),
-                    carets = "┄".repeat(caret_len),
-                    annotation = annotation.message,
-                ));
-                continue;
+                rendered_by_line.push(DisplayRenderedAnnotation {
+                    message: annotation.message.clone(),
+                    line_no,
+                    line_text,
+                    caret_offset,
+                    caret_len,
+                    anchor_offset: caret_offset + caret_len.saturating_sub(1),
+                    source_name,
+                });
+            } else {
+                unmatched_annotations.push(annotation);
             }
+        }
 
+        rendered_by_line.sort_by_key(|annotation| (annotation.line_no, annotation.caret_offset));
+
+        let mut current_group: Option<(usize, String, Option<FilePath>)> = None;
+        let mut current_group_annotations: Vec<DisplayRenderedAnnotation> = Vec::new();
+        for annotation in rendered_by_line {
+            let group_key = (
+                annotation.line_no,
+                annotation.line_text.clone(),
+                annotation.source_name.clone(),
+            );
+            if current_group.as_ref() != Some(&group_key) && !current_group_annotations.is_empty() {
+                render_annotation_group(&mut output, &current_group_annotations);
+                current_group_annotations.clear();
+            }
+            current_group = Some(group_key);
+            current_group_annotations.push(annotation);
+        }
+
+        if !current_group_annotations.is_empty() {
+            render_annotation_group(&mut output, &current_group_annotations);
+        }
+
+        for annotation in unmatched_annotations {
             output.push_str(&format!(
                 "{dim}└─{reset} at bytes {start}..{end}: {annotation}\n",
                 dim = ANSI_DIM,
@@ -291,6 +321,93 @@ fn render_info_with_excerpt(
     ))
 }
 
+fn render_annotation_group(output: &mut String, annotations: &[DisplayRenderedAnnotation]) {
+    let first = &annotations[0];
+    output.push('\n');
+    if let Some(source_name) = &first.source_name {
+        output.push_str(&format!(
+            "{dim}{file}:{line}{reset}\n",
+            dim = ANSI_DIM,
+            file = source_name,
+            line = first.line_no,
+            reset = ANSI_RESET,
+        ));
+    }
+    output.push_str(&format!(
+        "{blue}{line:>4} │{reset} {source}\n",
+        blue = ANSI_BLUE,
+        reset = ANSI_RESET,
+        line = first.line_no,
+        source = &first.line_text,
+    ));
+
+    let line_width = first.line_text.chars().count();
+    let mut underline = vec![' '; line_width.max(1)];
+    for annotation in annotations {
+        let start = annotation
+            .caret_offset
+            .min(underline.len().saturating_sub(1));
+        let end = (annotation.caret_offset + annotation.caret_len).min(underline.len());
+        for cell in underline.iter_mut().take(end).skip(start) {
+            *cell = '─';
+        }
+        if end > 0 {
+            underline[end - 1] = '┬';
+        }
+    }
+    let mut ordered: Vec<DisplayRenderedAnnotation> = annotations.to_vec();
+    ordered.sort_by_key(|info| std::cmp::Reverse(info.anchor_offset));
+
+    let underline_text: String = underline.into_iter().collect();
+    if let Some(first) = ordered.first() {
+        let connector_column = first.anchor_offset.min(underline_text.chars().count());
+        let leading_underline: String = underline_text.chars().take(connector_column).collect();
+        output.push_str(&format!(
+            "     │ {red}{leading}─{reset} {message}\n",
+            red = ANSI_RED,
+            reset = ANSI_RESET,
+            leading = leading_underline,
+            message = first.message,
+        ));
+    } else {
+        output.push_str(&format!(
+            "     │ {red}{underline}{reset}\n",
+            red = ANSI_RED,
+            underline = underline_text,
+            reset = ANSI_RESET,
+        ));
+    }
+
+    for index in 1..ordered.len() {
+        let info = &ordered[index];
+        let mut prefix_cells = vec![' '; info.anchor_offset];
+        for later in ordered.iter().skip(index + 1) {
+            if later.anchor_offset < prefix_cells.len() {
+                prefix_cells[later.anchor_offset] = '│';
+            }
+        }
+        let prefix: String = prefix_cells.into_iter().collect();
+        output.push_str(&format!(
+            "     │ {red}{prefix}└─{reset} {message}\n",
+            red = ANSI_RED,
+            reset = ANSI_RESET,
+            prefix = prefix,
+            message = info.message,
+        ));
+    }
+}
+
+#[derive(Debug, Clone)]
+struct DisplayRenderedAnnotation {
+    message: SharedString,
+    line_no: usize,
+    line_text: String,
+    caret_offset: usize,
+    caret_len: usize,
+    anchor_offset: usize,
+    source_name: Option<FilePath>,
+}
+
 const ANSI_RESET: &str = "\x1b[0m";
 const ANSI_BOLD: &str = "\x1b[1m";
 const ANSI_DIM: &str = "\x1b[2m";
@@ -369,8 +486,69 @@ mod tests {
         assert!(rendered.contains(" │ "));
         assert!(rendered.contains("assert();"));
         assert!(rendered.contains("sample.holo:20"));
-        assert!(rendered.contains("┄"));
+        assert!(rendered.contains("─"));
+        assert!(!rendered.contains("──"));
         assert!(rendered.contains("\u{1b}[31m"));
         assert!(rendered.contains("\u{1b}[1m"));
+    }
+
+    #[test]
+    fn supports_multiple_annotations_for_single_source_excerpt() {
+        let diagnostic = SourceDiagnostic::new(
+            DiagnosticKind::Typecheck,
+            "arithmetic operands must have the same type",
+        )
+        .with_source_excerpt_annotations(
+            SourceExcerpt::new("1i64 + 2.0f64\n", 1, 0),
+            [
+                (Span::new(0, 4), "left operand has type `i64`"),
+                (Span::new(7, 13), "right operand has type `f64`"),
+            ],
+        );
+
+        assert_eq!(diagnostic.source_excerpts.len(), 1);
+        assert_eq!(diagnostic.annotated_spans.len(), 2);
+        assert_eq!(
+            diagnostic.annotated_spans[0].message,
+            "left operand has type `i64`"
+        );
+        assert_eq!(
+            diagnostic.annotated_spans[1].message,
+            "right operand has type `f64`"
+        );
+    }
+
+    #[test]
+    fn displays_single_excerpt_once_for_multiple_annotations() {
+        let diagnostics = vec![SourceDiagnostic::new(
+            DiagnosticKind::Typecheck,
+            "arithmetic operands must have the same type",
+        )
+        .with_source_excerpt_annotations(
+            SourceExcerpt::new("assert(1i64 + 2.0f64);\n", 1, 0),
+            [
+                (Span::new(7, 11), "left operand has type `i64`"),
+                (Span::new(14, 20), "right operand has type `f64`"),
+            ],
+        )];
+        let rendered = display_source_diagnostics(&diagnostics);
+
+        assert_eq!(rendered.matches("assert(1i64 + 2.0f64);").count(), 1);
+        assert!(rendered.contains("left operand has type `i64`"));
+        assert!(rendered.contains("right operand has type `f64`"));
+        let right_index = rendered
+            .find("right operand has type `f64`")
+            .expect("missing right annotation");
+        let left_index = rendered
+            .find("left operand has type `i64`")
+            .expect("missing left annotation");
+        assert!(
+            right_index < left_index,
+            "annotations should render from right to left:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("┬  └─"),
+            "first annotation connector should begin at the anchor without a gap:\n{rendered}"
+        );
     }
 }

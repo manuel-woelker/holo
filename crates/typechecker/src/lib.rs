@@ -147,6 +147,43 @@ impl BasicTypechecker {
         false
     }
 
+    fn check_same_arithmetic_operand_type(
+        diagnostics: &mut Vec<SourceDiagnostic>,
+        source: &str,
+        left: Type,
+        left_span: holo_base::Span,
+        right: Type,
+        right_span: holo_base::Span,
+    ) -> bool {
+        if left == Type::Unknown || right == Type::Unknown {
+            return false;
+        }
+        if left == right {
+            return true;
+        }
+
+        diagnostics.push(
+            SourceDiagnostic::new(
+                DiagnosticKind::Typecheck,
+                "arithmetic operands must have the same type",
+            )
+            .with_source_excerpt_annotations(
+                SourceExcerpt::new(source, 1, 0),
+                [
+                    (
+                        left_span,
+                        format!("left operand has type `{}`", Self::type_name(left)),
+                    ),
+                    (
+                        right_span,
+                        format!("right operand has type `{}`", Self::type_name(right)),
+                    ),
+                ],
+            ),
+        );
+        false
+    }
+
     fn typecheck_statement(
         statement: &Statement,
         diagnostics: &mut Vec<SourceDiagnostic>,
@@ -352,14 +389,13 @@ impl BasicTypechecker {
                     return Type::Unknown;
                 }
 
-                if !Self::check_same_type(
+                if !Self::check_same_arithmetic_operand_type(
                     diagnostics,
                     source,
                     left_type,
                     binary.left.span,
                     right_type,
                     binary.right.span,
-                    "arithmetic operands must have the same type",
                 ) {
                     return Type::Unknown;
                 }
@@ -717,10 +753,13 @@ mod tests {
         };
 
         let result = BasicTypechecker.typecheck_module(&module, "assert(1i64 + 2.0f64);");
-        assert!(result
+        let mismatch = result
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.message.contains("same type")));
+            .find(|diagnostic| diagnostic.message.contains("same type"))
+            .expect("expected arithmetic same-type diagnostic");
+        assert_eq!(mismatch.source_excerpts.len(), 1);
+        assert_eq!(mismatch.annotated_spans.len(), 2);
         let rendered = holo_base::display_source_diagnostics(&result.diagnostics);
         assert!(
             rendered.contains("left operand has type `i64`"),
