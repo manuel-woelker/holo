@@ -152,6 +152,7 @@ impl BasicTypechecker {
         diagnostics: &mut Vec<SourceDiagnostic>,
         source: &str,
         function_types: &HashMap<SharedString, FunctionType>,
+        function_spans: &HashMap<SharedString, holo_base::Span>,
         locals: &mut HashMap<SharedString, Type>,
         assertion_count: &mut usize,
     ) {
@@ -162,6 +163,7 @@ impl BasicTypechecker {
                     diagnostics,
                     source,
                     function_types,
+                    function_spans,
                     locals,
                 );
                 if expression_type != Type::Bool {
@@ -187,6 +189,7 @@ impl BasicTypechecker {
                     diagnostics,
                     source,
                     function_types,
+                    function_spans,
                     locals,
                 );
                 if locals.contains_key(&let_statement.name) {
@@ -231,6 +234,7 @@ impl BasicTypechecker {
                     diagnostics,
                     source,
                     function_types,
+                    function_spans,
                     locals,
                 );
             }
@@ -242,6 +246,7 @@ impl BasicTypechecker {
         diagnostics: &mut Vec<SourceDiagnostic>,
         source: &str,
         function_types: &HashMap<SharedString, FunctionType>,
+        function_spans: &HashMap<SharedString, holo_base::Span>,
         locals: &HashMap<SharedString, Type>,
     ) -> Type {
         match &expression.kind {
@@ -262,8 +267,14 @@ impl BasicTypechecker {
                 Type::Unknown
             }
             ExprKind::Negation(inner) => {
-                let inner_type =
-                    Self::typecheck_expression(inner, diagnostics, source, function_types, locals);
+                let inner_type = Self::typecheck_expression(
+                    inner,
+                    diagnostics,
+                    source,
+                    function_types,
+                    function_spans,
+                    locals,
+                );
                 if inner_type != Type::Bool && inner_type != Type::Unknown {
                     diagnostics.push(
                         SourceDiagnostic::new(
@@ -277,8 +288,14 @@ impl BasicTypechecker {
                 Type::Bool
             }
             ExprKind::UnaryMinus(inner) => {
-                let inner_type =
-                    Self::typecheck_expression(inner, diagnostics, source, function_types, locals);
+                let inner_type = Self::typecheck_expression(
+                    inner,
+                    diagnostics,
+                    source,
+                    function_types,
+                    function_spans,
+                    locals,
+                );
                 if matches!(inner_type, Type::I32 | Type::I64 | Type::F32 | Type::F64) {
                     inner_type
                 } else {
@@ -301,6 +318,7 @@ impl BasicTypechecker {
                     diagnostics,
                     source,
                     function_types,
+                    function_spans,
                     locals,
                 );
                 let right_type = Self::typecheck_expression(
@@ -308,6 +326,7 @@ impl BasicTypechecker {
                     diagnostics,
                     source,
                     function_types,
+                    function_spans,
                     locals,
                 );
                 if left_type == Type::Unknown || right_type == Type::Unknown {
@@ -393,6 +412,7 @@ impl BasicTypechecker {
                             diagnostics,
                             source,
                             function_types,
+                            function_spans,
                             locals,
                         );
                     }
@@ -400,27 +420,33 @@ impl BasicTypechecker {
                 };
 
                 if call.arguments.len() != function_type.parameter_types.len() {
-                    diagnostics.push(
-                        SourceDiagnostic::new(
-                            DiagnosticKind::Typecheck,
-                            format!(
-                                "function `{callee_name}` expects {} argument(s) but got {}",
-                                function_type.parameter_types.len(),
-                                call.arguments.len()
-                            ),
-                        )
-                        .with_annotated_span(
-                            expression.span,
-                            "call argument count does not match function signature",
-                        )
-                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    let mut diagnostic = SourceDiagnostic::new(
+                        DiagnosticKind::Typecheck,
+                        format!(
+                            "function `{callee_name}` expects {} argument(s) but got {}",
+                            function_type.parameter_types.len(),
+                            call.arguments.len()
+                        ),
+                    )
+                    .with_annotated_span(
+                        expression.span,
+                        "call argument count does not match function signature",
                     );
+                    if let Some(definition_span) = function_spans.get(callee_name) {
+                        diagnostic = diagnostic.with_annotated_span(
+                            *definition_span,
+                            format!("function `{callee_name}` is defined here"),
+                        );
+                    }
+                    diagnostics
+                        .push(diagnostic.with_source_excerpt(SourceExcerpt::new(source, 1, 0)));
                     for argument in &call.arguments {
                         let _ = Self::typecheck_expression(
                             argument,
                             diagnostics,
                             source,
                             function_types,
+                            function_spans,
                             locals,
                         );
                     }
@@ -433,6 +459,7 @@ impl BasicTypechecker {
                         diagnostics,
                         source,
                         function_types,
+                        function_spans,
                         locals,
                     );
                     let expected_type = function_type.parameter_types[index];
@@ -463,6 +490,7 @@ impl Typechecker for BasicTypechecker {
         let mut diagnostics = Vec::new();
         let mut timings = Vec::new();
         let mut function_types = HashMap::new();
+        let mut function_spans = HashMap::new();
         let mut seen_function_names = HashMap::new();
         for function in &module.functions {
             if let Some(first_span) = seen_function_names.get(function.name.as_str()).copied() {
@@ -490,6 +518,7 @@ impl Typechecker for BasicTypechecker {
                     return_type: Self::type_from_ref(function.return_type),
                 },
             );
+            function_spans.insert(function.name.clone(), function.span);
         }
 
         for function in &module.functions {
@@ -522,6 +551,7 @@ impl Typechecker for BasicTypechecker {
                     &mut diagnostics,
                     source,
                     &function_types,
+                    &function_spans,
                     &mut locals,
                     &mut assertion_count,
                 );
@@ -551,6 +581,7 @@ impl Typechecker for BasicTypechecker {
                     &mut diagnostics,
                     source,
                     &function_types,
+                    &function_spans,
                     &mut locals,
                     &mut assertion_count,
                 );
@@ -799,6 +830,11 @@ mod tests {
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
             .contains("expects 2 argument(s) but got 1")));
+        let rendered = holo_base::display_source_diagnostics(&result.diagnostics);
+        assert!(
+            rendered.contains("function `sum` is defined here"),
+            "{rendered}"
+        );
     }
 
     #[test]
