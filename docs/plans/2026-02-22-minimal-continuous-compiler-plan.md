@@ -109,7 +109,7 @@ Diagnostics should include file path, line, column, and short actionable message
 ## What Milestones Should We Implement In Order?
 1. **Project wiring - Done**
 Create `holo-ast`, `holo-lexer`, `holo-parser`, `holo-typechecker`, `holo-interpreter`, and `holo-core` crates; add `holo-query` as a dedicated query crate (or stage it inside `holo-core` initially).
-2. **Lexer + Parser + AST - In Progress**
+2. **Lexer + Parser + AST - Done**
 Parse boolean literals, unary negation, assert statements, and test item declarations with spans across dedicated crates.
 3. **Typecheck - In Progress**
 Validate negation/assert typing rules over AST with clear boundaries between `holo-typechecker` and `holo-core`.
