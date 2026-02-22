@@ -630,8 +630,21 @@ fn extract_test_dependencies_from_source(
 ) -> Result<Vec<TestDependency>> {
     let lexer = BasicLexer;
     let parser = BasicParser;
-    let tokens = lexer.lex(source)?;
-    let module = parser.parse_module(&tokens)?;
+    let lexed = lexer.lex(source);
+    if !lexed.diagnostics.is_empty() {
+        let rendered = lexed.diagnostics[0].render_annotated();
+        return Err(holo_message_error!(
+            "failed to extract graph dependencies for {file_path}: {rendered}"
+        ));
+    }
+    let parsed = parser.parse_module(&lexed.tokens, source);
+    if !parsed.diagnostics.is_empty() {
+        let rendered = parsed.diagnostics[0].render_annotated();
+        return Err(holo_message_error!(
+            "failed to extract graph dependencies for {file_path}: {rendered}"
+        ));
+    }
+    let module = parsed.module;
 
     let mut dependencies = Vec::new();
     for test in module.tests {

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use bitcode::{Decode, Encode};
 use holo_ast::{Module, TestItem};
-use holo_base::{holo_message_error, Result, SharedString};
+use holo_base::{holo_message_error, DiagnosticKind, Result, SharedString, SourceDiagnostic, Span};
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{BasicInterpreter, Interpreter, TestRunSummary, TestStatus};
 use holo_lexer::{BasicLexer, Lexer};
@@ -27,6 +27,8 @@ pub struct CoreCycleSummary {
     pub typecheck: TypecheckSummary,
     /// Test execution summary.
     pub tests: TestRunSummary,
+    /// Collected source diagnostics for this file.
+    pub diagnostics: Vec<SourceDiagnostic>,
 }
 
 /// Coordinates compiler stages and query cache updates.
@@ -100,8 +102,14 @@ impl CompilerCore {
         }
 
         info!("lexing source");
-        let tokens = self.lexer.lex(source)?;
-        debug!(token_count = tokens.len(), "lexing completed");
+        let lexed = self.lexer.lex(source);
+        let tokens = lexed.tokens;
+        let mut diagnostics = lexed.diagnostics;
+        debug!(
+            token_count = tokens.len(),
+            diagnostics = diagnostics.len(),
+            "lexing completed"
+        );
         self.query_store.put(
             QueryKey {
                 file_path: file_path.into(),
@@ -112,8 +120,14 @@ impl CompilerCore {
         );
 
         info!("parsing tokens");
-        let module = self.parser.parse_module(&tokens)?;
-        debug!(test_item_count = module.tests.len(), "parsing completed");
+        let parsed = self.parser.parse_module(&tokens, source);
+        let module = parsed.module;
+        diagnostics.extend(parsed.diagnostics);
+        debug!(
+            test_item_count = module.tests.len(),
+            diagnostics = diagnostics.len(),
+            "parsing completed"
+        );
         self.query_store.put(
             QueryKey {
                 file_path: file_path.into(),
@@ -124,10 +138,13 @@ impl CompilerCore {
         );
 
         info!("typechecking module");
-        let typecheck = self.typechecker.typecheck_module(&module)?;
+        let typechecked = self.typechecker.typecheck_module(&module, source);
+        let typecheck = typechecked.summary;
+        diagnostics.extend(typechecked.diagnostics);
         debug!(
             typechecked_tests = typecheck.test_count,
             assertions = typecheck.assertion_count,
+            diagnostics = diagnostics.len(),
             "typechecking completed"
         );
         self.query_store.put(
@@ -181,6 +198,7 @@ impl CompilerCore {
             token_count: tokens.len(),
             typecheck,
             tests,
+            diagnostics,
         };
         self.cycle_cache
             .insert((file_path.into(), content_hash), summary.clone());
@@ -250,6 +268,7 @@ struct PersistedCycleSummary {
     tests_passed: usize,
     tests_failed: usize,
     test_results: Vec<PersistedTestResult>,
+    diagnostics: Vec<PersistedDiagnostic>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
@@ -262,6 +281,27 @@ struct PersistedTestResult {
 enum PersistedTestStatus {
     Passed,
     Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+struct PersistedDiagnostic {
+    kind: PersistedDiagnosticKind,
+    message: String,
+    annotated_spans: Vec<PersistedAnnotatedSpan>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode)]
+enum PersistedDiagnosticKind {
+    Lexing,
+    Parsing,
+    Typecheck,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+struct PersistedAnnotatedSpan {
+    start: usize,
+    end: usize,
+    message: String,
 }
 
 impl PersistedCycleSummary {
@@ -284,6 +324,11 @@ impl PersistedCycleSummary {
                         TestStatus::Failed => PersistedTestStatus::Failed,
                     },
                 })
+                .collect(),
+            diagnostics: summary
+                .diagnostics
+                .iter()
+                .map(PersistedDiagnostic::from_runtime)
                 .collect(),
         }
     }
@@ -311,7 +356,54 @@ impl PersistedCycleSummary {
                     })
                     .collect(),
             },
+            diagnostics: self
+                .diagnostics
+                .into_iter()
+                .map(PersistedDiagnostic::into_runtime)
+                .collect(),
         }
+    }
+}
+
+impl PersistedDiagnostic {
+    fn from_runtime(diagnostic: &SourceDiagnostic) -> Self {
+        Self {
+            kind: match diagnostic.kind {
+                DiagnosticKind::Lexing => PersistedDiagnosticKind::Lexing,
+                DiagnosticKind::Parsing => PersistedDiagnosticKind::Parsing,
+                DiagnosticKind::Typecheck => PersistedDiagnosticKind::Typecheck,
+            },
+            message: diagnostic.message.to_string(),
+            annotated_spans: diagnostic
+                .annotated_spans
+                .iter()
+                .map(|span| PersistedAnnotatedSpan {
+                    start: span.span.start,
+                    end: span.span.end,
+                    message: span.message.to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    fn into_runtime(self) -> SourceDiagnostic {
+        let mut diagnostic = SourceDiagnostic::new(
+            match self.kind {
+                PersistedDiagnosticKind::Lexing => DiagnosticKind::Lexing,
+                PersistedDiagnosticKind::Parsing => DiagnosticKind::Parsing,
+                PersistedDiagnosticKind::Typecheck => DiagnosticKind::Typecheck,
+            },
+            self.message,
+        );
+
+        for annotated_span in self.annotated_spans {
+            diagnostic.annotated_spans.push(holo_base::AnnotatedSpan {
+                span: Span::new(annotated_span.start, annotated_span.end),
+                message: annotated_span.message.into(),
+            });
+        }
+
+        diagnostic
     }
 }
 
@@ -425,6 +517,18 @@ mod tests {
             core.query_value("suite.holo", QueryStage::CollectTests, source),
             Some(&QueryValue::Message("2 collected test(s)".into()))
         );
+    }
+
+    #[test]
+    fn collects_diagnostics_and_continues_pipeline() {
+        let mut core = CompilerCore::default();
+        let source = "#[test] fn good() { assert(true); } @ #[test] fn bad() { assert(); }";
+        let summary = core
+            .process_source("diagnostics.holo", source)
+            .expect("pipeline should continue despite diagnostics");
+
+        assert!(summary.tests.executed >= 1);
+        assert!(!summary.diagnostics.is_empty());
     }
 
     #[test]

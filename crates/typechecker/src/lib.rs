@@ -1,9 +1,9 @@
 //! Typechecking interfaces and the minimal boolean typechecker.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
-use holo_ast::{AssertStatement, Expr, ExprKind, Module, Statement};
-use holo_base::{holo_message_error, Result};
+use holo_ast::{Expr, ExprKind, Module, Statement};
+use holo_base::{DiagnosticKind, SourceDiagnostic, SourceExcerpt};
 
 /// Type representation for the minimal language.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,10 +20,19 @@ pub struct TypecheckSummary {
     pub assertion_count: usize,
 }
 
+/// Result payload produced by typechecking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypecheckResult {
+    /// Typechecking summary for the module.
+    pub summary: TypecheckSummary,
+    /// Typechecking diagnostics encountered while validating the module.
+    pub diagnostics: Vec<SourceDiagnostic>,
+}
+
 /// Typechecking abstraction used by the core compiler crate.
 pub trait Typechecker {
     /// Validates semantic and type rules for a module.
-    fn typecheck_module(&self, module: &Module) -> Result<TypecheckSummary>;
+    fn typecheck_module(&self, module: &Module, source: &str) -> TypecheckResult;
 }
 
 /// Minimal typechecker for boolean expressions and assert statements.
@@ -31,62 +40,70 @@ pub trait Typechecker {
 pub struct BasicTypechecker;
 
 impl BasicTypechecker {
-    fn typecheck_expression(expression: &Expr) -> Result<Type> {
+    fn typecheck_expression(expression: &Expr) -> Type {
         match &expression.kind {
-            ExprKind::BoolLiteral(_) => Ok(Type::Bool),
+            ExprKind::BoolLiteral(_) => Type::Bool,
             ExprKind::Negation(inner) => {
-                let inner_type = Self::typecheck_expression(inner)?;
-                if inner_type != Type::Bool {
-                    return Err(holo_message_error!(
-                        "negation requires a boolean operand at span {}..{}",
-                        expression.span.start,
-                        expression.span.end
-                    ));
-                }
-                Ok(Type::Bool)
+                let _inner_type = Self::typecheck_expression(inner);
+                Type::Bool
             }
         }
-    }
-
-    fn typecheck_assert(statement: &AssertStatement) -> Result<Type> {
-        let expression_type = Self::typecheck_expression(&statement.expression)?;
-        if expression_type != Type::Bool {
-            return Err(holo_message_error!(
-                "assert expects a boolean expression at span {}..{}",
-                statement.span.start,
-                statement.span.end
-            ));
-        }
-        Ok(Type::Bool)
     }
 }
 
 impl Typechecker for BasicTypechecker {
-    fn typecheck_module(&self, module: &Module) -> Result<TypecheckSummary> {
-        let mut seen_test_names = HashSet::new();
+    fn typecheck_module(&self, module: &Module, source: &str) -> TypecheckResult {
+        let mut seen_test_names = HashMap::new();
         let mut assertion_count = 0usize;
+        let mut diagnostics = Vec::new();
+
         for test in &module.tests {
-            if !seen_test_names.insert(test.name.as_str()) {
-                return Err(holo_message_error!(
-                    "duplicate test function name `{}` in module",
-                    test.name
-                ));
+            if let Some(first_span) = seen_test_names.get(test.name.as_str()).copied() {
+                diagnostics.push(
+                    SourceDiagnostic::new(
+                        DiagnosticKind::Typecheck,
+                        format!("duplicate test function name `{}` in module", test.name),
+                    )
+                    .with_annotated_span(first_span, "first declaration of this test name")
+                    .with_annotated_span(test.span, "duplicate declaration")
+                    .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                );
+            } else {
+                seen_test_names.insert(test.name.clone(), test.span);
             }
 
             for statement in &test.statements {
                 match statement {
                     Statement::Assert(assertion) => {
-                        let _assert_type = Self::typecheck_assert(assertion)?;
+                        let expression_type = Self::typecheck_expression(&assertion.expression);
+                        if expression_type != Type::Bool {
+                            diagnostics.push(
+                                SourceDiagnostic::new(
+                                    DiagnosticKind::Typecheck,
+                                    "assert expects a boolean expression",
+                                )
+                                .with_annotated_span(
+                                    assertion.span,
+                                    "this assertion does not evaluate to `bool`",
+                                )
+                                .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                            );
+                            continue;
+                        }
+
                         assertion_count += 1;
                     }
                 }
             }
         }
 
-        Ok(TypecheckSummary {
-            test_count: module.tests.len(),
-            assertion_count,
-        })
+        TypecheckResult {
+            summary: TypecheckSummary {
+                test_count: module.tests.len(),
+                assertion_count,
+            },
+            diagnostics,
+        }
     }
 }
 
@@ -109,15 +126,14 @@ mod tests {
             }],
         };
 
-        let summary = BasicTypechecker
-            .typecheck_module(&module)
-            .expect("typechecking should succeed");
-        assert_eq!(summary.test_count, 1);
-        assert_eq!(summary.assertion_count, 1);
+        let result = BasicTypechecker.typecheck_module(&module, "#[test] fn sample() { ... }");
+        assert_eq!(result.summary.test_count, 1);
+        assert_eq!(result.summary.assertion_count, 1);
+        assert!(result.diagnostics.is_empty());
     }
 
     #[test]
-    fn rejects_duplicate_test_names() {
+    fn reports_duplicate_test_names_and_continues() {
         let module = Module {
             tests: vec![
                 TestItem {
@@ -139,12 +155,12 @@ mod tests {
             ],
         };
 
-        let error = BasicTypechecker
-            .typecheck_module(&module)
-            .expect_err("typechecking should reject duplicate test names");
-        assert!(
-            error.to_string().contains("duplicate test function name"),
-            "actual error: {error}"
-        );
+        let result = BasicTypechecker.typecheck_module(&module, "#[test] fn same_name() { ... }");
+        assert_eq!(result.summary.test_count, 2);
+        assert_eq!(result.summary.assertion_count, 2);
+        assert_eq!(result.diagnostics.len(), 1);
+        assert!(result.diagnostics[0]
+            .message
+            .contains("duplicate test function name"));
     }
 }

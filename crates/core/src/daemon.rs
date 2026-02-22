@@ -157,6 +157,12 @@ impl CoreDaemon {
                     update.tests_run += summary.tests.executed;
                     update.tests_passed += summary.tests.passed;
                     update.tests_failed += summary.tests.failed;
+                    for diagnostic in &summary.diagnostics {
+                        update.errors.push(FileDiagnostic {
+                            file_path: file_path.clone(),
+                            message: diagnostic.render_annotated(),
+                        });
+                    }
                     for test in &summary.tests.results {
                         if test.status == holo_interpreter::TestStatus::Failed {
                             update.failing_tests.push(test.name.clone());
@@ -283,6 +289,7 @@ mod tests {
                             assertion_count: 1,
                         },
                         tests: TestRunSummary::default(),
+                        diagnostics: Vec::new(),
                     },
                 },
                 ProcessedFile {
@@ -294,6 +301,7 @@ mod tests {
                             assertion_count: 1,
                         },
                         tests: TestRunSummary::default(),
+                        diagnostics: Vec::new(),
                     },
                 },
             ],

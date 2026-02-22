@@ -1,6 +1,6 @@
 //! Tokenization interfaces for the minimal holo language.
 
-use holo_base::{holo_message_error, Result, SharedString, Span};
+use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, Span};
 
 /// Token categories required by the initial parser milestone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -35,7 +35,16 @@ pub struct Token {
 /// Lexing abstraction used by higher-level compiler orchestration.
 pub trait Lexer {
     /// Produces a token stream from source text.
-    fn lex(&self, source: &str) -> Result<Vec<Token>>;
+    fn lex(&self, source: &str) -> LexResult;
+}
+
+/// Result payload produced by lexing.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LexResult {
+    /// Produced token stream.
+    pub tokens: Vec<Token>,
+    /// Lexing diagnostics encountered while tokenizing.
+    pub diagnostics: Vec<SourceDiagnostic>,
 }
 
 /// Minimal lexer implementation used for initial pipeline wiring.
@@ -43,8 +52,9 @@ pub trait Lexer {
 pub struct BasicLexer;
 
 impl Lexer for BasicLexer {
-    fn lex(&self, source: &str) -> Result<Vec<Token>> {
+    fn lex(&self, source: &str) -> LexResult {
         let mut tokens = Vec::new();
+        let mut diagnostics = Vec::new();
         let bytes = source.as_bytes();
         let mut index = 0usize;
 
@@ -93,11 +103,20 @@ impl Lexer for BasicLexer {
                 b'[' => TokenKind::OpenBracket,
                 b']' => TokenKind::CloseBracket,
                 _ => {
-                    return Err(holo_message_error!(
-                        "unsupported character '{}' at byte {}",
-                        byte as char,
-                        index
-                    ));
+                    let display = display_byte(byte);
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Lexing,
+                            format!("unsupported character `{display}`"),
+                        )
+                        .with_annotated_span(
+                            Span::new(index, index + 1),
+                            "this character is not part of the language",
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                    index += 1;
+                    continue;
                 }
             };
 
@@ -109,8 +128,18 @@ impl Lexer for BasicLexer {
             index += 1;
         }
 
-        Ok(tokens)
+        LexResult {
+            tokens,
+            diagnostics,
+        }
     }
+}
+
+fn display_byte(byte: u8) -> String {
+    if byte.is_ascii_graphic() || byte == b' ' {
+        return (byte as char).to_string();
+    }
+    format!("0x{byte:02X}")
 }
 
 #[cfg(test)]
@@ -120,14 +149,28 @@ mod tests {
     #[test]
     fn lexes_keywords_and_symbols() {
         let lexer = BasicLexer;
-        let tokens = lexer
-            .lex("#[test] fn demo() { assert(!false); }")
-            .expect("lexing should succeed");
+        let result = lexer.lex("#[test] fn demo() { assert(!false); }");
+        assert!(result.diagnostics.is_empty());
+        let tokens = result.tokens;
         assert_eq!(
             tokens.first().map(|token| token.kind),
             Some(TokenKind::Hash)
         );
         assert!(tokens.iter().any(|token| token.kind == TokenKind::Assert));
         assert!(tokens.iter().any(|token| token.kind == TokenKind::Bang));
+    }
+
+    #[test]
+    fn reports_unsupported_character_and_continues() {
+        let lexer = BasicLexer;
+        let result = lexer.lex("#[test] fn demo() { assert(@true); }");
+        assert_eq!(result.diagnostics.len(), 1);
+        assert!(result.diagnostics[0]
+            .render_annotated()
+            .contains("unsupported character"));
+        assert!(result
+            .tokens
+            .iter()
+            .any(|token| token.kind == TokenKind::True));
     }
 }
