@@ -5,3 +5,4 @@ ui/*.tsbuildinfo
 target/
 crates/target/
 crates/target*/
+**/.holo/
