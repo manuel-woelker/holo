@@ -379,15 +379,16 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
     let mut issues = Vec::new();
 
     for error in &update.errors {
+        let line = diagnostic_line_number(error).unwrap_or(1);
         let detail = error
             .styled_message
             .as_ref()
             .map(|message| strip_ansi_sequences(message))
             .unwrap_or_else(|| error.message.clone());
         issues.push(ProjectIssue {
-            title: format!("Compilation error in {}", error.file_path).into(),
+            title: format!("Compilation diagnostic at {}:{line}", error.file_path).into(),
             file: error.file_path.clone(),
-            line: 1,
+            line,
             kind: ProjectIssueKind::Compilation,
             severity: ProjectIssueSeverity::Error,
             summary: error.message.clone(),
@@ -398,7 +399,7 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
 
     for failing_test in &update.failing_tests {
         issues.push(ProjectIssue {
-            title: format!("Test failed: {failing_test}").into(),
+            title: format!("Test failure at <test-suite>:1 ({failing_test})").into(),
             file: "<test-suite>".into(),
             line: 1,
             kind: ProjectIssueKind::Test,
@@ -413,6 +414,15 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
     }
 
     issues
+}
+
+fn diagnostic_line_number(error: &holo_core::daemon::FileDiagnostic) -> Option<usize> {
+    let diagnostic = error.source_diagnostic.as_ref()?;
+    let span_start = diagnostic.annotated_spans.first()?.span.start;
+    diagnostic
+        .source_excerpts
+        .iter()
+        .find_map(|excerpt| line_number_for_offset(excerpt, span_start))
 }
 
 #[instrument(skip_all, fields(root_dir = %root_dir.display()))]
@@ -697,6 +707,25 @@ fn map_ipc_issues_to_deck(issues: Vec<ProjectIssue>) -> Vec<DeckIssue> {
         .collect()
 }
 
+fn line_number_for_offset(excerpt: &holo_base::SourceExcerpt, offset: usize) -> Option<usize> {
+    if offset < excerpt.starting_offset {
+        return None;
+    }
+
+    let mut absolute_start = excerpt.starting_offset;
+    for (index, raw_line) in excerpt.source.split('\n').enumerate() {
+        let line = raw_line.trim_end_matches('\r');
+        let line_start = absolute_start;
+        let line_end = line_start + line.len();
+        if offset >= line_start && offset <= line_end {
+            return Some(excerpt.starting_line + index);
+        }
+        absolute_start += raw_line.len() + 1;
+    }
+
+    None
+}
+
 fn strip_ansi_sequences(input: &str) -> SharedString {
     let mut out = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
@@ -910,10 +939,10 @@ struct TestDependency {
 mod tests {
     use super::{
         build_dependency_graph, collect_holo_sources, daemon_endpoint_name, display_source_path,
-        is_holo_file, map_lifecycle_state_to_deck, parse_cli_mode, path_arg_or_default,
-        run_build_once, strip_ansi_sequences, CliMode,
+        is_holo_file, line_number_for_offset, map_lifecycle_state_to_deck, parse_cli_mode,
+        path_arg_or_default, run_build_once, strip_ansi_sequences, CliMode,
     };
-    use holo_base::SharedString;
+    use holo_base::{SharedString, SourceExcerpt};
     use holo_deck::DaemonState as DeckDaemonState;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1116,6 +1145,15 @@ mod tests {
     fn strips_ansi_escape_sequences() {
         let input = "\u{1b}[31merror\u{1b}[0m";
         assert_eq!(strip_ansi_sequences(input), "error");
+    }
+
+    #[test]
+    fn computes_line_number_for_offset() {
+        let excerpt = SourceExcerpt::new("first\nsecond\nthird\n", 10, 100);
+        assert_eq!(line_number_for_offset(&excerpt, 100), Some(10));
+        assert_eq!(line_number_for_offset(&excerpt, 106), Some(11));
+        assert_eq!(line_number_for_offset(&excerpt, 113), Some(12));
+        assert_eq!(line_number_for_offset(&excerpt, 99), None);
     }
 
     fn temp_source_dir(name: &str) -> std::path::PathBuf {

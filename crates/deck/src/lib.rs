@@ -49,36 +49,11 @@ pub enum ProjectIssueKind {
     Test,
 }
 
-impl ProjectIssueKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Compilation => "Compilation",
-            Self::Test => "Test",
-        }
-    }
-
-    fn short_tag(self) -> &'static str {
-        match self {
-            Self::Compilation => "COMP",
-            Self::Test => "TEST",
-        }
-    }
-}
-
 /// Issue severity displayed in deck.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectIssueSeverity {
     Error,
     Warning,
-}
-
-impl ProjectIssueSeverity {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Error => "Error",
-            Self::Warning => "Warning",
-        }
-    }
 }
 
 /// Opens deck TUI with static example data.
@@ -298,30 +273,11 @@ fn draw_master(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
     let items = app
         .issues
         .iter()
-        .map(|issue| {
-            let severity_style = match issue.severity {
-                ProjectIssueSeverity::Error => {
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
-                }
-                ProjectIssueSeverity::Warning => Style::default().fg(Color::Yellow),
-            };
-            ListItem::new(vec![Line::from(vec![
-                Span::styled(
-                    format!("[{}] ", issue.kind.short_tag()),
-                    Style::default().fg(Color::Cyan),
-                ),
-                Span::styled(format!("[{}] ", issue.severity.label()), severity_style),
-                Span::raw(issue.title.as_str()),
-            ])])
-        })
+        .map(|issue| ListItem::new(vec![Line::from(Span::raw(issue.title.as_str()))]))
         .collect::<Vec<_>>();
 
     let list = List::new(items)
-        .block(
-            Block::default()
-                .title("Issues (Master)")
-                .borders(Borders::ALL),
-        )
+        .block(Block::default().title("Issues").borders(Borders::ALL))
         .highlight_style(
             Style::default()
                 .fg(Color::Black)
@@ -343,52 +299,14 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
     };
 
     let rendered_diagnostics = if issue.source_diagnostics.is_empty() {
-        None
+        issue.detail.clone()
     } else {
-        Some(strip_ansi_sequences(&display_source_diagnostics(
-            &issue.source_diagnostics,
-        )))
+        strip_ansi_sequences(&display_source_diagnostics(&issue.source_diagnostics))
     };
 
-    let mut body = vec![
-        Line::from(vec![
-            Span::styled("Title: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(issue.title.as_str()),
-        ]),
-        Line::from(vec![
-            Span::styled("Kind: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(issue.kind.label()),
-        ]),
-        Line::from(vec![
-            Span::styled("Severity: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(issue.severity.label()),
-        ]),
-        Line::from(vec![
-            Span::styled("Location: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(format!("{}:{}", issue.file, issue.line)),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Summary: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(issue.summary.as_str()),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Detail: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(issue.detail.as_str()),
-        ]),
-        Line::from(""),
-        Line::from(vec![Span::styled(
-            "Diagnostics:",
-            Style::default().add_modifier(Modifier::BOLD),
-        )]),
-    ];
-    if let Some(rendered) = rendered_diagnostics {
-        for line in rendered.lines() {
-            body.push(Line::from(line.to_owned()));
-        }
-    } else {
-        body.push(Line::from("<none>"));
+    let mut body = Vec::new();
+    for line in rendered_diagnostics.lines() {
+        body.push(Line::from(line.to_owned()));
     }
     body.push(Line::from(""));
     body.push(Line::from(Span::styled(
@@ -397,11 +315,7 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
     )));
 
     let detail = Paragraph::new(body)
-        .block(
-            Block::default()
-                .title("Issue Detail (Detail)")
-                .borders(Borders::ALL),
-        )
+        .block(Block::default().title("Diagnostics").borders(Borders::ALL))
         .wrap(Wrap { trim: false });
     frame.render_widget(detail, area);
 }
