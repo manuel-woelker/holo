@@ -16,6 +16,10 @@ Note: All developer documentation should be written in English.
 
 - **Host Language**: Rust
 
+## Shared String Policy
+
+Use `holo_base::SharedString` instead of `String` for project-owned string data by default.
+
 ## Development Commands
 
 ## Project Structure

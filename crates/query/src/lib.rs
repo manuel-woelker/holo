@@ -1,5 +1,6 @@
 //! Query keys and in-memory cache used by compiler orchestration.
 
+use holo_base::SharedString;
 use std::collections::HashMap;
 
 /// Pipeline stage used to namespace query entries.
@@ -16,7 +17,7 @@ pub enum QueryStage {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QueryKey {
     /// File path the query is associated with.
-    pub file_path: String,
+    pub file_path: SharedString,
     /// Pipeline stage this query belongs to.
     pub stage: QueryStage,
     /// Hash of the file contents used to produce the value.
@@ -29,7 +30,7 @@ pub enum QueryValue {
     /// Marker for successful stage completion.
     Complete,
     /// Human-readable status or diagnostic payload.
-    Message(String),
+    Message(SharedString),
 }
 
 /// Query cache abstraction used by `holo-core`.
@@ -50,7 +51,7 @@ pub trait QueryStore {
 #[derive(Debug, Default)]
 pub struct InMemoryQueryStore {
     entries: HashMap<QueryKey, QueryValue>,
-    file_hashes: HashMap<String, u64>,
+    file_hashes: HashMap<SharedString, u64>,
 }
 
 impl QueryStore for InMemoryQueryStore {
@@ -68,7 +69,7 @@ impl QueryStore for InMemoryQueryStore {
         }
 
         self.invalidate_file(file_path);
-        self.file_hashes.insert(file_path.to_owned(), content_hash);
+        self.file_hashes.insert(file_path.into(), content_hash);
         true
     }
 
@@ -92,7 +93,7 @@ mod tests {
     fn invalidates_entries_for_specific_file() {
         let mut store = InMemoryQueryStore::default();
         let key = QueryKey {
-            file_path: "sample.holo".to_owned(),
+            file_path: "sample.holo".into(),
             stage: QueryStage::Lex,
             content_hash: 11,
         };
@@ -114,7 +115,7 @@ mod tests {
     fn invalidates_cache_when_hash_changes() {
         let mut store = InMemoryQueryStore::default();
         let key = QueryKey {
-            file_path: "sample.holo".to_owned(),
+            file_path: "sample.holo".into(),
             stage: QueryStage::Lex,
             content_hash: 11,
         };

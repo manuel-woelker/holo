@@ -9,7 +9,7 @@ use std::path::Path;
 
 use bitcode::{Decode, Encode};
 use holo_ast::{Module, TestItem};
-use holo_base::{holo_message_error, Result};
+use holo_base::{holo_message_error, Result, SharedString};
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{BasicInterpreter, Interpreter, TestRunSummary, TestStatus};
 use holo_lexer::{BasicLexer, Lexer};
@@ -37,7 +37,7 @@ pub struct CompilerCore {
     typechecker: BasicTypechecker,
     interpreter: BasicInterpreter,
     query_store: InMemoryQueryStore,
-    cycle_cache: HashMap<(String, u64), CoreCycleSummary>,
+    cycle_cache: HashMap<(SharedString, u64), CoreCycleSummary>,
     persisted_cache: Option<PersistedCache>,
 }
 
@@ -79,7 +79,7 @@ impl CompilerCore {
         {
             if let Some(summary) = self
                 .cycle_cache
-                .get(&(file_path.to_owned(), content_hash))
+                .get(&(file_path.into(), content_hash))
                 .cloned()
             {
                 info!("cache hit for unchanged source hash");
@@ -94,7 +94,7 @@ impl CompilerCore {
             if let Some(summary) = cache.load_summary(file_path, content_hash_bytes)? {
                 info!("cache hit from persisted database");
                 self.cycle_cache
-                    .insert((file_path.to_owned(), content_hash), summary.clone());
+                    .insert((file_path.into(), content_hash), summary.clone());
                 return Ok(summary);
             }
         }
@@ -104,11 +104,11 @@ impl CompilerCore {
         debug!(token_count = tokens.len(), "lexing completed");
         self.query_store.put(
             QueryKey {
-                file_path: file_path.to_owned(),
+                file_path: file_path.into(),
                 stage: QueryStage::Lex,
                 content_hash,
             },
-            QueryValue::Message(format!("{} token(s)", tokens.len())),
+            QueryValue::Message(format!("{} token(s)", tokens.len()).into()),
         );
 
         info!("parsing tokens");
@@ -116,7 +116,7 @@ impl CompilerCore {
         debug!(test_item_count = module.tests.len(), "parsing completed");
         self.query_store.put(
             QueryKey {
-                file_path: file_path.to_owned(),
+                file_path: file_path.into(),
                 stage: QueryStage::Parse,
                 content_hash,
             },
@@ -132,7 +132,7 @@ impl CompilerCore {
         );
         self.query_store.put(
             QueryKey {
-                file_path: file_path.to_owned(),
+                file_path: file_path.into(),
                 stage: QueryStage::Typecheck,
                 content_hash,
             },
@@ -147,11 +147,11 @@ impl CompilerCore {
         );
         self.query_store.put(
             QueryKey {
-                file_path: file_path.to_owned(),
+                file_path: file_path.into(),
                 stage: QueryStage::CollectTests,
                 content_hash,
             },
-            QueryValue::Message(format!("{} collected test(s)", collected_tests.len())),
+            QueryValue::Message(format!("{} collected test(s)", collected_tests.len()).into()),
         );
 
         info!("running tests");
@@ -164,14 +164,17 @@ impl CompilerCore {
         );
         self.query_store.put(
             QueryKey {
-                file_path: file_path.to_owned(),
+                file_path: file_path.into(),
                 stage: QueryStage::RunTests,
                 content_hash,
             },
-            QueryValue::Message(format!(
-                "{} executed / {} passed / {} failed",
-                tests.executed, tests.passed, tests.failed
-            )),
+            QueryValue::Message(
+                format!(
+                    "{} executed / {} passed / {} failed",
+                    tests.executed, tests.passed, tests.failed
+                )
+                .into(),
+            ),
         );
 
         let summary = CoreCycleSummary {
@@ -180,7 +183,7 @@ impl CompilerCore {
             tests,
         };
         self.cycle_cache
-            .insert((file_path.to_owned(), content_hash), summary.clone());
+            .insert((file_path.into(), content_hash), summary.clone());
         if let Some(cache) = &self.persisted_cache {
             cache.store_summary(file_path, content_hash_bytes, &summary)?;
         }
@@ -197,7 +200,7 @@ impl CompilerCore {
         source: &str,
     ) -> Option<&QueryValue> {
         let key = QueryKey {
-            file_path: file_path.to_owned(),
+            file_path: file_path.into(),
             stage,
             content_hash: content_hash_u64(&content_hash_bytes(source)),
         };
@@ -275,7 +278,7 @@ impl PersistedCycleSummary {
                 .results
                 .iter()
                 .map(|result| PersistedTestResult {
-                    name: result.name.clone(),
+                    name: result.name.to_string(),
                     status: match result.status {
                         TestStatus::Passed => PersistedTestStatus::Passed,
                         TestStatus::Failed => PersistedTestStatus::Failed,
@@ -300,7 +303,7 @@ impl PersistedCycleSummary {
                     .test_results
                     .into_iter()
                     .map(|result| holo_interpreter::TestResult {
-                        name: result.name,
+                        name: result.name.into(),
                         status: match result.status {
                             PersistedTestStatus::Passed => TestStatus::Passed,
                             PersistedTestStatus::Failed => TestStatus::Failed,
@@ -329,7 +332,7 @@ impl PersistedCache {
         content_hash: [u8; 32],
         summary: &CoreCycleSummary,
     ) -> Result<()> {
-        let key = CoreArtifactKey(file_path.to_owned());
+        let key = CoreArtifactKey(file_path.into());
         let persisted = PersistedCycleSummary::from_runtime(summary);
         let record = ArtifactRecord {
             bytes: bitcode::encode(&persisted),
@@ -346,7 +349,7 @@ impl PersistedCache {
         file_path: &str,
         content_hash: [u8; 32],
     ) -> Result<Option<CoreCycleSummary>> {
-        let key = CoreArtifactKey(file_path.to_owned());
+        let key = CoreArtifactKey(file_path.into());
         let Some(record) = self
             .db
             .get_artifact(&CoreArtifactKind::CycleSummary, &key)?
@@ -402,7 +405,7 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(
             core.query_value("smoke.holo", QueryStage::CollectTests, source),
-            Some(&QueryValue::Message("1 collected test(s)".to_owned()))
+            Some(&QueryValue::Message("1 collected test(s)".into()))
         );
     }
 
@@ -420,7 +423,7 @@ mod tests {
         assert_eq!(summary.tests.failed, 1);
         assert_eq!(
             core.query_value("suite.holo", QueryStage::CollectTests, source),
-            Some(&QueryValue::Message("2 collected test(s)".to_owned()))
+            Some(&QueryValue::Message("2 collected test(s)".into()))
         );
     }
 

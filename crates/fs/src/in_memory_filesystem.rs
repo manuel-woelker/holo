@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use holo_base::{ErrorKind, HoloError, Mutex, Result};
+use holo_base::{ErrorKind, HoloError, Mutex, Result, SharedString};
 
 use crate::FileSystem;
 
 #[derive(Debug, Default)]
 struct State {
-    files: HashMap<PathBuf, String>,
+    files: HashMap<PathBuf, SharedString>,
     dirs: HashSet<PathBuf>,
 }
 
@@ -30,7 +30,7 @@ impl InMemoryFileSystem {
 }
 
 impl FileSystem for InMemoryFileSystem {
-    fn read_to_string(&self, path: &Path) -> Result<String> {
+    fn read_to_string(&self, path: &Path) -> Result<SharedString> {
         let state = self.lock_state();
         match state.files.get(path) {
             Some(contents) => Ok(contents.clone()),
@@ -40,7 +40,7 @@ impl FileSystem for InMemoryFileSystem {
 
     fn write_string(&self, path: &Path, contents: &str) -> Result<()> {
         let mut state = self.lock_state();
-        state.files.insert(path.to_path_buf(), contents.to_owned());
+        state.files.insert(path.to_path_buf(), contents.into());
         Ok(())
     }
 

@@ -1,6 +1,6 @@
 //! Tokenization interfaces for the minimal holo language.
 
-use holo_base::{holo_message_error, Result, Span};
+use holo_base::{holo_message_error, Result, SharedString, Span};
 
 /// Token categories required by the initial parser milestone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -29,7 +29,7 @@ pub struct Token {
     /// Byte range in original source.
     pub span: Span,
     /// Raw lexeme for identifiers and debugging output.
-    pub lexeme: String,
+    pub lexeme: SharedString,
 }
 
 /// Lexing abstraction used by higher-level compiler orchestration.
@@ -77,7 +77,7 @@ impl Lexer for BasicLexer {
                 tokens.push(Token {
                     kind,
                     span: Span::new(start, index),
-                    lexeme: lexeme.to_owned(),
+                    lexeme: lexeme.into(),
                 });
                 continue;
             }
@@ -104,7 +104,7 @@ impl Lexer for BasicLexer {
             tokens.push(Token {
                 kind: token,
                 span: Span::new(index, index + 1),
-                lexeme: (byte as char).to_string(),
+                lexeme: (byte as char).to_string().into(),
             });
             index += 1;
         }

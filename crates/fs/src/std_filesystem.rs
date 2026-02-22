@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use holo_base::{ErrorKind, HoloError, Result};
+use holo_base::{ErrorKind, HoloError, Result, SharedString};
 
 use crate::FileSystem;
 
@@ -9,11 +9,13 @@ use crate::FileSystem;
 pub struct StdFileSystem;
 
 impl FileSystem for StdFileSystem {
-    fn read_to_string(&self, path: &Path) -> Result<String> {
-        std::fs::read_to_string(path).map_err(|error| {
-            holo_base::holo_message_error!("failed to read {}", path.display())
-                .with_source(HoloError::new(ErrorKind::Io).with_std_source(error))
-        })
+    fn read_to_string(&self, path: &Path) -> Result<SharedString> {
+        std::fs::read_to_string(path)
+            .map(|value| value.into())
+            .map_err(|error| {
+                holo_base::holo_message_error!("failed to read {}", path.display())
+                    .with_source(HoloError::new(ErrorKind::Io).with_std_source(error))
+            })
     }
 
     fn write_string(&self, path: &Path, contents: &str) -> Result<()> {

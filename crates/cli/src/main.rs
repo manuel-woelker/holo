@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use holo_ast::Statement;
-use holo_base::{holo_message_error, Result};
+use holo_base::{holo_message_error, Result, SharedString};
 use holo_core::daemon::{CoreDaemon, DaemonStatusUpdate};
 use holo_core::CompilerCore;
 use holo_deck::{
@@ -29,7 +29,7 @@ use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use tracing::{debug, error, info, instrument, warn};
 
 #[instrument(skip_all, fields(root_dir = %root_dir.display()))]
-fn run_build_once(root_dir: &Path) -> Result<String> {
+fn run_build_once(root_dir: &Path) -> Result<SharedString> {
     info!("starting source discovery");
     let sources = collect_holo_sources(root_dir)?;
     info!(source_count = sources.len(), "completed source discovery");
@@ -64,9 +64,9 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
 
     let state = Arc::new(Mutex::new(DaemonSharedState {
         issues: Vec::new(),
-        daemon_state: "Compiling".to_owned(),
-        logs: vec!["daemon started".to_owned()],
-        dependency_graph: "pipeline:\n  <no .holo files discovered>".to_owned(),
+        daemon_state: "Compiling".into(),
+        logs: vec!["daemon started".into()],
+        dependency_graph: "pipeline:\n  <no .holo files discovered>".into(),
     }));
     let subscribers: Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>> = Arc::new(Mutex::new(Vec::new()));
 
@@ -93,14 +93,14 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
         append_log_and_broadcast(
             &state,
             &subscribers,
-            format!("parsing {} changed file(s)", startup_sources.len()),
+            format!("parsing {} changed file(s)", startup_sources.len()).into(),
         );
         append_log_and_broadcast(
             &state,
             &subscribers,
-            format!("typechecking {} changed file(s)", startup_sources.len()),
+            format!("typechecking {} changed file(s)", startup_sources.len()).into(),
         );
-        broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Compiling".to_owned()));
+        broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Compiling".into()));
         daemon.enqueue_startup_sources(startup_sources, startup_now);
         let startup_update = daemon.process_ready(&mut core, startup_now)?;
         apply_update_to_state_and_subscribers(&startup_update, &state, &subscribers);
@@ -110,13 +110,13 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
     } else {
         info!("no .holo files found during daemon startup");
         if let Ok(mut guard) = state.lock() {
-            guard.daemon_state = "Green".to_owned();
+            guard.daemon_state = "Green".into();
         }
-        broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Green".to_owned()));
+        broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Green".into()));
         set_dependency_graph_and_broadcast(
             &state,
             &subscribers,
-            "pipeline:\n  <no .holo files discovered>".to_owned(),
+            "pipeline:\n  <no .holo files discovered>".into(),
         );
     }
 
@@ -151,19 +151,16 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
                     continue;
                 }
 
-                broadcast_to_subscribers(
+                broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Compiling".into()));
+                append_log_and_broadcast(
+                    &state,
                     &subscribers,
-                    DaemonEvent::Lifecycle("Compiling".to_owned()),
+                    format!("parsing {changed_count} changed file(s)").into(),
                 );
                 append_log_and_broadcast(
                     &state,
                     &subscribers,
-                    format!("parsing {changed_count} changed file(s)"),
-                );
-                append_log_and_broadcast(
-                    &state,
-                    &subscribers,
-                    format!("typechecking {changed_count} changed file(s)"),
+                    format!("typechecking {changed_count} changed file(s)").into(),
                 );
                 let update = daemon.process_ready(&mut core, current_time_ms())?;
                 apply_update_to_state_and_subscribers(&update, &state, &subscribers);
@@ -296,14 +293,12 @@ fn handle_ipc_connection(
                 .len();
             connection.send(&WireMessage::Response {
                 request_id,
-                response: Response::StatusReport(format!("issues: {issue_count}")),
+                response: Response::StatusReport(format!("issues: {issue_count}").into()),
             })
         }
         Request::Build | Request::Shutdown => connection.send(&WireMessage::Response {
             request_id,
-            response: Response::Error(
-                "request is not supported by this daemon endpoint".to_owned(),
-            ),
+            response: Response::Error("request is not supported by this daemon endpoint".into()),
         }),
     }
 }
@@ -314,7 +309,7 @@ fn apply_update_to_state_and_subscribers(
     subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
 ) {
     let issues = derive_issues(update);
-    let daemon_state = daemon_state_label_for_update(update).to_owned();
+    let daemon_state: SharedString = daemon_state_label_for_update(update).into();
     if let Ok(mut guard) = state.lock() {
         guard.issues = issues.clone();
         guard.daemon_state = daemon_state.clone();
@@ -330,7 +325,8 @@ fn apply_update_to_state_and_subscribers(
             update.processed_files.len(),
             update.errors.len(),
             update.tests_failed
-        ),
+        )
+        .into(),
     );
 }
 
@@ -348,7 +344,7 @@ fn broadcast_to_subscribers(
 fn append_log_and_broadcast(
     state: &Arc<Mutex<DaemonSharedState>>,
     subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
-    entry: String,
+    entry: SharedString,
 ) {
     if let Ok(mut guard) = state.lock() {
         guard.logs.push(entry.clone());
@@ -363,7 +359,7 @@ fn append_log_and_broadcast(
 fn set_dependency_graph_and_broadcast(
     state: &Arc<Mutex<DaemonSharedState>>,
     subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
-    graph: String,
+    graph: SharedString,
 ) {
     if let Ok(mut guard) = state.lock() {
         guard.dependency_graph = graph.clone();
@@ -384,7 +380,7 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
 
     for error in &update.errors {
         issues.push(ProjectIssue {
-            title: format!("Compilation error in {}", error.file_path),
+            title: format!("Compilation error in {}", error.file_path).into(),
             file: error.file_path.clone(),
             line: 1,
             kind: ProjectIssueKind::Compilation,
@@ -396,15 +392,16 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
 
     for failing_test in &update.failing_tests {
         issues.push(ProjectIssue {
-            title: format!("Test failed: {failing_test}"),
-            file: "<test-suite>".to_owned(),
+            title: format!("Test failed: {failing_test}").into(),
+            file: "<test-suite>".into(),
             line: 1,
             kind: ProjectIssueKind::Test,
             severity: ProjectIssueSeverity::Error,
-            summary: format!("{failing_test} returned a failing assertion."),
+            summary: format!("{failing_test} returned a failing assertion.").into(),
             detail: format!(
                 "Daemon reported failing test `{failing_test}` in the most recent cycle."
-            ),
+            )
+            .into(),
         });
     }
 
@@ -419,8 +416,8 @@ fn run_deck_mode(root_dir: &Path) -> Result<()> {
     let initial_issues = request_issues_snapshot(&endpoint)?;
     let (updates_tx, updates_rx) = mpsc::channel::<Vec<DeckIssue>>();
     let (state_tx, state_rx) = mpsc::channel::<DeckDaemonState>();
-    let (log_tx, log_rx) = mpsc::channel::<String>();
-    let (graph_tx, graph_rx) = mpsc::channel::<String>();
+    let (log_tx, log_rx) = mpsc::channel::<SharedString>();
+    let (graph_tx, graph_rx) = mpsc::channel::<SharedString>();
     let _ = state_tx.send(DeckDaemonState::Green);
 
     let endpoint_for_thread = endpoint.clone();
@@ -504,8 +501,8 @@ fn stream_issue_updates(
     endpoint: &str,
     updates_tx: mpsc::Sender<Vec<DeckIssue>>,
     state_tx: mpsc::Sender<DeckDaemonState>,
-    log_tx: mpsc::Sender<String>,
-    graph_tx: mpsc::Sender<String>,
+    log_tx: mpsc::Sender<SharedString>,
+    graph_tx: mpsc::Sender<SharedString>,
 ) -> Result<()> {
     let mut connection = IpcConnection::connect(endpoint)?;
     connection.send(&WireMessage::Request {
@@ -588,7 +585,7 @@ fn map_lifecycle_state_to_deck(state: &str) -> DeckDaemonState {
     }
 }
 
-fn build_dependency_graph(root_dir: &Path) -> Result<String> {
+fn build_dependency_graph(root_dir: &Path) -> Result<SharedString> {
     let sources = collect_holo_sources(root_dir)?;
     let mut dependencies = Vec::new();
     for (file_path, source) in sources {
@@ -610,10 +607,10 @@ fn build_dependency_graph(root_dir: &Path) -> Result<String> {
             .then(left.file_path.cmp(&right.file_path))
     });
 
-    let mut lines = vec!["Tests".to_owned()];
+    let mut lines = vec!["Tests".into()];
     if dependencies.is_empty() {
-        lines.push("  <no discovered tests>".to_owned());
-        return Ok(lines.join("\n"));
+        lines.push("  <no discovered tests>".into());
+        return Ok(lines.join("\n").into());
     }
 
     for dependency in dependencies {
@@ -624,7 +621,7 @@ fn build_dependency_graph(root_dir: &Path) -> Result<String> {
         }
     }
 
-    Ok(lines.join("\n"))
+    Ok(lines.join("\n").into())
 }
 
 fn extract_test_dependencies_from_source(
@@ -642,7 +639,7 @@ fn extract_test_dependencies_from_source(
             .statements
             .iter()
             .map(|statement| match statement {
-                Statement::Assert(_) => "assert".to_owned(),
+                Statement::Assert(_) => "assert".into(),
             })
             .collect::<Vec<_>>();
         used_functions.sort();
@@ -650,7 +647,7 @@ fn extract_test_dependencies_from_source(
 
         dependencies.push(TestDependency {
             test_name: test.name,
-            file_path: file_path.to_owned(),
+            file_path: file_path.into(),
             used_functions,
         });
     }
@@ -679,7 +676,7 @@ fn map_ipc_issues_to_deck(issues: Vec<ProjectIssue>) -> Vec<DeckIssue> {
         .collect()
 }
 
-fn daemon_endpoint_name(root_dir: &Path) -> Result<String> {
+fn daemon_endpoint_name(root_dir: &Path) -> Result<SharedString> {
     let canonical = root_dir.canonicalize().map_err(|error| {
         holo_message_error!(
             "failed to canonicalize root directory {}",
@@ -690,7 +687,7 @@ fn daemon_endpoint_name(root_dir: &Path) -> Result<String> {
     let canonical_string = canonical.to_string_lossy();
     let mut hasher = DefaultHasher::new();
     canonical_string.hash(&mut hasher);
-    Ok(format!("holo-daemon-{:016x}", hasher.finish()))
+    Ok(format!("holo-daemon-{:016x}", hasher.finish()).into())
 }
 
 fn record_changed_holo_files(
@@ -715,20 +712,20 @@ fn record_changed_holo_files(
         })?;
         let source_path = display_source_path(root_dir, path);
         info!(path = %source_path, "detected source change");
-        daemon.record_change(source_path, source, now_ms);
+        daemon.record_change(source_path, source.into(), now_ms);
         changed += 1;
     }
     Ok(changed)
 }
 
-fn display_source_path(root_dir: &Path, path: &Path) -> String {
+fn display_source_path(root_dir: &Path, path: &Path) -> SharedString {
     if let Ok(relative) = path.strip_prefix(root_dir) {
         if relative.components().next() == Some(Component::CurDir) {
-            return relative.to_string_lossy().into_owned();
+            return relative.to_string_lossy().into_owned().into();
         }
-        return format!(".\\{}", relative.display());
+        return format!(".\\{}", relative.display()).into();
     }
-    path.to_string_lossy().into_owned()
+    path.to_string_lossy().into_owned().into()
 }
 
 fn current_time_ms() -> u64 {
@@ -764,7 +761,7 @@ fn path_arg_or_default(args: &[String], index: usize) -> PathBuf {
 }
 
 #[instrument(skip_all, fields(root_dir = %root_dir.display()))]
-fn collect_holo_sources(root_dir: &Path) -> Result<Vec<(String, String)>> {
+fn collect_holo_sources(root_dir: &Path) -> Result<Vec<(SharedString, SharedString)>> {
     let mut paths = Vec::new();
     collect_holo_paths_recursive(root_dir, &mut paths)?;
     paths.sort();
@@ -777,7 +774,7 @@ fn collect_holo_sources(root_dir: &Path) -> Result<Vec<(String, String)>> {
             holo_message_error!("failed to read source file {}", path.display())
                 .with_std_source(error)
         })?;
-        sources.push((display_source_path(root_dir, &path), source));
+        sources.push((display_source_path(root_dir, &path), source.into()));
     }
     Ok(sources)
 }
@@ -858,16 +855,16 @@ fn main() {
 #[derive(Debug, Clone)]
 struct DaemonSharedState {
     issues: Vec<ProjectIssue>,
-    daemon_state: String,
-    logs: Vec<String>,
-    dependency_graph: String,
+    daemon_state: SharedString,
+    logs: Vec<SharedString>,
+    dependency_graph: SharedString,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TestDependency {
-    test_name: String,
-    file_path: String,
-    used_functions: Vec<String>,
+    test_name: SharedString,
+    file_path: SharedString,
+    used_functions: Vec<SharedString>,
 }
 
 #[cfg(test)]
@@ -877,9 +874,10 @@ mod tests {
         is_holo_file, map_lifecycle_state_to_deck, parse_cli_mode, path_arg_or_default,
         run_build_once, CliMode,
     };
+    use holo_base::SharedString;
     use holo_deck::DaemonState as DeckDaemonState;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -890,94 +888,77 @@ mod tests {
 
     #[test]
     fn parses_build_mode_with_default_path() {
-        let args = vec!["holo-cli".to_owned(), "build".to_owned()];
-        assert_eq!(
-            parse_cli_mode(&args),
-            CliMode::Build(Path::new(".").to_owned())
-        );
+        let args = vec!["holo-cli".into(), "build".into()];
+        assert_eq!(parse_cli_mode(&args), CliMode::Build(Path::new(".").into()));
     }
 
     #[test]
     fn parses_build_mode_with_custom_path() {
-        let args = vec![
-            "holo-cli".to_owned(),
-            "build".to_owned(),
-            "workspace".to_owned(),
-        ];
+        let args = vec!["holo-cli".into(), "build".into(), "workspace".into()];
         assert_eq!(
             parse_cli_mode(&args),
-            CliMode::Build(Path::new("workspace").to_owned())
+            CliMode::Build(Path::new("workspace").into())
         );
     }
 
     #[test]
     fn parses_deck_mode_with_default_path() {
-        let args = vec!["holo-cli".to_owned()];
-        assert_eq!(
-            parse_cli_mode(&args),
-            CliMode::Deck(Path::new(".").to_owned())
-        );
+        let args = vec!["holo-cli".into()];
+        assert_eq!(parse_cli_mode(&args), CliMode::Deck(Path::new(".").into()));
     }
 
     #[test]
     fn parses_deck_mode_with_custom_path() {
-        let args = vec!["holo-cli".to_owned(), "project".to_owned()];
+        let args = vec!["holo-cli".into(), "project".into()];
         assert_eq!(
             parse_cli_mode(&args),
-            CliMode::Deck(Path::new("project").to_owned())
+            CliMode::Deck(Path::new("project").into())
         );
     }
 
     #[test]
     fn parses_deck_subcommand_with_default_path() {
-        let args = vec!["holo-cli".to_owned(), "deck".to_owned()];
-        assert_eq!(
-            parse_cli_mode(&args),
-            CliMode::Deck(Path::new(".").to_owned())
-        );
+        let args = vec!["holo-cli".into(), "deck".into()];
+        assert_eq!(parse_cli_mode(&args), CliMode::Deck(Path::new(".").into()));
     }
 
     #[test]
     fn parses_deck_subcommand_with_custom_path() {
-        let args = vec!["holo-cli".to_owned(), "deck".to_owned(), "repo".to_owned()];
+        let args = vec!["holo-cli".into(), "deck".into(), "repo".into()];
         assert_eq!(
             parse_cli_mode(&args),
-            CliMode::Deck(Path::new("repo").to_owned())
+            CliMode::Deck(Path::new("repo").into())
         );
     }
 
     #[test]
     fn parses_version_subcommand() {
-        let args = vec!["holo-cli".to_owned(), "version".to_owned()];
+        let args = vec!["holo-cli".into(), "version".into()];
         assert_eq!(parse_cli_mode(&args), CliMode::Version);
     }
 
     #[test]
     fn parses_daemon_subcommand_with_default_path() {
-        let args = vec!["holo-cli".to_owned(), "daemon".to_owned()];
+        let args = vec!["holo-cli".into(), "daemon".into()];
         assert_eq!(
             parse_cli_mode(&args),
-            CliMode::Daemon(Path::new(".").to_owned())
+            CliMode::Daemon(Path::new(".").into())
         );
     }
 
     #[test]
     fn parses_daemon_subcommand_with_custom_path() {
-        let args = vec![
-            "holo-cli".to_owned(),
-            "daemon".to_owned(),
-            "repo".to_owned(),
-        ];
+        let args = vec!["holo-cli".into(), "daemon".into(), "repo".into()];
         assert_eq!(
             parse_cli_mode(&args),
-            CliMode::Daemon(Path::new("repo").to_owned())
+            CliMode::Daemon(Path::new("repo").into())
         );
     }
 
     #[test]
     fn path_arg_defaults_when_missing() {
-        let args = vec!["holo-cli".to_owned(), "daemon".to_owned()];
-        assert_eq!(path_arg_or_default(&args, 2), Path::new(".").to_owned());
+        let args = vec!["holo-cli".into(), "daemon".into()];
+        assert_eq!(path_arg_or_default(&args, 2), PathBuf::from("."));
     }
 
     #[test]
@@ -1041,17 +1022,20 @@ mod tests {
 
         let sources = collect_holo_sources(&temp).expect("source collection should succeed");
         assert_eq!(sources.len(), 2);
-        let mut names = sources
+        let mut names: Vec<SharedString> = sources
             .iter()
             .filter_map(|(path, _)| {
-                Path::new(path)
+                Path::new(path.as_str())
                     .file_name()
                     .and_then(|value| value.to_str())
-                    .map(|value| value.to_owned())
+                    .map(|value| value.into())
             })
             .collect::<Vec<_>>();
         names.sort();
-        assert_eq!(names, vec!["a.holo".to_owned(), "b.holo".to_owned()]);
+        assert_eq!(
+            names,
+            vec![SharedString::from("a.holo"), SharedString::from("b.holo")]
+        );
 
         fs::remove_dir_all(temp).expect("cleanup should succeed");
     }

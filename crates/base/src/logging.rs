@@ -18,10 +18,8 @@ pub fn init_logging() -> Result<()> {
             .with_env_filter(default_env_filter())
             .try_init()
             .map_err(|error| {
-                HoloError::new(ErrorKind::Message(
-                    "failed to initialize logging".to_owned(),
-                ))
-                .with_std_source(error)
+                HoloError::new(ErrorKind::Message("failed to initialize logging".into()))
+                    .with_std_source(error)
             });
     });
 

@@ -1,3 +1,4 @@
+use crate::SharedString;
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Formatter};
 
@@ -5,7 +6,7 @@ use std::fmt::{self, Display, Formatter};
 #[macro_export]
 macro_rules! holo_message_error {
     ($($arg:tt)*) => {
-        $crate::HoloError::new($crate::ErrorKind::Message(format!($($arg)*)))
+        $crate::HoloError::new($crate::ErrorKind::Message(format!($($arg)*).into()))
     };
 }
 
@@ -13,7 +14,7 @@ macro_rules! holo_message_error {
 #[derive(Debug)]
 pub enum ErrorKind {
     /// Free-form error message.
-    Message(String),
+    Message(SharedString),
     /// I/O failure category.
     Io,
     /// Generic wrapper around external standard errors.
@@ -48,7 +49,7 @@ impl Display for ErrorKind {
 /// ```rust
 /// use holo_base::Result;
 ///
-/// fn read_config() -> Result<String> {
+/// fn read_config() -> Result<SharedString> {
 ///     std::fs::read_to_string("holo.toml")
 ///         .map_err(|error| holo_base::holo_message_error!("failed to read {}", "holo.toml").with_std_source(error))
 /// }
@@ -119,15 +120,15 @@ impl From<std::io::Error> for HoloError {
     }
 }
 
-impl From<String> for HoloError {
-    fn from(value: String) -> Self {
+impl From<SharedString> for HoloError {
+    fn from(value: SharedString) -> Self {
         Self::new(ErrorKind::Message(value))
     }
 }
 
 impl From<&str> for HoloError {
     fn from(value: &str) -> Self {
-        Self::new(ErrorKind::Message(value.to_owned()))
+        Self::new(ErrorKind::Message(value.into()))
     }
 }
 
@@ -154,7 +155,7 @@ mod tests {
 
     #[test]
     fn supports_manual_cause_chaining() {
-        let error = HoloError::new(ErrorKind::Message("top-level".to_owned()))
+        let error = HoloError::new(ErrorKind::Message("top-level".into()))
             .with_std_source(std::io::Error::other("root cause"));
         assert!(matches!(error.kind(), ErrorKind::Message(message) if message == "top-level"));
         assert!(error.source().is_some());

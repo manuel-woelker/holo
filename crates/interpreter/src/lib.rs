@@ -1,6 +1,7 @@
 //! Test interpreter for the minimal holo language.
 
 use holo_ast::{Expr, ExprKind, Module, Statement, TestItem};
+use holo_base::SharedString;
 
 /// Final status for a single test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,7 +14,7 @@ pub enum TestStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestResult {
     /// Executed test name.
-    pub name: String,
+    pub name: SharedString,
     /// Final pass/fail status.
     pub status: TestStatus,
 }
@@ -102,7 +103,7 @@ mod tests {
     fn marks_false_assertion_as_failed_test() {
         let module = Module {
             tests: vec![TestItem {
-                name: "fails".to_owned(),
+                name: "fails".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::negation(
                         Expr::bool_literal(true, Span::new(17, 21)),
@@ -124,7 +125,7 @@ mod tests {
     fn runs_collected_tests_slice() {
         let tests = vec![
             TestItem {
-                name: "pass".to_owned(),
+                name: "pass".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::bool_literal(true, Span::new(17, 21)),
                     span: Span::new(9, 22),
@@ -132,7 +133,7 @@ mod tests {
                 span: Span::new(0, 24),
             },
             TestItem {
-                name: "fail".to_owned(),
+                name: "fail".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::bool_literal(false, Span::new(17, 22)),
                     span: Span::new(9, 23),

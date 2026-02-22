@@ -1,6 +1,6 @@
 //! Abstract syntax tree types for the minimal holo language.
 
-use holo_base::Span;
+use holo_base::{SharedString, Span};
 
 /// Full file-level syntax tree.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -13,7 +13,7 @@ pub struct Module {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestItem {
     /// Test function name.
-    pub name: String,
+    pub name: SharedString,
     /// Ordered statements in the test body.
     pub statements: Vec<Statement>,
     /// Byte span for the whole test item.

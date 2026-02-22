@@ -100,7 +100,7 @@ mod tests {
     fn typechecks_assertion_count_for_module() {
         let module = Module {
             tests: vec![TestItem {
-                name: "sample".to_owned(),
+                name: "sample".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::bool_literal(true, Span::new(20, 24)),
                     span: Span::new(13, 25),
@@ -121,7 +121,7 @@ mod tests {
         let module = Module {
             tests: vec![
                 TestItem {
-                    name: "same_name".to_owned(),
+                    name: "same_name".into(),
                     statements: vec![Statement::Assert(AssertStatement {
                         expression: Expr::bool_literal(true, Span::new(20, 24)),
                         span: Span::new(13, 25),
@@ -129,7 +129,7 @@ mod tests {
                     span: Span::new(0, 26),
                 },
                 TestItem {
-                    name: "same_name".to_owned(),
+                    name: "same_name".into(),
                     statements: vec![Statement::Assert(AssertStatement {
                         expression: Expr::bool_literal(true, Span::new(50, 54)),
                         span: Span::new(43, 55),

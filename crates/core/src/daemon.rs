@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use holo_base::Result;
+use holo_base::{Result, SharedString};
 use tracing::{info, instrument, warn};
 
 use crate::{CompilerCore, CoreCycleSummary};
@@ -11,16 +11,16 @@ use crate::{CompilerCore, CoreCycleSummary};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileDiagnostic {
     /// File path associated with the diagnostic.
-    pub file_path: String,
+    pub file_path: SharedString,
     /// Diagnostic message text.
-    pub message: String,
+    pub message: SharedString,
 }
 
 /// Per-file result produced during one daemon tick.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessedFile {
     /// File path that was recomputed.
-    pub file_path: String,
+    pub file_path: SharedString,
     /// Pipeline summary when processing succeeded.
     pub summary: CoreCycleSummary,
 }
@@ -39,12 +39,12 @@ pub struct DaemonStatusUpdate {
     /// Total failed tests across processed files.
     pub tests_failed: usize,
     /// Names of failing tests.
-    pub failing_tests: Vec<String>,
+    pub failing_tests: Vec<SharedString>,
 }
 
 impl DaemonStatusUpdate {
     /// Renders a deterministic text report for one daemon cycle.
-    pub fn to_report(&self) -> String {
+    pub fn to_report(&self) -> SharedString {
         let mut lines = Vec::new();
         lines.push(format!("processed_files: {}", self.processed_files.len()));
         lines.push(format!("errors: {}", self.errors.len()));
@@ -75,7 +75,7 @@ impl DaemonStatusUpdate {
             lines.push(format!("error: {error}"));
         }
 
-        lines.join("\n")
+        lines.join("\n").into()
     }
 }
 
@@ -83,12 +83,12 @@ impl DaemonStatusUpdate {
 #[derive(Debug)]
 pub struct CoreDaemon {
     debounce_ms: u64,
-    pending_changes: HashMap<String, PendingChange>,
+    pending_changes: HashMap<SharedString, PendingChange>,
 }
 
 #[derive(Debug, Clone)]
 struct PendingChange {
-    source: String,
+    source: SharedString,
     last_change_ms: u64,
 }
 
@@ -102,14 +102,18 @@ impl CoreDaemon {
     }
 
     /// Enqueues startup sources for initial compile and test run.
-    pub fn enqueue_startup_sources(&mut self, sources: Vec<(String, String)>, now_ms: u64) {
+    pub fn enqueue_startup_sources(
+        &mut self,
+        sources: Vec<(SharedString, SharedString)>,
+        now_ms: u64,
+    ) {
         for (file_path, source) in sources {
             self.record_change(file_path, source, now_ms);
         }
     }
 
     /// Records an updated source payload for a file.
-    pub fn record_change(&mut self, file_path: String, source: String, change_ms: u64) {
+    pub fn record_change(&mut self, file_path: SharedString, source: SharedString, change_ms: u64) {
         self.pending_changes.insert(
             file_path,
             PendingChange {
@@ -170,7 +174,7 @@ impl CoreDaemon {
                     );
                     update.errors.push(FileDiagnostic {
                         file_path,
-                        message: error.to_string(),
+                        message: error.to_string().into(),
                     });
                 }
             }
@@ -199,6 +203,7 @@ mod tests {
     use super::{CoreDaemon, DaemonStatusUpdate, FileDiagnostic, ProcessedFile};
     use crate::CompilerCore;
     use crate::CoreCycleSummary;
+    use holo_base::SharedString;
     use holo_interpreter::{TestResult, TestRunSummary, TestStatus};
     use holo_typechecker::TypecheckSummary;
 
@@ -207,8 +212,8 @@ mod tests {
         let mut daemon = CoreDaemon::new(50);
         let mut core = CompilerCore::default();
         daemon.record_change(
-            "sample.holo".to_owned(),
-            "#[test] fn pass() { assert(true); }".to_owned(),
+            "sample.holo".into(),
+            "#[test] fn pass() { assert(true); }".into(),
             100,
         );
 
@@ -234,12 +239,12 @@ mod tests {
         daemon.enqueue_startup_sources(
             vec![
                 (
-                    "a.holo".to_owned(),
-                    "#[test] fn a_test() { assert(true); }".to_owned(),
+                    "a.holo".into(),
+                    "#[test] fn a_test() { assert(true); }".into(),
                 ),
                 (
-                    "b.holo".to_owned(),
-                    "#[test] fn b_test() { assert(true); }".to_owned(),
+                    "b.holo".into(),
+                    "#[test] fn b_test() { assert(true); }".into(),
                 ),
             ],
             0,
@@ -252,8 +257,8 @@ mod tests {
         assert_eq!(first.tests_run, 2);
 
         daemon.record_change(
-            "b.holo".to_owned(),
-            "#[test] fn b_test() { assert(false); }".to_owned(),
+            "b.holo".into(),
+            "#[test] fn b_test() { assert(false); }".into(),
             30,
         );
         let second = daemon
@@ -262,7 +267,7 @@ mod tests {
         assert_eq!(second.processed_files.len(), 1);
         assert_eq!(second.processed_files[0].file_path, "b.holo");
         assert_eq!(second.tests_failed, 1);
-        assert_eq!(second.failing_tests, vec!["b_test".to_owned()]);
+        assert_eq!(second.failing_tests, vec![SharedString::from("b_test")]);
     }
 
     #[test]
@@ -270,7 +275,7 @@ mod tests {
         let update = DaemonStatusUpdate {
             processed_files: vec![
                 ProcessedFile {
-                    file_path: "b.holo".to_owned(),
+                    file_path: "b.holo".into(),
                     summary: CoreCycleSummary {
                         token_count: 1,
                         typecheck: TypecheckSummary {
@@ -281,7 +286,7 @@ mod tests {
                     },
                 },
                 ProcessedFile {
-                    file_path: "a.holo".to_owned(),
+                    file_path: "a.holo".into(),
                     summary: CoreCycleSummary {
                         token_count: 1,
                         typecheck: TypecheckSummary {
@@ -293,13 +298,13 @@ mod tests {
                 },
             ],
             errors: vec![FileDiagnostic {
-                file_path: "z.holo".to_owned(),
-                message: "typecheck failed".to_owned(),
+                file_path: "z.holo".into(),
+                message: "typecheck failed".into(),
             }],
             tests_run: 2,
             tests_passed: 1,
             tests_failed: 1,
-            failing_tests: vec!["fail_b".to_owned(), "fail_a".to_owned()],
+            failing_tests: vec!["fail_b".into(), "fail_a".into()],
         };
 
         let report = update.to_report();
@@ -318,9 +323,9 @@ error: z.holo: typecheck failed";
         let mut daemon = CoreDaemon::new(0);
         let mut core = CompilerCore::default();
         daemon.record_change(
-            "suite.holo".to_owned(),
+            "suite.holo".into(),
             "#[test] fn pass_case() { assert(true); } #[test] fn fail_case() { assert(false); }"
-                .to_owned(),
+                .into(),
             0,
         );
 
@@ -337,7 +342,7 @@ error: z.holo: typecheck failed";
                 .first()
                 .and_then(|file| file.summary.tests.results.get(1)),
             Some(&TestResult {
-                name: "fail_case".to_owned(),
+                name: "fail_case".into(),
                 status: TestStatus::Failed
             })
         );

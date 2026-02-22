@@ -91,7 +91,7 @@ where
 {
     fn encode_artifact_key(kind: &K, key: &A) -> Vec<u8> {
         bitcode::encode(&ArtifactStorageKey {
-            kind: kind.as_str().to_owned(),
+            kind: kind.as_str().into(),
             key_bytes: bitcode::encode(key),
         })
     }
@@ -294,7 +294,7 @@ mod tests {
     fn node(kind: TestKind, key: &str) -> NodeId<TestKind, TestKey> {
         NodeId {
             kind,
-            key: TestKey(key.to_owned()),
+            key: TestKey(key.into()),
         }
     }
 
@@ -306,7 +306,7 @@ mod tests {
     fn stores_and_reads_artifacts() {
         let db = make_db();
         let kind = TestKind::Parse;
-        let key = TestKey("module:foo".to_owned());
+        let key = TestKey("module:foo".into());
         let record = ArtifactRecord {
             bytes: vec![1, 2, 3],
             produced_at: 7,

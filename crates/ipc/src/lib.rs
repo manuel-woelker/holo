@@ -2,7 +2,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 
-use holo_base::{holo_message_error, Result};
+use holo_base::{holo_message_error, Result, SharedString};
 use interprocess::local_socket::traits::{Listener as _, Stream as _};
 use interprocess::local_socket::{GenericNamespaced, Listener, ListenerOptions, Stream, ToNsName};
 use serde::{Deserialize, Serialize};
@@ -30,11 +30,11 @@ pub enum Response {
     /// Generic success response.
     Ok,
     /// Daemon status report output.
-    StatusReport(String),
+    StatusReport(SharedString),
     /// Current issue snapshot.
     IssuesSnapshot(Vec<ProjectIssue>),
     /// Error response with message.
-    Error(String),
+    Error(SharedString),
 }
 
 /// Daemon-initiated message variants broadcast or pushed to clients.
@@ -42,22 +42,22 @@ pub enum Response {
 #[serde(tag = "type", content = "payload")]
 pub enum DaemonEvent {
     /// Emitted when a daemon cycle report is produced.
-    CycleReport(String),
+    CycleReport(SharedString),
     /// Emitted when issue set changes.
     IssuesUpdated(Vec<ProjectIssue>),
     /// Emitted when the dependency graph representation changes.
-    DependencyGraph(String),
+    DependencyGraph(SharedString),
     /// Emitted when daemon lifecycle changes.
-    Lifecycle(String),
+    Lifecycle(SharedString),
 }
 
 /// Project issue payload exchanged over IPC.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectIssue {
     /// Short issue title.
-    pub title: String,
+    pub title: SharedString,
     /// Source file path for the issue.
-    pub file: String,
+    pub file: SharedString,
     /// 1-based line number.
     pub line: usize,
     /// High-level issue category.
@@ -65,9 +65,9 @@ pub struct ProjectIssue {
     /// Severity category.
     pub severity: ProjectIssueSeverity,
     /// Compact summary text.
-    pub summary: String,
+    pub summary: SharedString,
     /// Detailed human-readable message.
-    pub detail: String,
+    pub detail: SharedString,
 }
 
 /// High-level issue category.
@@ -168,7 +168,7 @@ impl IpcConnection {
 
     /// Receives one wire message decoded from JSON line.
     pub fn receive(&mut self) -> Result<Option<WireMessage>> {
-        let mut line = String::new();
+        let mut line = std::string::String::new();
         let bytes_read = self.reader.read_line(&mut line).map_err(|error| {
             holo_message_error!("failed to read IPC message").with_std_source(error)
         })?;
@@ -205,7 +205,7 @@ mod tests {
 
         let response_message = WireMessage::Response {
             request_id: 7,
-            response: Response::StatusReport("ok".to_owned()),
+            response: Response::StatusReport("ok".into()),
         };
         let response_json =
             serde_json::to_string(&response_message).expect("response should serialize");
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(response_round_trip, response_message);
 
         let event_message = WireMessage::Event {
-            event: DaemonEvent::CycleReport("report".to_owned()),
+            event: DaemonEvent::CycleReport("report".into()),
         };
         let event_json = serde_json::to_string(&event_message).expect("event should serialize");
         let event_round_trip: WireMessage =
@@ -222,13 +222,13 @@ mod tests {
         assert_eq!(event_round_trip, event_message);
 
         let issue = ProjectIssue {
-            title: "assertion failed".to_owned(),
-            file: "tests/auth.holo".to_owned(),
+            title: "assertion failed".into(),
+            file: "tests/auth.holo".into(),
             line: 10,
             kind: ProjectIssueKind::Test,
             severity: ProjectIssueSeverity::Error,
-            summary: "login test failed".to_owned(),
-            detail: "assert(false) evaluated to false".to_owned(),
+            summary: "login test failed".into(),
+            detail: "assert(false) evaluated to false".into(),
         };
         let issue_response = WireMessage::Response {
             request_id: 8,
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(issue_event_round_trip, issue_event);
 
         let graph_event = WireMessage::Event {
-            event: DaemonEvent::DependencyGraph("a.holo -> parser".to_owned()),
+            event: DaemonEvent::DependencyGraph("a.holo -> parser".into()),
         };
         let graph_event_json =
             serde_json::to_string(&graph_event).expect("graph event should serialize");

@@ -9,7 +9,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use holo_base::{holo_message_error, Result};
+use holo_base::{holo_message_error, Result, SharedString};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -23,9 +23,9 @@ const MAX_LOG_ENTRIES: usize = 500;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectIssue {
     /// Short issue title.
-    pub title: String,
+    pub title: SharedString,
     /// Source file path.
-    pub file: String,
+    pub file: SharedString,
     /// 1-based line number.
     pub line: usize,
     /// Issue kind/category.
@@ -33,9 +33,9 @@ pub struct ProjectIssue {
     /// Severity level.
     pub severity: ProjectIssueSeverity,
     /// Brief summary text.
-    pub summary: String,
+    pub summary: SharedString,
     /// Detailed explanation text.
-    pub detail: String,
+    pub detail: SharedString,
 }
 
 /// Issue category shown in deck.
@@ -87,8 +87,8 @@ pub fn run_with_updates(
     initial_issues: Vec<ProjectIssue>,
     issue_updates: Option<Receiver<Vec<ProjectIssue>>>,
     daemon_state_updates: Option<Receiver<DaemonState>>,
-    log_updates: Option<Receiver<String>>,
-    dependency_graph_updates: Option<Receiver<String>>,
+    log_updates: Option<Receiver<SharedString>>,
+    dependency_graph_updates: Option<Receiver<SharedString>>,
 ) -> Result<()> {
     enable_raw_mode()
         .map_err(|error| holo_message_error!("failed to enable raw mode").with_std_source(error))?;
@@ -124,8 +124,8 @@ fn run_loop(
     app: &mut DeckApp,
     issue_updates: &mut Option<Receiver<Vec<ProjectIssue>>>,
     daemon_state_updates: &mut Option<Receiver<DaemonState>>,
-    log_updates: &mut Option<Receiver<String>>,
-    dependency_graph_updates: &mut Option<Receiver<String>>,
+    log_updates: &mut Option<Receiver<SharedString>>,
+    dependency_graph_updates: &mut Option<Receiver<SharedString>>,
 ) -> Result<()> {
     loop {
         if let Some(receiver) = issue_updates.as_ref() {
@@ -162,7 +162,7 @@ fn run_loop(
                     Ok(entry) => app.push_log(entry),
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
-                        app.push_log("log stream disconnected".to_owned());
+                        app.push_log("log stream disconnected".into());
                         *log_updates = None;
                         break;
                     }
@@ -307,7 +307,7 @@ fn draw_master(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
                     Style::default().fg(Color::Cyan),
                 ),
                 Span::styled(format!("[{}] ", issue.severity.label()), severity_style),
-                Span::raw(&issue.title),
+                Span::raw(issue.title.as_str()),
             ])])
         })
         .collect::<Vec<_>>();
@@ -341,7 +341,7 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
     let body = vec![
         Line::from(vec![
             Span::styled("Title: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&issue.title),
+            Span::raw(issue.title.as_str()),
         ]),
         Line::from(vec![
             Span::styled("Kind: ", Style::default().add_modifier(Modifier::BOLD)),
@@ -358,12 +358,12 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         Line::from(""),
         Line::from(vec![
             Span::styled("Summary: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&issue.summary),
+            Span::raw(issue.summary.as_str()),
         ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("Detail: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&issue.detail),
+            Span::raw(issue.detail.as_str()),
         ]),
         Line::from(""),
         Line::from(Span::styled(
@@ -420,9 +420,9 @@ fn draw_dependency_graph(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckA
                 (Some(connector), true, true) => format!("{connector}▾"),
                 (Some(connector), true, false) => format!("{connector}▸"),
                 (Some(connector), false, _) => format!("{connector}─"),
-                (None, true, true) => "▾".to_owned(),
-                (None, true, false) => "▸".to_owned(),
-                (None, false, _) => " ".to_owned(),
+                (None, true, true) => "▾".into(),
+                (None, true, false) => "▸".into(),
+                (None, false, _) => " ".into(),
             };
             let content = format!("{pointer}{}{} {}", node.prefix, branch, node.label);
             let mut style = Style::default();
@@ -479,56 +479,56 @@ fn draw_daemon_status(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp)
 fn example_issues() -> Vec<ProjectIssue> {
     vec![
         ProjectIssue {
-            title: "Unknown token in test declaration".to_owned(),
-            file: "src/compiler/lexer.holo".to_owned(),
+            title: "Unknown token in test declaration".into(),
+            file: "src/compiler/lexer.holo".into(),
             line: 12,
             kind: ProjectIssueKind::Compilation,
             severity: ProjectIssueSeverity::Error,
-            summary: "Lexer hit an unsupported symbol while parsing #[test] item.".to_owned(),
-            detail: "The parser expected `fn` after `#[test]`, but found `fna`. Fix the typo and rerun.".to_owned(),
+            summary: "Lexer hit an unsupported symbol while parsing #[test] item.".into(),
+            detail: "The parser expected `fn` after `#[test]`, but found `fna`. Fix the typo and rerun.".into(),
         },
         ProjectIssue {
-            title: "Duplicate test name".to_owned(),
-            file: "tests/smoke.holo".to_owned(),
+            title: "Duplicate test name".into(),
+            file: "tests/smoke.holo".into(),
             line: 34,
             kind: ProjectIssueKind::Compilation,
             severity: ProjectIssueSeverity::Error,
-            summary: "Two tests share the same function name.".to_owned(),
-            detail: "Rename either `fn startup_checks()` definition so each test item has a unique name.".to_owned(),
+            summary: "Two tests share the same function name.".into(),
+            detail: "Rename either `fn startup_checks()` definition so each test item has a unique name.".into(),
         },
         ProjectIssue {
-            title: "Assertion failed in login flow".to_owned(),
-            file: "tests/auth.holo".to_owned(),
+            title: "Assertion failed in login flow".into(),
+            file: "tests/auth.holo".into(),
             line: 21,
             kind: ProjectIssueKind::Test,
             severity: ProjectIssueSeverity::Error,
-            summary: "Test `login_valid_credentials` evaluated to false.".to_owned(),
-            detail: "The test body executed `assert(false)`. Replace with expected boolean expression.".to_owned(),
+            summary: "Test `login_valid_credentials` evaluated to false.".into(),
+            detail: "The test body executed `assert(false)`. Replace with expected boolean expression.".into(),
         },
         ProjectIssue {
-            title: "Flaky startup timing test".to_owned(),
-            file: "tests/startup.holo".to_owned(),
+            title: "Flaky startup timing test".into(),
+            file: "tests/startup.holo".into(),
             line: 9,
             kind: ProjectIssueKind::Test,
             severity: ProjectIssueSeverity::Warning,
-            summary: "Intermittent failures detected over last 20 runs.".to_owned(),
+            summary: "Intermittent failures detected over last 20 runs.".into(),
             detail:
                 "This warning is example data to demonstrate non-fatal test diagnostics in deck."
-                    .to_owned(),
+                    .into(),
         },
     ]
 }
 
-fn example_logs() -> Vec<String> {
+fn example_logs() -> Vec<SharedString> {
     vec![
-        "daemon started".to_owned(),
-        "parsing startup sources".to_owned(),
-        "typechecking startup sources".to_owned(),
-        "running tests".to_owned(),
+        "daemon started".into(),
+        "parsing startup sources".into(),
+        "typechecking startup sources".into(),
+        "running tests".into(),
     ]
 }
 
-fn example_dependency_graph() -> String {
+fn example_dependency_graph() -> SharedString {
     [
         "Tests",
         "  login_valid_credentials",
@@ -539,6 +539,7 @@ fn example_dependency_graph() -> String {
         "    Function: assert",
     ]
     .join("\n")
+    .into()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -546,7 +547,7 @@ struct DeckApp {
     issues: Vec<ProjectIssue>,
     selected: usize,
     daemon_state: DaemonState,
-    logs: Vec<String>,
+    logs: Vec<SharedString>,
     dependency_tree: Vec<DependencyNode>,
     dependency_selected: usize,
     active_tab: DeckTab,
@@ -611,7 +612,7 @@ impl DeckApp {
         self.issues.get(self.selected)
     }
 
-    fn push_log(&mut self, entry: String) {
+    fn push_log(&mut self, entry: SharedString) {
         self.logs.push(entry);
         if self.logs.len() > MAX_LOG_ENTRIES {
             let remove_count = self.logs.len() - MAX_LOG_ENTRIES;
@@ -619,7 +620,7 @@ impl DeckApp {
         }
     }
 
-    fn set_dependency_graph(&mut self, graph: String) {
+    fn set_dependency_graph(&mut self, graph: SharedString) {
         self.dependency_tree = parse_dependency_tree(&graph);
         let visible_len = self.visible_dependency_nodes().len();
         if visible_len == 0 {
@@ -694,7 +695,7 @@ impl DeckApp {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DependencyNode {
-    label: String,
+    label: SharedString,
     children: Vec<DependencyNode>,
     expanded: bool,
 }
@@ -702,9 +703,9 @@ struct DependencyNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VisibleDependencyNode {
     path: Vec<usize>,
-    label: String,
+    label: SharedString,
     depth: usize,
-    prefix: String,
+    prefix: SharedString,
     connector: Option<char>,
     has_children: bool,
     expanded: bool,
@@ -720,7 +721,7 @@ fn parse_dependency_tree(graph: &str) -> Vec<DependencyNode> {
         }
         let indentation = line.chars().take_while(|ch| *ch == ' ').count();
         let depth = indentation / 2;
-        let label = line.trim().to_owned();
+        let label = line.trim().into();
         let node = DependencyNode {
             label,
             children: Vec::new(),
@@ -790,7 +791,7 @@ fn collect_visible_dependency_node(
     ancestor_has_more: &[bool],
     output: &mut Vec<VisibleDependencyNode>,
 ) {
-    let mut prefix = String::new();
+    let mut prefix = SharedString::new();
     if depth > 0 {
         for has_more in ancestor_has_more {
             prefix.push_str(if *has_more { "│ " } else { "  " });
@@ -1010,10 +1011,10 @@ mod tests {
         let mut app = DeckApp::with_example_data();
         app.logs.clear();
         for index in 0..(MAX_LOG_ENTRIES + 5) {
-            app.push_log(format!("entry-{index}"));
+            app.push_log(format!("entry-{index}").into());
         }
         assert_eq!(app.logs.len(), MAX_LOG_ENTRIES);
-        assert_eq!(app.logs.first().map(String::as_str), Some("entry-5"));
+        assert_eq!(app.logs.first().map(|entry| entry.as_str()), Some("entry-5"));
     }
 
     #[test]
