@@ -2,7 +2,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::path::Component;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -859,12 +858,16 @@ fn record_changed_holo_files(
 
 fn display_source_path(root_dir: &Path, path: &Path) -> FilePath {
     if let Ok(relative) = path.strip_prefix(root_dir) {
-        if relative.components().next() == Some(Component::CurDir) {
-            return relative.to_string_lossy().into_owned().into();
+        let mut rendered = relative.to_string_lossy().into_owned().replace('\\', "/");
+        if let Some(stripped) = rendered.strip_prefix("./") {
+            rendered = stripped.to_owned();
         }
-        return format!(".\\{}", relative.display()).into();
+        return rendered.into();
     }
-    path.to_string_lossy().into_owned().into()
+    path.to_string_lossy()
+        .into_owned()
+        .replace('\\', "/")
+        .into()
 }
 
 fn current_time_ms() -> u64 {
@@ -1137,12 +1140,11 @@ mod tests {
         assert!(graph.contains("\n  b\n"));
         assert!(graph.contains("Function: assert"));
         assert!(
-            graph.contains("Input File: .\\a.holo") || graph.contains("Input File: ./a.holo"),
+            graph.contains("Input File: a.holo"),
             "graph missing input file node for a.holo: {graph}"
         );
         assert!(
-            graph.contains("Input File: .\\nested\\b.holo")
-                || graph.contains("Input File: ./nested/b.holo"),
+            graph.contains("Input File: nested/b.holo"),
             "graph missing input file node for nested/b.holo: {graph}"
         );
 
@@ -1230,7 +1232,7 @@ mod tests {
         let root = Path::new("repo");
         let source = Path::new("repo/src/main.holo");
         let rendered = display_source_path(root, source);
-        assert!(rendered == ".\\src\\main.holo" || rendered == ".\\src/main.holo");
+        assert_eq!(rendered, "src/main.holo");
     }
 
     #[test]

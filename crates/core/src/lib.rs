@@ -157,7 +157,7 @@ impl CompilerCore {
         info!("typechecking module");
         let (typechecked, typecheck_timing) =
             time_task(format!("typecheck `{}`", file_path), || {
-            self.typechecker.typecheck_module(&module, source)
+                self.typechecker.typecheck_module(&module, source)
             });
         let typecheck = typechecked.summary;
         let typecheck_timings = typechecked.timings;
@@ -264,7 +264,12 @@ impl CompilerCore {
     }
 
     /// Returns the latest query value for a stage when available.
-    pub fn query_value(&self, file_path: &FilePath, stage: QueryStage, source: &str) -> Option<&QueryValue> {
+    pub fn query_value(
+        &self,
+        file_path: &FilePath,
+        stage: QueryStage,
+        source: &str,
+    ) -> Option<&QueryValue> {
         let key = QueryKey {
             file_path: file_path.clone(),
             stage,

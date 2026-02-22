@@ -113,11 +113,7 @@ impl CoreDaemon {
     }
 
     /// Enqueues startup sources for initial compile and test run.
-    pub fn enqueue_startup_sources(
-        &mut self,
-        sources: Vec<(FilePath, SharedString)>,
-        now_ms: u64,
-    ) {
+    pub fn enqueue_startup_sources(&mut self, sources: Vec<(FilePath, SharedString)>, now_ms: u64) {
         for (file_path, source) in sources {
             self.record_change(file_path, source, now_ms);
         }
