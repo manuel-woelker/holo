@@ -1,5 +1,7 @@
 //! Core orchestration for the minimal compile-and-test pipeline.
 
+pub mod daemon;
+
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};

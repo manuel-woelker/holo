@@ -117,7 +117,7 @@ Validate negation/assert typing rules over AST with clear boundaries between `ho
 Implement memoized per-file queries with hash-based invalidation in `holo-query` (or `holo-core` if deferred).
 5. **Test collector + interpreter runner - Done**
 Discover `#[test]` items and evaluate test bodies through `holo-interpreter`.
-6. **Core daemon integration - In Progress**
+6. **Core daemon integration - Done**
 Add watch + debounce + incremental recompute loop.
 7. **Reporting - In Progress**
 Print stable diagnostics and per-cycle test summary.

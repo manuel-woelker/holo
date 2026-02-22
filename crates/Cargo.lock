@@ -179,6 +179,7 @@ version = "0.1.0"
 name = "holo-core"
 version = "0.1.0"
 dependencies = [
+ "holo-ast",
  "holo-base",
  "holo-interpreter",
  "holo-lexer",
