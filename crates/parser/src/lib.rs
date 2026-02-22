@@ -55,6 +55,11 @@ impl<'a> ParserState<'a> {
         let mut functions = Vec::new();
         let mut tests = Vec::new();
         while self.peek().is_some() {
+            if !self.check(TokenKind::Hash) && !self.check(TokenKind::Fn) {
+                self.advance();
+                continue;
+            }
+
             let previous_index = self.index;
             if let Some(function) = self.parse_item() {
                 if function.is_test {
@@ -65,6 +70,8 @@ impl<'a> ParserState<'a> {
                     });
                 }
                 functions.push(function);
+            } else {
+                self.recover_to_next_item();
             }
 
             if self.index == previous_index {
@@ -631,5 +638,16 @@ mod tests {
             );
             assert_eq!(parsed.module.functions.len(), 1, "{source}");
         }
+    }
+
+    #[test]
+    fn recovers_to_next_top_level_definition_after_broken_function() {
+        let source = "fn broken(a i64) -> i64 { a + ; } #[test] fn ok() { assert(true); }";
+        let lexed = BasicLexer.lex(source);
+        let result = BasicParser.parse_module(&lexed.tokens, source);
+
+        assert!(!result.diagnostics.is_empty());
+        assert_eq!(result.module.tests.len(), 1);
+        assert_eq!(result.module.tests[0].name, "ok");
     }
 }

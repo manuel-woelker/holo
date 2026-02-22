@@ -742,7 +742,7 @@ mod tests {
     #[test]
     fn persists_diagnostic_source_excerpts_between_core_instances() {
         let root = temp_root_dir("persists_diagnostic_source_excerpts_between_core_instances");
-        let source = "foo";
+        let source = "fn broken(a i64) -> i64 { a + ; }";
 
         let mut first = CompilerCore::with_persistent_cache(&root)
             .expect("first core with persistence should initialize");
@@ -759,7 +759,7 @@ mod tests {
             .expect("second run should succeed with diagnostics");
         let rendered = holo_base::display_source_diagnostics(&second_summary.diagnostics);
 
-        assert!(rendered.contains("foo"));
+        assert!(rendered.contains("fn broken"));
         assert!(!rendered.contains("at bytes 0..3"));
         drop(second);
 
