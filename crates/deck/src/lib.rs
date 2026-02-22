@@ -273,7 +273,11 @@ fn draw_master(area: Rect, frame: &mut ratatui::Frame<'_>, app: &mut DeckApp) {
     let items = app
         .issues
         .iter()
-        .map(|issue| ListItem::new(vec![Line::from(Span::raw(issue.title.as_str()))]))
+        .map(|issue| {
+            ListItem::new(vec![Line::from(Span::raw(
+                format_master_issue_row(issue).to_string(),
+            ))])
+        })
         .collect::<Vec<_>>();
 
     let list = List::new(items)
@@ -298,16 +302,15 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         return;
     };
 
-    let rendered_diagnostics = if issue.source_diagnostics.is_empty() {
-        issue.detail.clone()
+    let mut body = if issue.source_diagnostics.is_empty() {
+        issue
+            .detail
+            .lines()
+            .map(|line| Line::from(line.to_owned()))
+            .collect::<Vec<_>>()
     } else {
-        strip_ansi_sequences(&display_source_diagnostics(&issue.source_diagnostics))
+        ansi_colored_lines(&display_source_diagnostics(&issue.source_diagnostics))
     };
-
-    let mut body = Vec::new();
-    for line in rendered_diagnostics.lines() {
-        body.push(Line::from(line.to_owned()));
-    }
     body.push(Line::from(""));
     body.push(Line::from(Span::styled(
         "Keys: left/right tab, up/down navigate, enter expand tree, q/esc quit",
@@ -320,22 +323,112 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
     frame.render_widget(detail, area);
 }
 
-fn strip_ansi_sequences(input: &str) -> SharedString {
-    let mut out = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
-            chars.next();
-            for next in chars.by_ref() {
-                if ('@'..='~').contains(&next) {
-                    break;
-                }
+fn format_master_issue_row(issue: &ProjectIssue) -> SharedString {
+    format!(
+        "{} {}:{} - {}",
+        issue.kind.emoji(),
+        issue.file,
+        issue.line,
+        short_error_message(issue)
+    )
+    .into()
+}
+
+fn short_error_message(issue: &ProjectIssue) -> SharedString {
+    let source = if issue.source_diagnostics.is_empty() {
+        issue.summary.as_str()
+    } else {
+        issue.source_diagnostics[0].message.as_str()
+    };
+    source.lines().next().unwrap_or("").trim().into()
+}
+
+fn ansi_colored_lines(input: &str) -> Vec<Line<'static>> {
+    input
+        .lines()
+        .map(|line| Line::from(parse_ansi_spans(line)))
+        .collect()
+}
+
+fn parse_ansi_spans(line: &str) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut current = String::new();
+    let mut style = Style::default();
+    let bytes = line.as_bytes();
+    let mut index = 0usize;
+
+    while index < bytes.len() {
+        if bytes[index] == 0x1B && index + 1 < bytes.len() && bytes[index + 1] == b'[' {
+            if !current.is_empty() {
+                spans.push(Span::styled(std::mem::take(&mut current), style));
             }
+
+            index += 2;
+            let start = index;
+            while index < bytes.len() && bytes[index] != b'm' {
+                index += 1;
+            }
+            if index >= bytes.len() {
+                break;
+            }
+
+            let codes = &line[start..index];
+            style = apply_sgr_codes(style, codes);
+            index += 1;
             continue;
         }
-        out.push(ch);
+
+        if let Some(ch) = line[index..].chars().next() {
+            current.push(ch);
+            index += ch.len_utf8();
+        } else {
+            break;
+        }
     }
-    out.into()
+
+    if !current.is_empty() {
+        spans.push(Span::styled(current, style));
+    }
+
+    if spans.is_empty() {
+        spans.push(Span::raw(String::new()));
+    }
+    spans
+}
+
+fn apply_sgr_codes(current: Style, codes: &str) -> Style {
+    let mut style = current;
+    for code in codes.split(';') {
+        let parsed = code.parse::<u16>().unwrap_or(0);
+        match parsed {
+            0 => {
+                style = Style::default();
+            }
+            1 => {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            2 => {
+                style = style.add_modifier(Modifier::DIM);
+            }
+            31 => {
+                style = style.fg(Color::Red);
+            }
+            33 => {
+                style = style.fg(Color::Yellow);
+            }
+            34 => {
+                style = style.fg(Color::Blue);
+            }
+            35 => {
+                style = style.fg(Color::Magenta);
+            }
+            36 => {
+                style = style.fg(Color::Cyan);
+            }
+            _ => {}
+        }
+    }
+    style
 }
 
 fn draw_log(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
@@ -653,6 +746,15 @@ impl DeckApp {
     }
 }
 
+impl ProjectIssueKind {
+    fn emoji(self) -> &'static str {
+        match self {
+            Self::Compilation => "🛠",
+            Self::Test => "🧪",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DependencyNode {
     label: SharedString,
@@ -858,8 +960,9 @@ impl DaemonState {
 #[cfg(test)]
 mod tests {
     use super::{
-        example_issues, is_navigable_key_event, parse_dependency_tree, DaemonState, DeckApp,
-        DeckTab, ProjectIssueKind, ProjectIssueSeverity, MAX_LOG_ENTRIES,
+        ansi_colored_lines, example_issues, format_master_issue_row, is_navigable_key_event,
+        parse_dependency_tree, DaemonState, DeckApp, DeckTab, ProjectIssue, ProjectIssueKind,
+        ProjectIssueSeverity, MAX_LOG_ENTRIES,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -1008,5 +1111,31 @@ mod tests {
             .iter()
             .any(|node| node.label == "Input File: ./sample.holo"));
         assert!(visible.iter().any(|node| node.label == "Function: assert"));
+    }
+
+    #[test]
+    fn formats_master_row_with_kind_file_line_and_message() {
+        let issue = ProjectIssue {
+            title: "ignored title".into(),
+            file: "src/sample.holo".into(),
+            line: 42,
+            kind: ProjectIssueKind::Compilation,
+            severity: ProjectIssueSeverity::Error,
+            summary: "missing expression".into(),
+            detail: "detail".into(),
+            source_diagnostics: Vec::new(),
+        };
+        assert_eq!(
+            format_master_issue_row(&issue),
+            "🛠 src/sample.holo:42 - missing expression"
+        );
+    }
+
+    #[test]
+    fn parses_ansi_colored_lines_without_escape_text() {
+        let lines = ansi_colored_lines("\u{1b}[31merror\u{1b}[0m");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].spans[0].content, "error");
+        assert_eq!(lines[0].spans[0].style.fg, Some(ratatui::style::Color::Red));
     }
 }
