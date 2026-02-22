@@ -1,0 +1,13 @@
+[package]
+name = "holo-ipc"
+version = "0.1.0"
+edition = "2021"
+description = "IPC protocol and transport for holo daemon/client communication"
+license = "MIT"
+publish = false
+
+[dependencies]
+holo-base = { path = "../base" }
+interprocess = "2.2.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

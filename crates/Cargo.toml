@@ -8,6 +8,7 @@ members = [
     "db",
     "fs",
     "interpreter",
+    "ipc",
     "lexer",
     "parser",
     "query",
