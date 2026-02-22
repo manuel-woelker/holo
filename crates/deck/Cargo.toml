@@ -1,0 +1,12 @@
+[package]
+name = "holo-deck"
+version = "0.1.0"
+edition = "2021"
+description = "Ratatui-based project status dashboard for holo"
+license = "MIT"
+publish = false
+
+[dependencies]
+crossterm = "0.29.0"
+holo-base = { path = "../base" }
+ratatui = "0.29.0"

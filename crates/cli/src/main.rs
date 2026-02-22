@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use holo_base::{holo_message_error, Result};
 use holo_core::daemon::CoreDaemon;
 use holo_core::CompilerCore;
+use holo_deck::run as run_deck;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use tracing::{debug, info, instrument};
 
@@ -153,10 +154,15 @@ fn current_time_ms() -> u64 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CliMode {
     Build(PathBuf),
+    Deck,
     Daemon(PathBuf),
 }
 
 fn parse_cli_mode(args: &[String]) -> CliMode {
+    if args.get(1).is_some_and(|arg| arg == "deck") {
+        return CliMode::Deck;
+    }
+
     if args.get(1).is_some_and(|arg| arg == "build") {
         if let Some(path) = args.get(2) {
             return CliMode::Build(PathBuf::from(path));
@@ -241,6 +247,13 @@ fn main() {
                     eprintln!("{error}");
                     std::process::exit(1);
                 }
+            }
+        }
+        CliMode::Deck => {
+            info!("running holo CLI deck mode");
+            if let Err(error) = run_deck() {
+                eprintln!("{error}");
+                std::process::exit(1);
             }
         }
         CliMode::Daemon(root_dir) => {
@@ -372,5 +385,11 @@ mod tests {
         let path = std::env::temp_dir().join(format!("holo-cli-{name}-{suffix}"));
         fs::create_dir_all(&path).expect("temp source dir should be created");
         path
+    }
+
+    #[test]
+    fn parses_deck_mode() {
+        let args = vec!["holo-cli".to_owned(), "deck".to_owned()];
+        assert_eq!(parse_cli_mode(&args), CliMode::Deck);
     }
 }

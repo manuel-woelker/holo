@@ -5,6 +5,7 @@ members = [
     "base",
     "cli",
     "core",
+    "deck",
     "db",
     "fs",
     "interpreter",
