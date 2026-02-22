@@ -5,11 +5,14 @@ pub mod daemon;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use bitcode::{Decode, Encode};
 use holo_ast::{Module, TestItem};
-use holo_base::{holo_message_error, DiagnosticKind, Result, SharedString, SourceDiagnostic, Span};
+use holo_base::{
+    holo_message_error, project_revision, DiagnosticKind, Result, SharedString, SourceDiagnostic,
+    Span,
+};
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{BasicInterpreter, Interpreter, TestRunSummary, TestStatus};
 use holo_lexer::{BasicLexer, Lexer};
@@ -48,9 +51,9 @@ impl CompilerCore {
         module.tests.clone()
     }
 
-    /// Creates a core that persists cycle summaries in `<root_dir>/.holo/db`.
+    /// Creates a core that persists cycle summaries in `<root_dir>/.holo/db/<revision>`.
     pub fn with_persistent_cache(root_dir: &Path) -> Result<Self> {
-        let db_dir = root_dir.join(".holo").join("db");
+        let db_dir = persistent_db_dir(root_dir);
         std::fs::create_dir_all(&db_dir).map_err(|error| {
             holo_message_error!(
                 "failed to create persisted cache directory {}",
@@ -224,6 +227,30 @@ impl CompilerCore {
         };
         self.query_store.get(&key)
     }
+}
+
+fn persistent_db_dir(root_dir: &Path) -> PathBuf {
+    root_dir
+        .join(".holo")
+        .join("db")
+        .join(sanitize_revision_for_path(project_revision()))
+}
+
+fn sanitize_revision_for_path(revision: &str) -> String {
+    let mut sanitized = String::with_capacity(revision.len());
+    for ch in revision.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+            sanitized.push(ch);
+        } else {
+            sanitized.push('_');
+        }
+    }
+
+    if sanitized.is_empty() {
+        return "unknown-revision".to_owned();
+    }
+
+    sanitized
 }
 
 fn content_hash_bytes(source: &str) -> [u8; 32] {
@@ -462,7 +489,7 @@ impl PersistedCache {
 
 #[cfg(test)]
 mod tests {
-    use super::CompilerCore;
+    use super::{persistent_db_dir, sanitize_revision_for_path, CompilerCore};
     use holo_query::{QueryStage, QueryValue};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -557,6 +584,36 @@ mod tests {
         drop(second);
 
         fs::remove_dir_all(root).expect("cleanup should succeed");
+    }
+
+    #[test]
+    fn persistent_cache_uses_revision_subdirectory() {
+        let root = temp_root_dir("persistent_cache_uses_revision_subdirectory");
+        let expected = root
+            .join(".holo")
+            .join("db")
+            .join(sanitize_revision_for_path(holo_base::project_revision()));
+
+        let core =
+            CompilerCore::with_persistent_cache(&root).expect("core with persistence should init");
+
+        assert!(
+            expected.exists(),
+            "expected cache directory {} to exist",
+            expected.display()
+        );
+
+        let actual = persistent_db_dir(root.as_path());
+        assert_eq!(actual, expected);
+
+        drop(core);
+        fs::remove_dir_all(root).expect("cleanup should succeed");
+    }
+
+    #[test]
+    fn revision_segment_is_sanitized_for_paths() {
+        let sanitized = sanitize_revision_for_path("v1.2.3/4:main");
+        assert_eq!(sanitized, "v1.2.3_4_main".to_owned());
     }
 
     fn temp_root_dir(name: &str) -> std::path::PathBuf {
