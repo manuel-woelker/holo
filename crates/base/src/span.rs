@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// Byte range in a source file represented as a half-open interval `[start, end)`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Span {
     /// Start byte offset (inclusive).
     pub start: usize,

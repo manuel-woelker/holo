@@ -2,7 +2,7 @@
 
 use std::io::{BufRead, BufReader, Write};
 
-use holo_base::{holo_message_error, Result, SharedString};
+use holo_base::{holo_message_error, Result, SharedString, SourceDiagnostic};
 use interprocess::local_socket::traits::{Listener as _, Stream as _};
 use interprocess::local_socket::{GenericNamespaced, Listener, ListenerOptions, Stream, ToNsName};
 use serde::{Deserialize, Serialize};
@@ -68,6 +68,8 @@ pub struct ProjectIssue {
     pub summary: SharedString,
     /// Detailed human-readable message.
     pub detail: SharedString,
+    /// Structured source diagnostics for compilation issues.
+    pub source_diagnostics: Vec<SourceDiagnostic>,
 }
 
 /// High-level issue category.
@@ -229,6 +231,7 @@ mod tests {
             severity: ProjectIssueSeverity::Error,
             summary: "login test failed".into(),
             detail: "assert(false) evaluated to false".into(),
+            source_diagnostics: Vec::new(),
         };
         let issue_response = WireMessage::Response {
             request_id: 8,

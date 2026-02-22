@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use holo_base::{display_source_diagnostics, Result, SharedString};
+use holo_base::{display_source_diagnostics, Result, SharedString, SourceDiagnostic};
 use tracing::{info, instrument, warn};
 
 use crate::{CompilerCore, CoreCycleSummary};
@@ -16,6 +16,8 @@ pub struct FileDiagnostic {
     pub message: SharedString,
     /// Styled message text for rich terminal presentation.
     pub styled_message: Option<SharedString>,
+    /// Structured source diagnostic payload when available.
+    pub source_diagnostic: Option<SourceDiagnostic>,
 }
 
 /// Per-file result produced during one daemon tick.
@@ -166,6 +168,7 @@ impl CoreDaemon {
                             styled_message: Some(display_source_diagnostics(std::slice::from_ref(
                                 diagnostic,
                             ))),
+                            source_diagnostic: Some(diagnostic.clone()),
                         });
                     }
                     for test in &summary.tests.results {
@@ -187,6 +190,7 @@ impl CoreDaemon {
                         file_path,
                         message: error.to_string().into(),
                         styled_message: None,
+                        source_diagnostic: None,
                     });
                 }
             }
@@ -315,6 +319,7 @@ mod tests {
                 file_path: "z.holo".into(),
                 message: "typecheck failed".into(),
                 styled_message: None,
+                source_diagnostic: None,
             }],
             tests_run: 2,
             tests_passed: 1,

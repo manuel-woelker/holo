@@ -392,6 +392,7 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
             severity: ProjectIssueSeverity::Error,
             summary: error.message.clone(),
             detail,
+            source_diagnostics: error.source_diagnostic.clone().into_iter().collect(),
         });
     }
 
@@ -407,6 +408,7 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
                 "Daemon reported failing test `{failing_test}` in the most recent cycle."
             )
             .into(),
+            source_diagnostics: Vec::new(),
         });
     }
 
@@ -690,6 +692,7 @@ fn map_ipc_issues_to_deck(issues: Vec<ProjectIssue>) -> Vec<DeckIssue> {
             },
             summary: issue.summary,
             detail: issue.detail,
+            source_diagnostics: issue.source_diagnostics,
         })
         .collect()
 }

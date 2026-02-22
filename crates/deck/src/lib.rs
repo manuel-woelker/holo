@@ -9,7 +9,9 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use holo_base::{holo_message_error, Result, SharedString};
+use holo_base::{
+    display_source_diagnostics, holo_message_error, Result, SharedString, SourceDiagnostic,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -36,6 +38,8 @@ pub struct ProjectIssue {
     pub summary: SharedString,
     /// Detailed explanation text.
     pub detail: SharedString,
+    /// Structured source diagnostics associated with this issue.
+    pub source_diagnostics: Vec<SourceDiagnostic>,
 }
 
 /// Issue category shown in deck.
@@ -338,7 +342,15 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         return;
     };
 
-    let body = vec![
+    let rendered_diagnostics = if issue.source_diagnostics.is_empty() {
+        None
+    } else {
+        Some(strip_ansi_sequences(&display_source_diagnostics(
+            &issue.source_diagnostics,
+        )))
+    };
+
+    let mut body = vec![
         Line::from(vec![
             Span::styled("Title: ", Style::default().add_modifier(Modifier::BOLD)),
             Span::raw(issue.title.as_str()),
@@ -366,11 +378,23 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
             Span::raw(issue.detail.as_str()),
         ]),
         Line::from(""),
-        Line::from(Span::styled(
-            "Keys: left/right tab, up/down navigate, enter expand tree, q/esc quit",
-            Style::default().fg(Color::DarkGray),
-        )),
+        Line::from(vec![Span::styled(
+            "Diagnostics:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
     ];
+    if let Some(rendered) = rendered_diagnostics {
+        for line in rendered.lines() {
+            body.push(Line::from(line.to_owned()));
+        }
+    } else {
+        body.push(Line::from("<none>"));
+    }
+    body.push(Line::from(""));
+    body.push(Line::from(Span::styled(
+        "Keys: left/right tab, up/down navigate, enter expand tree, q/esc quit",
+        Style::default().fg(Color::DarkGray),
+    )));
 
     let detail = Paragraph::new(body)
         .block(
@@ -380,6 +404,24 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         )
         .wrap(Wrap { trim: false });
     frame.render_widget(detail, area);
+}
+
+fn strip_ansi_sequences(input: &str) -> SharedString {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if ('@'..='~').contains(&next) {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    out.into()
 }
 
 fn draw_log(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
@@ -486,6 +528,7 @@ fn example_issues() -> Vec<ProjectIssue> {
             severity: ProjectIssueSeverity::Error,
             summary: "Lexer hit an unsupported symbol while parsing #[test] item.".into(),
             detail: "The parser expected `fn` after `#[test]`, but found `fna`. Fix the typo and rerun.".into(),
+            source_diagnostics: Vec::new(),
         },
         ProjectIssue {
             title: "Duplicate test name".into(),
@@ -495,6 +538,7 @@ fn example_issues() -> Vec<ProjectIssue> {
             severity: ProjectIssueSeverity::Error,
             summary: "Two tests share the same function name.".into(),
             detail: "Rename either `fn startup_checks()` definition so each test item has a unique name.".into(),
+            source_diagnostics: Vec::new(),
         },
         ProjectIssue {
             title: "Assertion failed in login flow".into(),
@@ -504,6 +548,7 @@ fn example_issues() -> Vec<ProjectIssue> {
             severity: ProjectIssueSeverity::Error,
             summary: "Test `login_valid_credentials` evaluated to false.".into(),
             detail: "The test body executed `assert(false)`. Replace with expected boolean expression.".into(),
+            source_diagnostics: Vec::new(),
         },
         ProjectIssue {
             title: "Flaky startup timing test".into(),
@@ -515,6 +560,7 @@ fn example_issues() -> Vec<ProjectIssue> {
             detail:
                 "This warning is example data to demonstrate non-fatal test diagnostics in deck."
                     .into(),
+            source_diagnostics: Vec::new(),
         },
     ]
 }

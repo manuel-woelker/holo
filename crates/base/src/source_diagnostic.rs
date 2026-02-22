@@ -1,7 +1,8 @@
 use crate::{SharedString, Span};
+use serde::{Deserialize, Serialize};
 
 /// Compiler stage associated with a source diagnostic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DiagnosticKind {
     /// Produced while lexing source text into tokens.
     Lexing,
@@ -12,7 +13,7 @@ pub enum DiagnosticKind {
 }
 
 /// Span annotation attached to a source diagnostic.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AnnotatedSpan {
     /// Source range this annotation points to.
     pub span: Span,
@@ -31,7 +32,7 @@ impl AnnotatedSpan {
 }
 
 /// Source snippet metadata used to render diagnostics with context.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SourceExcerpt {
     /// Source text content used for rendering context lines.
     pub source: SharedString,
@@ -60,7 +61,7 @@ impl SourceExcerpt {
 ///
 /// Use this type to describe compilation errors (lexing/parsing/typecheck)
 /// with precise span annotations.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceDiagnostic {
     /// Human-readable primary message for the diagnostic.
     pub message: SharedString,
