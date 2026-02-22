@@ -65,12 +65,12 @@ This plan focuses on language/frontend/runtime capability, not performance work.
 - Define operator typing tables for unary/binary operations.
 - Introduce function type representation (param types + return type).
 
-3. **Name resolution + function checking - In Progress**
+3. **Name resolution + function checking - Done**
 - Track variable scopes and function symbol table.
 - Validate `let` redefinitions/shadowing policy (allow shadowing in inner scopes only).
 - Validate function declarations and call sites (existence, arity, argument types, return type use).
 
-4. **Interpreter numeric + function runtime - Pending**
+4. **Interpreter numeric + function runtime - In Progress**
 - Add runtime value enum for all supported primitives.
 - Implement arithmetic evaluation with checked behavior and diagnostics.
 - Implement call frames, parameter binding, and return values.

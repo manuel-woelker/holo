@@ -1,9 +1,11 @@
 //! Typechecking interfaces and the minimal boolean typechecker.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use holo_ast::{BinaryOperator, Expr, ExprKind, Module, Statement, TypeRef};
-use holo_base::{DiagnosticKind, SourceDiagnostic, SourceExcerpt, TaskTimer, TaskTiming};
+use holo_base::{
+    DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, TaskTimer, TaskTiming,
+};
 use tracing::info;
 
 /// Type representation for the minimal language.
@@ -101,17 +103,147 @@ impl BasicTypechecker {
         Self::is_integer_type(ty) || matches!(ty, Type::F32 | Type::F64)
     }
 
+    fn check_same_type(
+        diagnostics: &mut Vec<SourceDiagnostic>,
+        source: &str,
+        left: Type,
+        left_span: holo_base::Span,
+        right: Type,
+        right_span: holo_base::Span,
+        message: &'static str,
+    ) -> bool {
+        if left == Type::Unknown || right == Type::Unknown {
+            return false;
+        }
+        if left == right {
+            return true;
+        }
+        diagnostics.push(
+            SourceDiagnostic::new(DiagnosticKind::Typecheck, message)
+                .with_annotated_span(left_span, "left operand/type")
+                .with_annotated_span(right_span, "right operand/type")
+                .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+        );
+        false
+    }
+
+    fn typecheck_statement(
+        statement: &Statement,
+        diagnostics: &mut Vec<SourceDiagnostic>,
+        source: &str,
+        function_types: &HashMap<SharedString, FunctionType>,
+        locals: &mut HashMap<SharedString, Type>,
+        assertion_count: &mut usize,
+    ) {
+        match statement {
+            Statement::Assert(assertion) => {
+                let expression_type = Self::typecheck_expression(
+                    &assertion.expression,
+                    diagnostics,
+                    source,
+                    function_types,
+                    locals,
+                );
+                if expression_type != Type::Bool {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            "assert expects a boolean expression",
+                        )
+                        .with_annotated_span(
+                            assertion.span,
+                            "this assertion does not evaluate to `bool`",
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                    return;
+                }
+
+                *assertion_count += 1;
+            }
+            Statement::Let(let_statement) => {
+                let value_type = Self::typecheck_expression(
+                    &let_statement.value,
+                    diagnostics,
+                    source,
+                    function_types,
+                    locals,
+                );
+                if locals.contains_key(&let_statement.name) {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            format!("duplicate local binding `{}`", let_statement.name),
+                        )
+                        .with_annotated_span(
+                            let_statement.span,
+                            "this binding name is already defined in this scope",
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                    return;
+                }
+                let declared_type = let_statement.ty.map(Self::type_from_ref);
+                let final_type = if let Some(declared_type) = declared_type {
+                    if value_type != Type::Unknown
+                        && !Self::check_same_type(
+                            diagnostics,
+                            source,
+                            declared_type,
+                            let_statement.span,
+                            value_type,
+                            let_statement.value.span,
+                            "let binding type does not match initializer type",
+                        )
+                    {
+                        Type::Unknown
+                    } else {
+                        declared_type
+                    }
+                } else {
+                    value_type
+                };
+                locals.insert(let_statement.name.clone(), final_type);
+            }
+            Statement::Expr(expr_statement) => {
+                let _ = Self::typecheck_expression(
+                    &expr_statement.expression,
+                    diagnostics,
+                    source,
+                    function_types,
+                    locals,
+                );
+            }
+        }
+    }
+
     fn typecheck_expression(
         expression: &Expr,
         diagnostics: &mut Vec<SourceDiagnostic>,
         source: &str,
+        function_types: &HashMap<SharedString, FunctionType>,
+        locals: &HashMap<SharedString, Type>,
     ) -> Type {
         match &expression.kind {
             ExprKind::BoolLiteral(_) => Type::Bool,
             ExprKind::NumberLiteral(literal) => Self::infer_number_literal_type(literal),
-            ExprKind::Identifier(_) => Type::Unknown,
+            ExprKind::Identifier(name) => {
+                if let Some(ty) = locals.get(name) {
+                    return *ty;
+                }
+                diagnostics.push(
+                    SourceDiagnostic::new(
+                        DiagnosticKind::Typecheck,
+                        format!("unknown identifier `{name}`"),
+                    )
+                    .with_annotated_span(expression.span, "this name is not defined in scope")
+                    .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                );
+                Type::Unknown
+            }
             ExprKind::Negation(inner) => {
-                let inner_type = Self::typecheck_expression(inner, diagnostics, source);
+                let inner_type =
+                    Self::typecheck_expression(inner, diagnostics, source, function_types, locals);
                 if inner_type != Type::Bool && inner_type != Type::Unknown {
                     diagnostics.push(
                         SourceDiagnostic::new(
@@ -125,7 +257,8 @@ impl BasicTypechecker {
                 Type::Bool
             }
             ExprKind::UnaryMinus(inner) => {
-                let inner_type = Self::typecheck_expression(inner, diagnostics, source);
+                let inner_type =
+                    Self::typecheck_expression(inner, diagnostics, source, function_types, locals);
                 if matches!(inner_type, Type::I32 | Type::I64 | Type::F32 | Type::F64) {
                     inner_type
                 } else {
@@ -143,8 +276,20 @@ impl BasicTypechecker {
                 }
             }
             ExprKind::Binary(binary) => {
-                let left_type = Self::typecheck_expression(&binary.left, diagnostics, source);
-                let right_type = Self::typecheck_expression(&binary.right, diagnostics, source);
+                let left_type = Self::typecheck_expression(
+                    &binary.left,
+                    diagnostics,
+                    source,
+                    function_types,
+                    locals,
+                );
+                let right_type = Self::typecheck_expression(
+                    &binary.right,
+                    diagnostics,
+                    source,
+                    function_types,
+                    locals,
+                );
                 if left_type == Type::Unknown || right_type == Type::Unknown {
                     return Type::Unknown;
                 }
@@ -162,16 +307,15 @@ impl BasicTypechecker {
                     return Type::Unknown;
                 }
 
-                if left_type != right_type {
-                    diagnostics.push(
-                        SourceDiagnostic::new(
-                            DiagnosticKind::Typecheck,
-                            "arithmetic operands must have the same type",
-                        )
-                        .with_annotated_span(binary.left.span, "left operand type")
-                        .with_annotated_span(binary.right.span, "right operand type")
-                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
-                    );
+                if !Self::check_same_type(
+                    diagnostics,
+                    source,
+                    left_type,
+                    binary.left.span,
+                    right_type,
+                    binary.right.span,
+                    "arithmetic operands must have the same type",
+                ) {
                     return Type::Unknown;
                 }
 
@@ -189,7 +333,93 @@ impl BasicTypechecker {
 
                 left_type
             }
-            ExprKind::Call(_) => Type::Unknown,
+            ExprKind::Call(call) => {
+                let ExprKind::Identifier(callee_name) = &call.callee.kind else {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            "call target must be a function name",
+                        )
+                        .with_annotated_span(call.callee.span, "this expression is not callable")
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                    return Type::Unknown;
+                };
+
+                let Some(function_type) = function_types.get(callee_name) else {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            format!("unknown function `{callee_name}`"),
+                        )
+                        .with_annotated_span(call.callee.span, "this function is not defined")
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                    for argument in &call.arguments {
+                        let _ = Self::typecheck_expression(
+                            argument,
+                            diagnostics,
+                            source,
+                            function_types,
+                            locals,
+                        );
+                    }
+                    return Type::Unknown;
+                };
+
+                if call.arguments.len() != function_type.parameter_types.len() {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            format!(
+                                "function `{callee_name}` expects {} argument(s) but got {}",
+                                function_type.parameter_types.len(),
+                                call.arguments.len()
+                            ),
+                        )
+                        .with_annotated_span(
+                            expression.span,
+                            "call argument count does not match function signature",
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                    for argument in &call.arguments {
+                        let _ = Self::typecheck_expression(
+                            argument,
+                            diagnostics,
+                            source,
+                            function_types,
+                            locals,
+                        );
+                    }
+                    return function_type.return_type;
+                }
+
+                for (index, argument) in call.arguments.iter().enumerate() {
+                    let argument_type = Self::typecheck_expression(
+                        argument,
+                        diagnostics,
+                        source,
+                        function_types,
+                        locals,
+                    );
+                    let expected_type = function_type.parameter_types[index];
+                    if argument_type == Type::Unknown {
+                        continue;
+                    }
+                    let _ = Self::check_same_type(
+                        diagnostics,
+                        source,
+                        expected_type,
+                        argument.span,
+                        argument_type,
+                        argument.span,
+                        "call argument type does not match parameter type",
+                    );
+                }
+
+                function_type.return_type
+            }
         }
     }
 }
@@ -200,23 +430,71 @@ impl Typechecker for BasicTypechecker {
         let mut assertion_count = 0usize;
         let mut diagnostics = Vec::new();
         let mut timings = Vec::new();
-        let function_types = module
-            .functions
-            .iter()
-            .map(|function| {
-                (
-                    function.name.clone(),
-                    FunctionType {
-                        parameter_types: function
-                            .parameters
-                            .iter()
-                            .map(|parameter| Self::type_from_ref(parameter.ty))
-                            .collect(),
-                        return_type: Self::type_from_ref(function.return_type),
-                    },
-                )
-            })
-            .collect::<HashMap<_, _>>();
+        let mut function_types = HashMap::new();
+        let mut seen_function_names = HashMap::new();
+        for function in &module.functions {
+            if let Some(first_span) = seen_function_names.get(function.name.as_str()).copied() {
+                diagnostics.push(
+                    SourceDiagnostic::new(
+                        DiagnosticKind::Typecheck,
+                        format!("duplicate function name `{}` in module", function.name),
+                    )
+                    .with_annotated_span(first_span, "first declaration")
+                    .with_annotated_span(function.span, "duplicate declaration")
+                    .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                );
+            } else {
+                seen_function_names.insert(function.name.clone(), function.span);
+            }
+
+            function_types.insert(
+                function.name.clone(),
+                FunctionType {
+                    parameter_types: function
+                        .parameters
+                        .iter()
+                        .map(|parameter| Self::type_from_ref(parameter.ty))
+                        .collect(),
+                    return_type: Self::type_from_ref(function.return_type),
+                },
+            );
+        }
+
+        for function in &module.functions {
+            let mut parameter_names = HashSet::new();
+            let mut locals = HashMap::new();
+            for parameter in &function.parameters {
+                if !parameter_names.insert(parameter.name.clone()) {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            format!(
+                                "duplicate parameter name `{}` in function `{}`",
+                                parameter.name, function.name
+                            ),
+                        )
+                        .with_annotated_span(
+                            parameter.span,
+                            "this parameter name is already declared",
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                    continue;
+                }
+                locals.insert(parameter.name.clone(), Self::type_from_ref(parameter.ty));
+            }
+
+            for statement in &function.statements {
+                Self::typecheck_statement(
+                    statement,
+                    &mut diagnostics,
+                    source,
+                    &function_types,
+                    &mut locals,
+                    &mut assertion_count,
+                );
+            }
+        }
 
         for test in &module.tests {
             let timer = TaskTimer::start(format!("typecheck test `{}`", test.name));
@@ -234,33 +512,16 @@ impl Typechecker for BasicTypechecker {
                 seen_test_names.insert(test.name.clone(), test.span);
             }
 
+            let mut locals = HashMap::new();
             for statement in &test.statements {
-                match statement {
-                    Statement::Assert(assertion) => {
-                        let expression_type = Self::typecheck_expression(
-                            &assertion.expression,
-                            &mut diagnostics,
-                            source,
-                        );
-                        if expression_type != Type::Bool {
-                            diagnostics.push(
-                                SourceDiagnostic::new(
-                                    DiagnosticKind::Typecheck,
-                                    "assert expects a boolean expression",
-                                )
-                                .with_annotated_span(
-                                    assertion.span,
-                                    "this assertion does not evaluate to `bool`",
-                                )
-                                .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
-                            );
-                            continue;
-                        }
-
-                        assertion_count += 1;
-                    }
-                    Statement::Let(_) | Statement::Expr(_) => {}
-                }
+                Self::typecheck_statement(
+                    statement,
+                    &mut diagnostics,
+                    source,
+                    &function_types,
+                    &mut locals,
+                    &mut assertion_count,
+                );
             }
 
             let timing = timer.finish();
@@ -288,7 +549,10 @@ impl Typechecker for BasicTypechecker {
 #[cfg(test)]
 mod tests {
     use super::{BasicTypechecker, Typechecker};
-    use holo_ast::{AssertStatement, BinaryOperator, Expr, Module, Statement, TestItem};
+    use holo_ast::{
+        AssertStatement, BinaryOperator, Expr, FunctionItem, FunctionParameter, Module, Statement,
+        TestItem, TypeRef,
+    };
     use holo_base::Span;
 
     #[test]
@@ -394,5 +658,105 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("same type")));
+    }
+
+    #[test]
+    fn reports_unknown_identifier() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "entry".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
+                statements: vec![Statement::Expr(holo_ast::ExprStatement {
+                    expression: Expr::identifier("missing", Span::new(0, 7)),
+                    span: Span::new(0, 8),
+                })],
+                is_test: false,
+                span: Span::new(0, 8),
+            }],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "missing;");
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("unknown identifier")));
+    }
+
+    #[test]
+    fn reports_unknown_function_call() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "entry".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
+                statements: vec![Statement::Expr(holo_ast::ExprStatement {
+                    expression: Expr::call(
+                        Expr::identifier("unknown_fn", Span::new(0, 10)),
+                        vec![],
+                        Span::new(0, 12),
+                    ),
+                    span: Span::new(0, 13),
+                })],
+                is_test: false,
+                span: Span::new(0, 13),
+            }],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "unknown_fn();");
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("unknown function")));
+    }
+
+    #[test]
+    fn reports_call_arity_mismatch() {
+        let module = Module {
+            functions: vec![
+                FunctionItem {
+                    name: "sum".into(),
+                    parameters: vec![
+                        FunctionParameter {
+                            name: "a".into(),
+                            ty: TypeRef::I64,
+                            span: Span::new(0, 1),
+                        },
+                        FunctionParameter {
+                            name: "b".into(),
+                            ty: TypeRef::I64,
+                            span: Span::new(3, 4),
+                        },
+                    ],
+                    return_type: TypeRef::I64,
+                    statements: Vec::new(),
+                    is_test: false,
+                    span: Span::new(0, 10),
+                },
+                FunctionItem {
+                    name: "entry".into(),
+                    parameters: Vec::new(),
+                    return_type: TypeRef::Unit,
+                    statements: vec![Statement::Expr(holo_ast::ExprStatement {
+                        expression: Expr::call(
+                            Expr::identifier("sum", Span::new(11, 14)),
+                            vec![Expr::number_literal("1", Span::new(15, 16))],
+                            Span::new(11, 17),
+                        ),
+                        span: Span::new(11, 18),
+                    })],
+                    is_test: false,
+                    span: Span::new(11, 18),
+                },
+            ],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "sum(1);");
+        assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("expects 2 argument(s) but got 1")));
     }
 }
