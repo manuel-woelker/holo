@@ -34,18 +34,34 @@ fn passing_case() { assert(true); }
 fn failing_case() { assert(!true); }
 ```
 
+## How Should Crate Boundaries Be Structured?
+Use separate crates to keep responsibilities explicit and testable:
+- `holo-ast`: AST node types, spans, and shared syntax data structures.
+- `holo-lexer`: Token definitions and source-to-token lexing.
+- `holo-parser`: Token-to-AST parsing, including `#[test]`, `assert`, and unary `!`.
+- `holo-typechecker`: Semantic/type rules over AST or lowered IR.
+- `holo-interpreter`: Runtime evaluation for boolean expressions and assertions.
+- `holo-core`: Orchestrates end-to-end compile/test flow, file watching hooks, diagnostics aggregation, and daemon-facing APIs.
+
+For query orchestration, prefer a dedicated crate:
+- `holo-query` (recommended): Query trait/interfaces, memoization store, dependency tracking, and invalidation logic used by `holo-core`.
+
+If repository complexity is still low, `holo-query` can temporarily live inside `holo-core`, then be extracted once query APIs stabilize.
+
 ## What Compiler Pipeline Should The Daemon Run?
 For each changed file, run this fixed pipeline:
-1. Parse file into AST.
-2. Lower AST into a tiny IR with boolean constants, unary negation, and assert statements.
-3. Typecheck IR (`!` requires bool input, `assert` requires bool argument).
-4. Build a test manifest from `#[test]` items.
-5. Execute tests and emit pass/fail diagnostics.
+1. Lex source text into tokens (`holo-lexer`).
+2. Parse tokens into AST (`holo-parser` + `holo-ast`).
+3. Lower AST into a tiny IR with boolean constants, unary negation, and assert statements (`holo-core`).
+4. Typecheck IR (`!` requires bool input, `assert` requires bool argument) (`holo-typechecker`).
+5. Build a test manifest from `#[test]` items (`holo-core`).
+6. Execute tests and emit pass/fail diagnostics (`holo-interpreter` + `holo-core`).
 
 Each stage should be query-driven so results are cached by input identity.
 
 ## What Queries Should Exist In The Initial Query System?
 Define stable query keys by file path + file content hash:
+- `lex_file(path) -> LexResult`
 - `parse_file(path) -> ParseResult`
 - `lower_file(path) -> LoweredFile`
 - `typecheck_file(path) -> TypecheckResult`
@@ -94,16 +110,16 @@ Diagnostics should include file path, line, column, and short actionable message
 
 ## What Milestones Should We Implement In Order?
 1. **Project wiring**
-Add crate/module boundaries for daemon loop, parser, test collector, evaluator, and diagnostics.
-2. **Parser + AST**
-Parse boolean literals, unary negation, assert statements, and test item declarations with spans.
+Create `holo-ast`, `holo-lexer`, `holo-parser`, `holo-typechecker`, `holo-interpreter`, and `holo-core` crates; add `holo-query` as a dedicated query crate (or stage it inside `holo-core` initially).
+2. **Lexer + Parser + AST**
+Parse boolean literals, unary negation, assert statements, and test item declarations with spans across dedicated crates.
 3. **Typecheck + IR**
-Validate negation/assert typing rules and generate lowered boolean/assert IR.
+Validate negation/assert typing rules and generate lowered boolean/assert IR with boundaries between `holo-typechecker` and `holo-core`.
 4. **Query engine shell**
-Implement memoized per-file queries with hash-based invalidation.
-5. **Test collector + runner**
-Discover `#[test]` items and evaluate test bodies.
-6. **File watch daemon**
+Implement memoized per-file queries with hash-based invalidation in `holo-query` (or `holo-core` if deferred).
+5. **Test collector + interpreter runner**
+Discover `#[test]` items and evaluate test bodies through `holo-interpreter`.
+6. **Core daemon integration**
 Add watch + debounce + incremental recompute loop.
 7. **Reporting**
 Print stable diagnostics and per-cycle test summary.
