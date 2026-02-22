@@ -319,14 +319,25 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
 }
 
 fn format_master_issue_row(issue: &ProjectIssue) -> SharedString {
+    let display_file = master_display_path(&issue.file);
     format!(
         "{} {}:{} - {}",
         issue.kind.emoji(),
-        issue.file,
+        display_file,
         issue.line,
         short_error_message(issue)
     )
     .into()
+}
+
+fn master_display_path(path: &str) -> SharedString {
+    if let Some(stripped) = path.strip_prefix(".\\") {
+        return stripped.into();
+    }
+    if let Some(stripped) = path.strip_prefix("./") {
+        return stripped.into();
+    }
+    path.into()
 }
 
 fn short_error_message(issue: &ProjectIssue) -> SharedString {
@@ -750,7 +761,7 @@ impl DeckApp {
 impl ProjectIssueKind {
     fn emoji(self) -> &'static str {
         match self {
-            Self::Compilation => "🛠",
+            Self::Compilation => "⚒️",
             Self::Test => "🧪",
         }
     }
@@ -962,8 +973,8 @@ impl DaemonState {
 mod tests {
     use super::{
         ansi_colored_lines, example_issues, format_master_issue_row, is_navigable_key_event,
-        parse_dependency_tree, DaemonState, DeckApp, DeckTab, ProjectIssue, ProjectIssueKind,
-        ProjectIssueSeverity, MAX_LOG_ENTRIES,
+        master_display_path, parse_dependency_tree, DaemonState, DeckApp, DeckTab, ProjectIssue,
+        ProjectIssueKind, ProjectIssueSeverity, MAX_LOG_ENTRIES,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -1128,7 +1139,7 @@ mod tests {
         };
         assert_eq!(
             format_master_issue_row(&issue),
-            "🛠 src/sample.holo:42 - missing expression"
+            "⚒️ src/sample.holo:42 - missing expression"
         );
     }
 
@@ -1138,5 +1149,12 @@ mod tests {
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].spans[0].content, "error");
         assert_eq!(lines[0].spans[0].style.fg, Some(ratatui::style::Color::Red));
+    }
+
+    #[test]
+    fn strips_relative_prefix_for_master_file_path() {
+        assert_eq!(master_display_path(".\\a.holo"), "a.holo");
+        assert_eq!(master_display_path("./a.holo"), "a.holo");
+        assert_eq!(master_display_path("a.holo"), "a.holo");
     }
 }

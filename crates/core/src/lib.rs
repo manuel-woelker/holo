@@ -317,6 +317,7 @@ struct PersistedDiagnostic {
     kind: PersistedDiagnosticKind,
     message: String,
     annotated_spans: Vec<PersistedAnnotatedSpan>,
+    source_excerpts: Vec<PersistedSourceExcerpt>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Encode, Decode)]
@@ -332,6 +333,13 @@ struct PersistedAnnotatedSpan {
     start: usize,
     end: usize,
     message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+struct PersistedSourceExcerpt {
+    source: String,
+    starting_line: usize,
+    starting_offset: usize,
 }
 
 impl PersistedCycleSummary {
@@ -420,6 +428,15 @@ impl PersistedDiagnostic {
                     message: span.message.to_string(),
                 })
                 .collect(),
+            source_excerpts: diagnostic
+                .source_excerpts
+                .iter()
+                .map(|excerpt| PersistedSourceExcerpt {
+                    source: excerpt.source.to_string(),
+                    starting_line: excerpt.starting_line,
+                    starting_offset: excerpt.starting_offset,
+                })
+                .collect(),
         }
     }
 
@@ -439,6 +456,15 @@ impl PersistedDiagnostic {
                 span: Span::new(annotated_span.start, annotated_span.end),
                 message: annotated_span.message.into(),
             });
+        }
+        for excerpt in self.source_excerpts {
+            diagnostic
+                .source_excerpts
+                .push(holo_base::SourceExcerpt::new(
+                    excerpt.source,
+                    excerpt.starting_line,
+                    excerpt.starting_offset,
+                ));
         }
 
         diagnostic
@@ -468,7 +494,7 @@ impl PersistedCache {
             bytes: bitcode::encode(&persisted),
             produced_at: 0,
             content_hash,
-            schema_version: 1,
+            schema_version: 2,
         };
         self.db
             .put_artifact(&CoreArtifactKind::CycleSummary, &key, record)
@@ -488,6 +514,9 @@ impl PersistedCache {
         };
 
         if record.content_hash != content_hash {
+            return Ok(None);
+        }
+        if record.schema_version != 2 {
             return Ok(None);
         }
 
@@ -592,6 +621,33 @@ mod tests {
             second.query_value("persisted.holo", QueryStage::Parse, source),
             None
         );
+        drop(second);
+
+        fs::remove_dir_all(root).expect("cleanup should succeed");
+    }
+
+    #[test]
+    fn persists_diagnostic_source_excerpts_between_core_instances() {
+        let root = temp_root_dir("persists_diagnostic_source_excerpts_between_core_instances");
+        let source = "foo";
+
+        let mut first = CompilerCore::with_persistent_cache(&root)
+            .expect("first core with persistence should initialize");
+        let first_summary = first
+            .process_source("broken.holo", source)
+            .expect("first run should succeed with diagnostics");
+        assert!(!first_summary.diagnostics.is_empty());
+        drop(first);
+
+        let mut second = CompilerCore::with_persistent_cache(&root)
+            .expect("second core with persistence should initialize");
+        let second_summary = second
+            .process_source("broken.holo", source)
+            .expect("second run should succeed with diagnostics");
+        let rendered = holo_base::display_source_diagnostics(&second_summary.diagnostics);
+
+        assert!(rendered.contains("foo"));
+        assert!(!rendered.contains("at bytes 0..3"));
         drop(second);
 
         fs::remove_dir_all(root).expect("cleanup should succeed");

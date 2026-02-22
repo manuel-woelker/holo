@@ -385,8 +385,9 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
             .as_ref()
             .map(|message| strip_ansi_sequences(message))
             .unwrap_or_else(|| error.message.clone());
+        let display_path = title_display_path(&error.file_path);
         issues.push(ProjectIssue {
-            title: format!("Compilation diagnostic at {}:{line}", error.file_path).into(),
+            title: format!("Compilation diagnostic at {display_path}:{line}").into(),
             file: error.file_path.clone(),
             line,
             kind: ProjectIssueKind::Compilation,
@@ -413,8 +414,9 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
             .first()
             .map(|diagnostic| diagnostic.message.clone())
             .unwrap_or_else(|| failure.message.clone());
+        let display_path = title_display_path(&failure.file_path);
         issues.push(ProjectIssue {
-            title: format!("Test failure at {}:{line}", failure.file_path).into(),
+            title: format!("Test failure at {display_path}:{line}").into(),
             file: failure.file_path.clone(),
             line,
             kind: ProjectIssueKind::Test,
@@ -426,6 +428,16 @@ fn derive_issues(update: &DaemonStatusUpdate) -> Vec<ProjectIssue> {
     }
 
     issues
+}
+
+fn title_display_path(path: &str) -> SharedString {
+    if let Some(stripped) = path.strip_prefix(".\\") {
+        return stripped.into();
+    }
+    if let Some(stripped) = path.strip_prefix("./") {
+        return stripped.into();
+    }
+    path.into()
 }
 
 fn diagnostic_line_number(error: &holo_core::daemon::FileDiagnostic) -> Option<usize> {
@@ -952,7 +964,8 @@ mod tests {
     use super::{
         build_dependency_graph, collect_holo_sources, daemon_endpoint_name, derive_issues,
         display_source_path, is_holo_file, line_number_for_offset, map_lifecycle_state_to_deck,
-        parse_cli_mode, path_arg_or_default, run_build_once, strip_ansi_sequences, CliMode,
+        parse_cli_mode, path_arg_or_default, run_build_once, strip_ansi_sequences,
+        title_display_path, CliMode,
     };
     use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, Span};
     use holo_core::daemon::{DaemonStatusUpdate, FileDiagnostic};
@@ -1167,6 +1180,16 @@ mod tests {
         assert_eq!(line_number_for_offset(&excerpt, 106), Some(11));
         assert_eq!(line_number_for_offset(&excerpt, 113), Some(12));
         assert_eq!(line_number_for_offset(&excerpt, 99), None);
+    }
+
+    #[test]
+    fn strips_relative_prefix_for_title_paths() {
+        assert_eq!(
+            title_display_path(".\\src\\sample.holo"),
+            "src\\sample.holo"
+        );
+        assert_eq!(title_display_path("./src/sample.holo"), "src/sample.holo");
+        assert_eq!(title_display_path("src/sample.holo"), "src/sample.holo");
     }
 
     #[test]

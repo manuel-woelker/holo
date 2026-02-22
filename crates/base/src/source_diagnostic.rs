@@ -139,10 +139,12 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
         }
 
         let (kind_color, kind_label) = diagnostic.kind.ansi_label();
+        let marker = diagnostic.kind.marker();
         output.push_str(&format!(
-            "{bold}{color}● {label}{reset}{bold}: {reset}{message}\n",
+            "{bold}{color}{marker} {label}{reset}{bold}: {reset}{message}\n",
             bold = ANSI_BOLD,
             color = kind_color,
+            marker = marker,
             label = kind_label,
             reset = ANSI_RESET,
             message = diagnostic.message,
@@ -160,16 +162,14 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
             {
                 output.push('\n');
                 output.push_str(&format!(
-                    "{dim}│ {reset}{blue}{line:>4} |{reset} {source}\n",
-                    dim = ANSI_DIM,
+                    "{blue}{line:>4} │{reset} {source}\n",
                     blue = ANSI_BLUE,
                     reset = ANSI_RESET,
                     line = line_no,
                     source = line_text,
                 ));
                 output.push_str(&format!(
-                    "{dim}│ {reset}     | {red}{spacing}{carets}{reset} {annotation}\n",
-                    dim = ANSI_DIM,
+                    "     │ {red}{spacing}{carets}{reset} {annotation}\n",
                     red = ANSI_RED,
                     reset = ANSI_RESET,
                     spacing = " ".repeat(caret_offset),
@@ -194,6 +194,13 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
 }
 
 impl DiagnosticKind {
+    fn marker(self) -> &'static str {
+        match self {
+            Self::Lexing | Self::Parsing | Self::Typecheck => "⚒️",
+            Self::Test => "🧪",
+        }
+    }
+
     fn label(self) -> &'static str {
         match self {
             Self::Lexing => "lexing error",
@@ -324,10 +331,10 @@ mod tests {
             ];
         let rendered = display_source_diagnostics(&diagnostics);
 
-        assert!(rendered.contains("● Parsing"));
+        assert!(rendered.contains("⚒️ Parsing"));
         assert!(!rendered.contains("--> line"));
         assert!(!rendered.contains("├─"));
-        assert!(rendered.contains("│ "));
+        assert!(rendered.contains(" │ "));
         assert!(rendered.contains("assert();"));
         assert!(rendered.contains("┄"));
         assert!(rendered.contains("\u{1b}[31m"));
