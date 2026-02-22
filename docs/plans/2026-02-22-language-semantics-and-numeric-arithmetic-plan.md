@@ -80,12 +80,12 @@ This plan focuses on language/frontend/runtime capability, not performance work.
 - Add concise primary message plus annotated spans for operator/type mismatch and bad calls.
 - Ensure deck issue titles remain concise and line-addressable.
 
-6. **Core/daemon integration - In Progress**
+6. **Core/daemon integration - Done**
 - Ensure compile-and-test cycles continue after non-fatal per-file diagnostics.
 - Keep dependency/query invalidation correct for function and expression changes.
 - Preserve persistent cache compatibility via schema bump where needed.
 
-7. **Test coverage hardening - Pending**
+7. **Test coverage hardening - In Progress**
 - Add data-driven parser/typechecker/interpreter tests for all numeric types and operators.
 - Add negative tests for unsupported mixes (`i64 + f64`, `bool + bool`, etc.).
 - Add end-to-end CLI/daemon tests over multi-file examples using functions + arithmetic.

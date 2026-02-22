@@ -680,6 +680,38 @@ mod tests {
     }
 
     #[test]
+    fn continues_running_tests_when_non_test_function_has_diagnostics() {
+        let mut core = CompilerCore::default();
+        let source = "fn helper() -> i64 { missing_value; } #[test] fn smoke() { assert(true); }";
+        let summary = core
+            .process_source("non_test_diagnostic.holo", source)
+            .expect("pipeline should continue despite diagnostics in helper function");
+
+        assert_eq!(summary.tests.executed, 1);
+        assert_eq!(summary.tests.passed, 1);
+        assert!(!summary.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn invalidates_cache_when_helper_function_changes() {
+        let mut core = CompilerCore::default();
+        let passing_source =
+            "fn helper() -> bool { true; } #[test] fn smoke() { assert(helper()); }";
+        let failing_source =
+            "fn helper() -> bool { false; } #[test] fn smoke() { assert(helper()); }";
+
+        let first = core
+            .process_source("helper_change.holo", passing_source)
+            .expect("first pipeline run should succeed");
+        let second = core
+            .process_source("helper_change.holo", failing_source)
+            .expect("second pipeline run should succeed");
+
+        assert_eq!(first.tests.failed, 0);
+        assert_eq!(second.tests.failed, 1);
+    }
+
+    #[test]
     fn reuses_persisted_summary_between_core_instances() {
         let root = temp_root_dir("reuses_persisted_summary_between_core_instances");
         let source = "#[test] fn smoke() { assert(true); }";
