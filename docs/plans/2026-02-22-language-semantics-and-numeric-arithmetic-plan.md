@@ -70,12 +70,12 @@ This plan focuses on language/frontend/runtime capability, not performance work.
 - Validate `let` redefinitions/shadowing policy (allow shadowing in inner scopes only).
 - Validate function declarations and call sites (existence, arity, argument types, return type use).
 
-4. **Interpreter numeric + function runtime - In Progress**
+4. **Interpreter numeric + function runtime - Done**
 - Add runtime value enum for all supported primitives.
 - Implement arithmetic evaluation with checked behavior and diagnostics.
 - Implement call frames, parameter binding, and return values.
 
-5. **Diagnostics + UX - Pending**
+5. **Diagnostics + UX - In Progress**
 - Expand `SourceDiagnostic` usage for type and runtime errors in new constructs.
 - Add concise primary message plus annotated spans for operator/type mismatch and bad calls.
 - Ensure deck issue titles remain concise and line-addressable.

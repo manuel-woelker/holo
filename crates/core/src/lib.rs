@@ -195,7 +195,7 @@ impl CompilerCore {
 
         info!("running tests");
         let (tests, run_tests_timing) = time_task(format!("run tests `{file_path}`"), || {
-            self.interpreter.run_collected_tests(&collected_tests)
+            self.interpreter.run_tests(&module)
         });
         info!(
             file_path = %file_path,
