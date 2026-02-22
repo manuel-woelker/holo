@@ -271,10 +271,9 @@ mod tests {
         };
         let performance_event_json =
             serde_json::to_string(&performance_event).expect("performance event should serialize");
-        let performance_event_round_trip: WireMessage = serde_json::from_str(
-            &performance_event_json,
-        )
-        .expect("performance event should deserialize");
+        let performance_event_round_trip: WireMessage =
+            serde_json::from_str(&performance_event_json)
+                .expect("performance event should deserialize");
         assert_eq!(performance_event_round_trip, performance_event);
     }
 }

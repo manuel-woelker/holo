@@ -528,8 +528,7 @@ fn draw_performance(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         .iter()
         .map(|entry| ListItem::new(entry.as_str()))
         .collect::<Vec<_>>();
-    let list =
-        List::new(items).block(Block::default().title("Performance").borders(Borders::ALL));
+    let list = List::new(items).block(Block::default().title("Performance").borders(Borders::ALL));
     frame.render_widget(list, area);
 }
 

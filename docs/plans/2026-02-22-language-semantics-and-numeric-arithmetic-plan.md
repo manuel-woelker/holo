@@ -55,12 +55,12 @@ This plan focuses on language/frontend/runtime capability, not performance work.
 - Functions must be declared before use in the same file for V1 (can be relaxed later).
 
 ## What Milestones Should We Implement In Order?
-1. **AST + Parser foundation - Pending**
+1. **AST + Parser foundation - Done**
 - Add AST variants for identifiers, numeric literals, unary/binary ops, call expressions, `let`, and function signatures.
 - Implement expression precedence and associativity.
 - Add parser diagnostics/recovery for malformed arithmetic and calls.
 
-2. **Type system primitives - Pending**
+2. **Type system primitives - In Progress**
 - Add `Type` variants: `Bool`, `U32`, `U64`, `I32`, `I64`, `F32`, `F64`, and `Unit`.
 - Define operator typing tables for unary/binary operations.
 - Introduce function type representation (param types + return type).
@@ -110,4 +110,3 @@ This plan focuses on language/frontend/runtime capability, not performance work.
 - Then add remaining numeric types and operator matrix.
 - Then enable function calls with typed signatures.
 - Then tighten diagnostics and end-to-end integration tests.
-
