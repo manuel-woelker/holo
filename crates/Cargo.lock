@@ -184,8 +184,10 @@ dependencies = [
 name = "holo-core"
 version = "0.1.0"
 dependencies = [
+ "bitcode",
  "holo-ast",
  "holo-base",
+ "holo-db",
  "holo-interpreter",
  "holo-lexer",
  "holo-parser",

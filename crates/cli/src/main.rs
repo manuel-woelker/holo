@@ -20,7 +20,7 @@ fn run_directory(root_dir: &Path) -> Result<String> {
     }
 
     let mut daemon = CoreDaemon::new(0);
-    let mut core = CompilerCore::default();
+    let mut core = CompilerCore::with_persistent_cache(root_dir)?;
     info!("enqueueing sources for daemon cycle");
     daemon.enqueue_startup_sources(sources, 0);
     info!("processing daemon cycle");

@@ -7,8 +7,10 @@ license = "MIT"
 publish = false
 
 [dependencies]
+bitcode = { version = "0.6", features = ["derive"] }
 holo-ast = { path = "../ast" }
 holo-base = { path = "../base" }
+holo-db = { path = "../db" }
 holo-interpreter = { path = "../interpreter" }
 holo-lexer = { path = "../lexer" }
 holo-parser = { path = "../parser" }
