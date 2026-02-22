@@ -187,15 +187,15 @@ impl CoreDaemon {
                                     .failure_reason
                                     .clone()
                                     .unwrap_or_else(|| "assertion failed".into());
-                                let diagnostic =
-                                    SourceDiagnostic::new(
-                                        DiagnosticKind::Test,
-                                        format!("test `{}` {reason}", test.name),
-                                    )
-                                    .with_annotated_span(span, reason)
-                                    .with_source_excerpt(
-                                        SourceExcerpt::new(pending.source.clone(), 1, 0),
-                                    );
+                                let diagnostic = SourceDiagnostic::new(
+                                    DiagnosticKind::Test,
+                                    format!("test `{}` {reason}", test.name),
+                                )
+                                .with_annotated_span(span, reason)
+                                .with_source_excerpt(
+                                    SourceExcerpt::new(pending.source.clone(), 1, 0)
+                                        .with_source_name(file_path.clone()),
+                                );
                                 update.test_failures.push(FileDiagnostic {
                                     file_path: file_path.clone(),
                                     message: diagnostic.render_annotated(),

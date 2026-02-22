@@ -224,6 +224,14 @@ impl CompilerCore {
             ),
         );
 
+        for diagnostic in &mut diagnostics {
+            for excerpt in &mut diagnostic.source_excerpts {
+                if excerpt.source_name.is_none() {
+                    excerpt.set_source_name(file_path);
+                }
+            }
+        }
+
         let test_timings = tests.timings.clone();
         let summary = CoreCycleSummary {
             token_count: tokens.len(),
@@ -377,6 +385,7 @@ struct PersistedAnnotatedSpan {
 
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
 struct PersistedSourceExcerpt {
+    source_name: Option<String>,
     source: String,
     starting_line: usize,
     starting_offset: usize,
@@ -513,6 +522,7 @@ impl PersistedDiagnostic {
                 .source_excerpts
                 .iter()
                 .map(|excerpt| PersistedSourceExcerpt {
+                    source_name: excerpt.source_name.as_ref().map(ToString::to_string),
                     source: excerpt.source.to_string(),
                     starting_line: excerpt.starting_line,
                     starting_offset: excerpt.starting_offset,
@@ -539,13 +549,15 @@ impl PersistedDiagnostic {
             });
         }
         for excerpt in self.source_excerpts {
-            diagnostic
-                .source_excerpts
-                .push(holo_base::SourceExcerpt::new(
-                    excerpt.source,
-                    excerpt.starting_line,
-                    excerpt.starting_offset,
-                ));
+            let mut source_excerpt = holo_base::SourceExcerpt::new(
+                excerpt.source,
+                excerpt.starting_line,
+                excerpt.starting_offset,
+            );
+            if let Some(source_name) = excerpt.source_name {
+                source_excerpt.set_source_name(source_name);
+            }
+            diagnostic.source_excerpts.push(source_excerpt);
         }
 
         diagnostic
@@ -575,7 +587,7 @@ impl PersistedCache {
             bytes: bitcode::encode(&persisted),
             produced_at: 0,
             content_hash,
-            schema_version: 5,
+            schema_version: 6,
         };
         self.db
             .put_artifact(&CoreArtifactKind::CycleSummary, &key, record)
@@ -597,7 +609,7 @@ impl PersistedCache {
         if record.content_hash != content_hash {
             return Ok(None);
         }
-        if record.schema_version != 5 {
+        if record.schema_version != 6 {
             return Ok(None);
         }
 
@@ -760,6 +772,7 @@ mod tests {
         let rendered = holo_base::display_source_diagnostics(&second_summary.diagnostics);
 
         assert!(rendered.contains("fn broken"));
+        assert!(rendered.contains("broken.holo:1"));
         assert!(!rendered.contains("at bytes 0..3"));
         drop(second);
 

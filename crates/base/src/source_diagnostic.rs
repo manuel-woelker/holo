@@ -36,6 +36,9 @@ impl AnnotatedSpan {
 /// Source snippet metadata used to render diagnostics with context.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SourceExcerpt {
+    /// Optional source file name/path for this excerpt.
+    #[serde(default)]
+    pub source_name: Option<SharedString>,
     /// Source text content used for rendering context lines.
     pub source: SharedString,
     /// 1-based line number corresponding to byte offset `starting_offset`.
@@ -52,10 +55,22 @@ impl SourceExcerpt {
         starting_offset: usize,
     ) -> Self {
         Self {
+            source_name: None,
             source: source.into(),
             starting_line,
             starting_offset,
         }
+    }
+
+    /// Sets a source file name/path for this excerpt.
+    pub fn with_source_name(mut self, source_name: impl Into<SharedString>) -> Self {
+        self.source_name = Some(source_name.into());
+        self
+    }
+
+    /// Sets or replaces source file name/path for this excerpt in place.
+    pub fn set_source_name(&mut self, source_name: impl Into<SharedString>) {
+        self.source_name = Some(source_name.into());
     }
 }
 
@@ -155,12 +170,21 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
         }
 
         for annotation in &diagnostic.annotated_spans {
-            if let Some((line_no, line_text, caret_offset, caret_len)) = diagnostic
+            if let Some((line_no, line_text, caret_offset, caret_len, source_name)) = diagnostic
                 .source_excerpts
                 .iter()
                 .find_map(|excerpt| render_info_with_excerpt(annotation, excerpt))
             {
                 output.push('\n');
+                if let Some(source_name) = source_name {
+                    output.push_str(&format!(
+                        "{dim}{file}:{line}{reset}\n",
+                        dim = ANSI_DIM,
+                        file = source_name,
+                        line = line_no,
+                        reset = ANSI_RESET,
+                    ));
+                }
                 output.push_str(&format!(
                     "{blue}{line:>4} │{reset} {source}\n",
                     blue = ANSI_BLUE,
@@ -250,7 +274,7 @@ fn render_annotation_with_excerpt(
 fn render_info_with_excerpt(
     annotation: &AnnotatedSpan,
     excerpt: &SourceExcerpt,
-) -> Option<(usize, String, usize, usize)> {
+) -> Option<(usize, String, usize, usize, Option<SharedString>)> {
     let (line_no, line_start, line_text) = find_line_for_offset(excerpt, annotation.span.start)?;
     let start = annotation.span.start.max(line_start);
     let end = annotation.span.end.max(start + 1);
@@ -258,7 +282,13 @@ fn render_info_with_excerpt(
     let caret_start = start.saturating_sub(line_start);
     let caret_end = end.min(line_end).max(start + 1);
     let caret_len = caret_end.saturating_sub(start).max(1);
-    Some((line_no, line_text, caret_start, caret_len))
+    Some((
+        line_no,
+        line_text,
+        caret_start,
+        caret_len,
+        excerpt.source_name.clone(),
+    ))
 }
 
 const ANSI_RESET: &str = "\x1b[0m";
@@ -326,7 +356,9 @@ mod tests {
         let diagnostics =
             vec![
                 SourceDiagnostic::new(DiagnosticKind::Parsing, "expected expression")
-                    .with_source_excerpt(SourceExcerpt::new("assert();\n", 20, 300))
+                    .with_source_excerpt(
+                        SourceExcerpt::new("assert();\n", 20, 300).with_source_name("sample.holo"),
+                    )
                     .with_annotated_span(Span::new(307, 308), "missing expression"),
             ];
         let rendered = display_source_diagnostics(&diagnostics);
@@ -336,6 +368,7 @@ mod tests {
         assert!(!rendered.contains("├─"));
         assert!(rendered.contains(" │ "));
         assert!(rendered.contains("assert();"));
+        assert!(rendered.contains("sample.holo:20"));
         assert!(rendered.contains("┄"));
         assert!(rendered.contains("\u{1b}[31m"));
         assert!(rendered.contains("\u{1b}[1m"));
