@@ -213,11 +213,20 @@ fn run_loop(
             KeyCode::Down | KeyCode::Char('j') => {
                 if app.active_tab == DeckTab::Issues {
                     app.select_next();
+                } else if app.active_tab == DeckTab::DependencyGraph {
+                    app.select_next_dependency_node();
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 if app.active_tab == DeckTab::Issues {
                     app.select_previous();
+                } else if app.active_tab == DeckTab::DependencyGraph {
+                    app.select_previous_dependency_node();
+                }
+            }
+            KeyCode::Enter => {
+                if app.active_tab == DeckTab::DependencyGraph {
+                    app.toggle_selected_dependency_node();
                 }
             }
             _ => {}
@@ -358,7 +367,7 @@ fn draw_detail(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "Keys: left/right tab, up/down issue, q/esc quit",
+            "Keys: left/right tab, up/down navigate, enter expand tree, q/esc quit",
             Style::default().fg(Color::DarkGray),
         )),
     ];
@@ -387,14 +396,57 @@ fn draw_log(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
 }
 
 fn draw_dependency_graph(area: Rect, frame: &mut ratatui::Frame<'_>, app: &DeckApp) {
-    let graph = Paragraph::new(app.dependency_graph.as_str())
+    let visible_nodes = app.visible_dependency_nodes();
+    if visible_nodes.is_empty() {
+        let empty = Paragraph::new("No dependency graph available").block(
+            Block::default()
+                .title("Dependency Graph")
+                .borders(Borders::ALL),
+        );
+        frame.render_widget(empty, area);
+        return;
+    }
+
+    let items = visible_nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| {
+            let pointer = if index == app.dependency_selected {
+                "▶"
+            } else {
+                " "
+            };
+            let branch = match (node.connector, node.has_children, node.expanded) {
+                (Some(connector), true, true) => format!("{connector}▾"),
+                (Some(connector), true, false) => format!("{connector}▸"),
+                (Some(connector), false, _) => format!("{connector}─"),
+                (None, true, true) => "▾".to_owned(),
+                (None, true, false) => "▸".to_owned(),
+                (None, false, _) => " ".to_owned(),
+            };
+            let content = format!("{pointer}{}{} {}", node.prefix, branch, node.label);
+            let mut style = Style::default();
+            if node.depth <= 1 {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            ListItem::new(Line::from(Span::styled(content, style)))
+        })
+        .collect::<Vec<_>>();
+    let list = List::new(items)
         .block(
             Block::default()
                 .title("Dependency Graph")
                 .borders(Borders::ALL),
         )
-        .wrap(Wrap { trim: false });
-    frame.render_widget(graph, area);
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        );
+    let mut state = ListState::default();
+    state.select(Some(app.dependency_selected));
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 fn is_navigable_key_event(key_event: &KeyEvent) -> bool {
@@ -472,8 +524,13 @@ fn example_logs() -> Vec<String> {
 
 fn example_dependency_graph() -> String {
     [
-        "pipeline:",
-        "  source.holo -> lexer -> parser -> typechecker -> interpreter",
+        "Tests",
+        "  login_valid_credentials",
+        "    Input File: ./tests/auth.holo",
+        "    Function: assert",
+        "  startup_checks",
+        "    Input File: ./tests/startup.holo",
+        "    Function: assert",
     ]
     .join("\n")
 }
@@ -484,7 +541,8 @@ struct DeckApp {
     selected: usize,
     daemon_state: DaemonState,
     logs: Vec<String>,
-    dependency_graph: String,
+    dependency_tree: Vec<DependencyNode>,
+    dependency_selected: usize,
     active_tab: DeckTab,
 }
 
@@ -495,7 +553,8 @@ impl DeckApp {
             selected: 0,
             daemon_state: DaemonState::Disconnected,
             logs: example_logs(),
-            dependency_graph: example_dependency_graph(),
+            dependency_tree: parse_dependency_tree(&example_dependency_graph()),
+            dependency_selected: 0,
             active_tab: DeckTab::Issues,
         }
     }
@@ -555,7 +614,13 @@ impl DeckApp {
     }
 
     fn set_dependency_graph(&mut self, graph: String) {
-        self.dependency_graph = graph;
+        self.dependency_tree = parse_dependency_tree(&graph);
+        let visible_len = self.visible_dependency_nodes().len();
+        if visible_len == 0 {
+            self.dependency_selected = 0;
+        } else if self.dependency_selected >= visible_len {
+            self.dependency_selected = visible_len - 1;
+        }
     }
 
     fn failure_counts(&self) -> (usize, usize) {
@@ -571,6 +636,198 @@ impl DeckApp {
             }
         }
         (compilation_failures, test_failures)
+    }
+
+    fn visible_dependency_nodes(&self) -> Vec<VisibleDependencyNode> {
+        let mut visible = Vec::new();
+        collect_visible_dependency_nodes(&self.dependency_tree, 0, &[], &mut visible);
+        visible
+    }
+
+    fn select_next_dependency_node(&mut self) {
+        let visible = self.visible_dependency_nodes();
+        if visible.is_empty() {
+            self.dependency_selected = 0;
+            return;
+        }
+        self.dependency_selected = (self.dependency_selected + 1) % visible.len();
+    }
+
+    fn select_previous_dependency_node(&mut self) {
+        let visible = self.visible_dependency_nodes();
+        if visible.is_empty() {
+            self.dependency_selected = 0;
+            return;
+        }
+        if self.dependency_selected == 0 {
+            self.dependency_selected = visible.len() - 1;
+        } else {
+            self.dependency_selected -= 1;
+        }
+    }
+
+    fn toggle_selected_dependency_node(&mut self) {
+        let visible = self.visible_dependency_nodes();
+        let Some(selected) = visible.get(self.dependency_selected) else {
+            return;
+        };
+        if !selected.has_children || selected.depth == 0 {
+            return;
+        }
+        if let Some(node) = dependency_node_mut(&mut self.dependency_tree, &selected.path) {
+            node.expanded = !node.expanded;
+        }
+        let visible_len = self.visible_dependency_nodes().len();
+        if visible_len == 0 {
+            self.dependency_selected = 0;
+        } else if self.dependency_selected >= visible_len {
+            self.dependency_selected = visible_len - 1;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DependencyNode {
+    label: String,
+    children: Vec<DependencyNode>,
+    expanded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VisibleDependencyNode {
+    path: Vec<usize>,
+    label: String,
+    depth: usize,
+    prefix: String,
+    connector: Option<char>,
+    has_children: bool,
+    expanded: bool,
+}
+
+fn parse_dependency_tree(graph: &str) -> Vec<DependencyNode> {
+    let mut roots = Vec::<DependencyNode>::new();
+    let mut path_stack = Vec::<usize>::new();
+
+    for line in graph.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indentation = line.chars().take_while(|ch| *ch == ' ').count();
+        let depth = indentation / 2;
+        let label = line.trim().to_owned();
+        let node = DependencyNode {
+            label,
+            children: Vec::new(),
+            expanded: depth == 0,
+        };
+
+        while path_stack.len() > depth {
+            path_stack.pop();
+        }
+
+        if path_stack.is_empty() {
+            roots.push(node);
+            path_stack.clear();
+            path_stack.push(roots.len() - 1);
+            continue;
+        }
+
+        if let Some(parent) = dependency_node_mut(&mut roots, &path_stack) {
+            parent.children.push(node);
+            path_stack.push(parent.children.len() - 1);
+        } else {
+            roots.push(node);
+            path_stack.clear();
+            path_stack.push(roots.len() - 1);
+        }
+    }
+
+    roots
+}
+
+fn dependency_node_mut<'a>(
+    roots: &'a mut [DependencyNode],
+    path: &[usize],
+) -> Option<&'a mut DependencyNode> {
+    let (first, rest) = path.split_first()?;
+    let mut node = roots.get_mut(*first)?;
+    for index in rest {
+        node = node.children.get_mut(*index)?;
+    }
+    Some(node)
+}
+
+fn collect_visible_dependency_nodes(
+    nodes: &[DependencyNode],
+    depth: usize,
+    ancestor_has_more: &[bool],
+    output: &mut Vec<VisibleDependencyNode>,
+) {
+    for (index, node) in nodes.iter().enumerate() {
+        let is_last = index + 1 == nodes.len();
+        collect_visible_dependency_node(
+            node,
+            vec![index],
+            depth,
+            is_last,
+            ancestor_has_more,
+            output,
+        );
+    }
+}
+
+fn collect_visible_dependency_node(
+    node: &DependencyNode,
+    path: Vec<usize>,
+    depth: usize,
+    is_last: bool,
+    ancestor_has_more: &[bool],
+    output: &mut Vec<VisibleDependencyNode>,
+) {
+    let mut prefix = String::new();
+    if depth > 0 {
+        for has_more in ancestor_has_more {
+            prefix.push_str(if *has_more { "│ " } else { "  " });
+        }
+    }
+
+    output.push(VisibleDependencyNode {
+        path: path.clone(),
+        label: node.label.clone(),
+        depth,
+        prefix,
+        connector: if depth == 0 {
+            None
+        } else if is_last {
+            Some('└')
+        } else {
+            Some('├')
+        },
+        has_children: !node.children.is_empty(),
+        expanded: node.expanded,
+    });
+
+    if !node.expanded {
+        return;
+    }
+
+    let mut child_ancestor_has_more = ancestor_has_more.to_vec();
+    if depth > 0 {
+        child_ancestor_has_more.push(!is_last);
+    }
+
+    for (index, child) in node.children.iter().enumerate() {
+        let child_is_last = index + 1 == node.children.len();
+        let mut child_path = path.clone();
+        child_path.push(index);
+        collect_visible_dependency_node(
+            child,
+            child_path,
+            depth + 1,
+            child_is_last,
+            &child_ancestor_has_more,
+            output,
+        );
     }
 }
 
@@ -634,8 +891,8 @@ impl DaemonState {
 #[cfg(test)]
 mod tests {
     use super::{
-        example_issues, is_navigable_key_event, DaemonState, DeckApp, DeckTab, ProjectIssueKind,
-        ProjectIssueSeverity, MAX_LOG_ENTRIES,
+        example_issues, is_navigable_key_event, parse_dependency_tree, DaemonState, DeckApp,
+        DeckTab, ProjectIssueKind, ProjectIssueSeverity, MAX_LOG_ENTRIES,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
@@ -751,5 +1008,35 @@ mod tests {
         }
         assert_eq!(app.logs.len(), MAX_LOG_ENTRIES);
         assert_eq!(app.logs.first().map(String::as_str), Some("entry-5"));
+    }
+
+    #[test]
+    fn dependency_tree_initially_expands_only_first_two_layers() {
+        let graph = "Tests\n  sample_test\n    Input File: ./sample.holo\n    Function: assert";
+        let tree = parse_dependency_tree(graph);
+        let mut app = DeckApp::with_example_data();
+        app.dependency_tree = tree;
+        app.dependency_selected = 0;
+
+        let visible = app.visible_dependency_nodes();
+        assert_eq!(visible.len(), 2);
+        assert_eq!(visible[0].label, "Tests");
+        assert_eq!(visible[1].label, "sample_test");
+    }
+
+    #[test]
+    fn dependency_tree_expands_children_with_enter_toggle() {
+        let graph = "Tests\n  sample_test\n    Input File: ./sample.holo\n    Function: assert";
+        let tree = parse_dependency_tree(graph);
+        let mut app = DeckApp::with_example_data();
+        app.dependency_tree = tree;
+        app.dependency_selected = 1;
+
+        app.toggle_selected_dependency_node();
+        let visible = app.visible_dependency_nodes();
+        assert!(visible
+            .iter()
+            .any(|node| node.label == "Input File: ./sample.holo"));
+        assert!(visible.iter().any(|node| node.label == "Function: assert"));
     }
 }

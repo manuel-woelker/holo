@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use holo_ast::Statement;
 use holo_base::{holo_message_error, Result};
 use holo_core::daemon::{CoreDaemon, DaemonStatusUpdate};
 use holo_core::CompilerCore;
@@ -22,6 +23,8 @@ use holo_ipc::{
     DaemonEvent, IpcConnection, IpcServer, ProjectIssue, ProjectIssueKind, ProjectIssueSeverity,
     Request, Response, WireMessage,
 };
+use holo_lexer::{BasicLexer, Lexer};
+use holo_parser::{BasicParser, Parser};
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use tracing::{debug, error, info, instrument, warn};
 
@@ -586,22 +589,73 @@ fn map_lifecycle_state_to_deck(state: &str) -> DeckDaemonState {
 }
 
 fn build_dependency_graph(root_dir: &Path) -> Result<String> {
-    let mut paths = Vec::new();
-    collect_holo_paths_recursive(root_dir, &mut paths)?;
-    paths.sort();
-
-    if paths.is_empty() {
-        return Ok("pipeline:\n  <no .holo files discovered>".to_owned());
+    let sources = collect_holo_sources(root_dir)?;
+    let mut dependencies = Vec::new();
+    for (file_path, source) in sources {
+        match extract_test_dependencies_from_source(&file_path, &source) {
+            Ok(mut file_dependencies) => dependencies.append(&mut file_dependencies),
+            Err(error) => {
+                warn!(
+                    file_path = %file_path,
+                    error = %error,
+                    "failed to extract dependency graph entries from source"
+                );
+            }
+        }
     }
 
-    let mut lines = vec!["pipeline:".to_owned()];
-    for path in paths {
-        let display = display_source_path(root_dir, &path);
-        lines.push(format!(
-            "  {display} -> lexer -> parser -> typechecker -> interpreter"
-        ));
+    dependencies.sort_by(|left, right| {
+        left.test_name
+            .cmp(&right.test_name)
+            .then(left.file_path.cmp(&right.file_path))
+    });
+
+    let mut lines = vec!["Tests".to_owned()];
+    if dependencies.is_empty() {
+        lines.push("  <no discovered tests>".to_owned());
+        return Ok(lines.join("\n"));
     }
+
+    for dependency in dependencies {
+        lines.push(format!("  {}", dependency.test_name));
+        lines.push(format!("    Input File: {}", dependency.file_path));
+        for function in &dependency.used_functions {
+            lines.push(format!("    Function: {function}"));
+        }
+    }
+
     Ok(lines.join("\n"))
+}
+
+fn extract_test_dependencies_from_source(
+    file_path: &str,
+    source: &str,
+) -> Result<Vec<TestDependency>> {
+    let lexer = BasicLexer;
+    let parser = BasicParser;
+    let tokens = lexer.lex(source)?;
+    let module = parser.parse_module(&tokens)?;
+
+    let mut dependencies = Vec::new();
+    for test in module.tests {
+        let mut used_functions = test
+            .statements
+            .iter()
+            .map(|statement| match statement {
+                Statement::Assert(_) => "assert".to_owned(),
+            })
+            .collect::<Vec<_>>();
+        used_functions.sort();
+        used_functions.dedup();
+
+        dependencies.push(TestDependency {
+            test_name: test.name,
+            file_path: file_path.to_owned(),
+            used_functions,
+        });
+    }
+
+    Ok(dependencies)
 }
 
 fn map_ipc_issues_to_deck(issues: Vec<ProjectIssue>) -> Vec<DeckIssue> {
@@ -804,6 +858,13 @@ struct DaemonSharedState {
     dependency_graph: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TestDependency {
+    test_name: String,
+    file_path: String,
+    used_functions: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -937,8 +998,19 @@ mod tests {
         .expect("should write");
 
         let graph = build_dependency_graph(&temp).expect("graph should build");
-        assert!(graph.contains("a.holo -> lexer -> parser -> typechecker -> interpreter"));
-        assert!(graph.contains("b.holo -> lexer -> parser -> typechecker -> interpreter"));
+        assert!(graph.starts_with("Tests\n"));
+        assert!(graph.contains("\n  a\n"));
+        assert!(graph.contains("\n  b\n"));
+        assert!(graph.contains("Function: assert"));
+        assert!(
+            graph.contains("Input File: .\\a.holo") || graph.contains("Input File: ./a.holo"),
+            "graph missing input file node for a.holo: {graph}"
+        );
+        assert!(
+            graph.contains("Input File: .\\nested\\b.holo")
+                || graph.contains("Input File: ./nested/b.holo"),
+            "graph missing input file node for nested/b.holo: {graph}"
+        );
 
         fs::remove_dir_all(temp).expect("cleanup should succeed");
     }

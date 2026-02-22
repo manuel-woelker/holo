@@ -11,5 +11,8 @@ holo-base = { path = "../base" }
 holo-core = { path = "../core" }
 holo-deck = { path = "../deck" }
 holo-ipc = { path = "../ipc" }
+holo-ast = { path = "../ast" }
+holo-lexer = { path = "../lexer" }
+holo-parser = { path = "../parser" }
 notify = "8.2.0"
 tracing = "0.1"
