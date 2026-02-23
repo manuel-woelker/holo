@@ -1,0 +1,35 @@
+fn add_then_scale(a: i64, b: i64, scale: i64) -> i64 {
+    let sum: i64 = a + b;
+    let scaled: i64 = sum * scale;
+    scaled;
+}
+
+fn negate_and_offset(value: i32, offset: i32) -> i32 {
+    let negated: i32 = -value;
+    let adjusted: i32 = negated + offset;
+    adjusted;
+}
+
+fn half_f64(value: f64) -> f64 { value / 2.0f64; }
+
+fn mix_f32(a: f32, b: f32, c: f32) -> f32 {
+    let subtotal: f32 = (a + b) * c;
+    let result: f32 = subtotal - 1.0f32;
+    result;
+}
+
+fn keep_bool(value: bool) -> bool { !(!value); }
+
+#[test]
+fn variables_and_function_calls() {
+    let base: i64 = add_then_scale(2i64, 3i64, 4i64);
+    let shifted: i32 = negate_and_offset(5i32, 12i32);
+    let half: f64 = half_f64(9.0f64);
+    let combo: f32 = mix_f32(1.0f32, 2.0f32, 3.0f32);
+
+    base;
+    shifted;
+    half;
+    combo;
+    assert(keep_bool(true));
+}

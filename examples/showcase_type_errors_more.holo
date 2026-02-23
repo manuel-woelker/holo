@@ -1,0 +1,14 @@
+fn bad_unary(u: u32) -> u32 {
+    let negated: u32 = -u;
+    negated;
+}
+
+fn returns_wrong_type() -> bool {
+    1i64;
+}
+
+#[test]
+fn more_type_errors() {
+    assert(1i64);
+    bad_unary(1u32);
+}

@@ -1,0 +1,43 @@
+fn i64_ops() -> i64 {
+    let sum: i64 = 1i64 + 2i64 * 3i64;
+    let div: i64 = 20i64 / 5i64;
+    let rem: i64 = 17i64 % 5i64;
+    sum;
+    div;
+    rem;
+    rem;
+}
+
+fn u32_ops() -> u32 {
+    let div: u32 = 100u32 / 4u32;
+    let rem: u32 = 25u32 % 6u32;
+    div;
+    rem;
+    rem;
+}
+
+fn f64_ops() -> f64 {
+    let neg: f64 = -1.25f64;
+    let scaled: f64 = (neg + 5.0f64) / 2.0f64;
+    scaled;
+}
+
+fn f32_ops() -> f32 {
+    let base: f32 = 2.5f32;
+    let result: f32 = (base * 3.0f32) - 1.0f32;
+    result;
+}
+
+#[test]
+fn numeric_literals_and_arithmetic() {
+    let a: i64 = i64_ops();
+    let b: u32 = u32_ops();
+    let c: f64 = f64_ops();
+    let d: f32 = f32_ops();
+
+    a;
+    b;
+    c;
+    d;
+    assert(true);
+}
