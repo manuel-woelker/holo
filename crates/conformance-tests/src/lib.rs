@@ -178,4 +178,22 @@ error: cannot add `i64` and `f64`
         assert_eq!(suite.cases[1].name.as_str(), "rejects non-boolean assert");
         assert_eq!(suite.cases[2].name.as_str(), "accepts simple numeric function");
     }
+
+    #[test]
+    fn loads_interpreter_fixture_file() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|path| path.parent())
+            .expect("workspace root should exist");
+        let fixture = root
+            .join("tests")
+            .join("conformance-tests")
+            .join("interpreter")
+            .join("basic.md");
+        let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
+        assert_eq!(suite.cases.len(), 2);
+        assert_eq!(suite.cases[0].name.as_str(), "evaluates arithmetic");
+        assert_eq!(suite.cases[1].name.as_str(), "reports division by zero");
+        assert_eq!(suite.cases[1].blocks[1].info.as_str(), "fails-interpreter");
+    }
 }
