@@ -5,6 +5,11 @@ Provide a data-driven, markdown-based test system that validates parsing, typech
 
 ## What Commands Should I Run?
 - `scripts/check-code.sh`
+- `cargo test -p conformance-tests --manifest-path crates/Cargo.toml`
+
+## Which Markdown Suites Are Executed Today?
+- `tests/conformance-tests/end_to_end/*.md` is executed against `CompilerCore` and compared against fixture expectations.
+- `tests/conformance-tests/parser/*.md`, `tests/conformance-tests/typechecker/*.md`, and `tests/conformance-tests/interpreter/*.md` are currently validated for fixture parsing/loading shape.
 
 ## How Are Tests Driven By Markdown?
 - Test cases live in markdown files and are loaded by the test harness.
@@ -30,6 +35,13 @@ fn add(a: i64, b: i64) -> i64 { a + b; }
 ok
 ```
 ```
+
+## How Do I Add A New End-To-End Case Without Writing Rust Test Code?
+1. Add a new `## Case: ...` section to `tests/conformance-tests/end_to_end/*.md`.
+2. Add exactly one `holo` fenced block with the source under test.
+3. Add one expected-output block:
+4. Use `text` for success with `ok`, or `fails-typecheck` / `fails-interpreter` for expected failures.
+5. Run `cargo test -p conformance-tests --manifest-path crates/Cargo.toml`.
 
 ## How Do We Encode Compilation Failures?
 - Use a code block whose info string encodes the failure kind, e.g. `fails-parse` or `fails-typecheck`.
@@ -74,6 +86,7 @@ error: expected `)` after expression
 - Add new cases to existing fixture files.
 - Create a new fixture file when the topic is distinct.
 - Cover both success and failure cases for each feature.
+- Keep expected output to one normalized line (`ok` or `error: ...`) for end-to-end cases.
 
 ## What Do Example Tables Look Like?
 ```markdown
