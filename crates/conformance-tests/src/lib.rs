@@ -157,7 +157,7 @@ pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
             };
             let mut content_lines = Vec::new();
             let mut closed = false;
-            while let Some((_, inner)) = lines.next() {
+            for (_, inner) in lines.by_ref() {
                 let inner_trimmed = inner.trim_start();
                 if inner_trimmed == "```" {
                     closed = true;
@@ -177,7 +177,7 @@ pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
                 current_section.take(),
                 content.into(),
             ));
-            case.blocks.extend(pending_blocks.drain(..));
+            case.blocks.append(&mut pending_blocks);
         }
     }
 
