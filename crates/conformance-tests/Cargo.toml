@@ -8,3 +8,7 @@ publish = false
 
 [dependencies]
 holo-base = { path = "../base" }
+
+[dev-dependencies]
+expect-test = "1"
+holo-core = { path = "../core" }

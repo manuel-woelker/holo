@@ -164,7 +164,9 @@ dependencies = [
 name = "conformance-tests"
 version = "0.1.0"
 dependencies = [
+ "expect-test",
  "holo-base",
+ "holo-core",
 ]
 
 [[package]]
