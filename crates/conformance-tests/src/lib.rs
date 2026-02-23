@@ -99,6 +99,12 @@ pub struct ConformanceRunSummary {
     pub cases: Vec<CaseRecord>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CaseLintIssue {
+    case_name: SharedString,
+    message: SharedString,
+}
+
 pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
     let mut cases = Vec::new();
     let mut current_case: Option<HoloCase> = None;
@@ -200,6 +206,101 @@ fn has_succeeds_section(case: &HoloCase) -> bool {
     case.sections
         .iter()
         .any(|section| section.as_str().trim().eq_ignore_ascii_case("succeeds"))
+}
+
+fn outcome_kind_from_heading(heading: &str) -> Option<SharedString> {
+    let normalized = heading.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "succeeds" | "success" => Some("text".into()),
+        "fails parsing" | "fails parse" => Some("fails-parse".into()),
+        "fails typecheck" | "fails typechecking" => Some("fails-typecheck".into()),
+        "fails interpreter" | "fails execution" | "fails runtime" => {
+            Some("fails-interpreter".into())
+        }
+        _ => None,
+    }
+}
+
+fn lint_holo_suite(suite: &HoloSuite) -> Vec<CaseLintIssue> {
+    let mut issues = Vec::new();
+
+    for case in &suite.cases {
+        let mut case_errors = Vec::<String>::new();
+        let holo_count = case
+            .blocks
+            .iter()
+            .filter(|block| block.info.as_str() == "holo")
+            .count();
+        if holo_count != 1 {
+            case_errors.push(format!(
+                "expected exactly one `holo` block, found {holo_count}"
+            ));
+        }
+
+        let recognized_outcomes: Vec<SharedString> = case
+            .sections
+            .iter()
+            .filter_map(|section| outcome_kind_from_heading(section.as_str()))
+            .collect();
+        if recognized_outcomes.is_empty() {
+            case_errors
+                .push("missing outcome heading; add `### Succeeds` or `### Fails ...`".to_owned());
+        }
+        let has_succeeds = recognized_outcomes
+            .iter()
+            .any(|kind| kind.as_str() == "text");
+        let has_failure = recognized_outcomes
+            .iter()
+            .any(|kind| kind.as_str() != "text");
+        if has_succeeds && has_failure {
+            case_errors.push(
+                "conflicting outcome headings; choose either `### Succeeds` or one `### Fails ...` heading"
+                    .to_owned(),
+            );
+        }
+
+        let text_blocks: Vec<&HoloBlock> = case
+            .blocks
+            .iter()
+            .filter(|block| block.info.as_str() == "text")
+            .collect();
+        if has_succeeds {
+            if !text_blocks.is_empty() {
+                case_errors.push(
+                    "`### Succeeds` cases must omit expected `text` output blocks".to_owned(),
+                );
+            }
+        } else if has_failure {
+            if text_blocks.len() != 1 {
+                case_errors.push(format!(
+                    "failure cases must have exactly one `text` expected block, found {}",
+                    text_blocks.len()
+                ));
+            } else {
+                let expected_kind = recognized_outcomes
+                    .iter()
+                    .find(|kind| kind.as_str() != "text")
+                    .cloned()
+                    .unwrap_or_else(|| "text".into());
+                let actual_kind = expected_kind_from_section(text_blocks[0].section.as_deref());
+                if expected_kind != actual_kind {
+                    case_errors.push(format!(
+                        "failure heading does not match expected block section (`{}` vs `{}`)",
+                        expected_kind, actual_kind
+                    ));
+                }
+            }
+        }
+
+        if !case_errors.is_empty() {
+            issues.push(CaseLintIssue {
+                case_name: case.name.clone(),
+                message: case_errors.join("; ").into(),
+            });
+        }
+    }
+
+    issues
 }
 
 pub fn load_holo_suite_from_path(path: &Path) -> Result<HoloSuite> {
@@ -372,6 +473,34 @@ pub fn run_conformance_fixtures(
                 .display()
                 .to_string()
                 .into();
+            let lint_issues = lint_holo_suite(&suite);
+            if !lint_issues.is_empty() {
+                for issue in lint_issues {
+                    summary.total += 1;
+                    suite_total += 1;
+                    summary.failed += 1;
+                    suite_failed += 1;
+                    summary.failures.push(ConformanceFailure {
+                        suite_name: (*suite_name).into(),
+                        fixture_path: fixture_display.clone(),
+                        case_name: issue.case_name.clone(),
+                        expected_kind: "well-formed".into(),
+                        actual_kind: "lint-error".into(),
+                        expected_text: "well-formed conformance case".into(),
+                        actual_text: issue.message.clone(),
+                    });
+                    summary.cases.push(CaseRecord {
+                        fixture_path: fixture_display.clone(),
+                        case_name: issue.case_name,
+                        expected_kind: "well-formed".into(),
+                        expected_text: "well-formed conformance case".into(),
+                        actual_kind: "lint-error".into(),
+                        actual_text: issue.message,
+                        passed: false,
+                    });
+                }
+                continue;
+            }
 
             for case in &suite.cases {
                 summary.total += 1;
@@ -495,8 +624,9 @@ pub fn format_case_report(cases: &[CaseRecord]) -> SharedString {
 #[cfg(test)]
 mod tests {
     use super::{
-        all_fixture_paths, format_case_report, has_succeeds_section, load_holo_suite_from_path,
-        parse_holo_suite, run_conformance_fixtures, workspace_root, DEFAULT_SUITES,
+        all_fixture_paths, format_case_report, has_succeeds_section, lint_holo_suite,
+        load_holo_suite_from_path, parse_holo_suite, run_conformance_fixtures, workspace_root,
+        DEFAULT_SUITES,
     };
     use expect_test::expect;
 
@@ -541,6 +671,29 @@ error: cannot add `i64` and `f64`
                 .expect("section should exist")
                 .as_str(),
             "Fails typecheck"
+        );
+    }
+
+    #[test]
+    fn lints_malformed_case() {
+        let source = r#"
+## Case: malformed
+
+```holo
+fn add(a: i64, b: i64) -> i64 { a + b; }
+```
+
+```text
+ok
+```
+"#;
+        let suite = parse_holo_suite(source).expect("suite should parse");
+        let issues = lint_holo_suite(&suite);
+        assert_eq!(issues.len(), 1);
+        assert!(
+            issues[0].message.contains("missing outcome heading"),
+            "{}",
+            issues[0].message
         );
     }
 
