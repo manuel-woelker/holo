@@ -1,44 +1,44 @@
-use crate::{holo_message_error, Result, SharedString};
+use holo_base::{holo_message_error, Result, SharedString};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MarkdownSuite {
-    pub cases: Vec<MarkdownCase>,
+pub struct HoloSuite {
+    pub cases: Vec<HoloCase>,
 }
 
-impl MarkdownSuite {
-    pub fn new(cases: Vec<MarkdownCase>) -> Self {
+impl HoloSuite {
+    pub fn new(cases: Vec<HoloCase>) -> Self {
         Self { cases }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MarkdownCase {
+pub struct HoloCase {
     pub name: SharedString,
-    pub blocks: Vec<MarkdownBlock>,
+    pub blocks: Vec<HoloBlock>,
 }
 
-impl MarkdownCase {
-    pub fn new(name: SharedString, blocks: Vec<MarkdownBlock>) -> Self {
+impl HoloCase {
+    pub fn new(name: SharedString, blocks: Vec<HoloBlock>) -> Self {
         Self { name, blocks }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MarkdownBlock {
+pub struct HoloBlock {
     pub info: SharedString,
     pub content: SharedString,
 }
 
-impl MarkdownBlock {
+impl HoloBlock {
     pub fn new(info: SharedString, content: SharedString) -> Self {
         Self { info, content }
     }
 }
 
-pub fn parse_markdown_suite(source: &str) -> Result<MarkdownSuite> {
+pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
     let mut cases = Vec::new();
-    let mut current_case: Option<MarkdownCase> = None;
-    let mut pending_blocks: Vec<MarkdownBlock> = Vec::new();
+    let mut current_case: Option<HoloCase> = None;
+    let mut pending_blocks: Vec<HoloBlock> = Vec::new();
 
     let mut lines = source.lines().enumerate().peekable();
     while let Some((line_no, line)) = lines.next() {
@@ -51,7 +51,7 @@ pub fn parse_markdown_suite(source: &str) -> Result<MarkdownSuite> {
             if name.is_empty() {
                 return Err(holo_message_error!("case heading missing name at line {}", line_no + 1));
             }
-            current_case = Some(MarkdownCase::new(name.into(), Vec::new()));
+            current_case = Some(HoloCase::new(name.into(), Vec::new()));
             pending_blocks.clear();
             continue;
         }
@@ -81,7 +81,7 @@ pub fn parse_markdown_suite(source: &str) -> Result<MarkdownSuite> {
                 ));
             }
             let content = content_lines.join("\n");
-            pending_blocks.push(MarkdownBlock::new(info.into(), content.into()));
+            pending_blocks.push(HoloBlock::new(info.into(), content.into()));
             case.blocks.extend(pending_blocks.drain(..));
         }
     }
@@ -90,12 +90,12 @@ pub fn parse_markdown_suite(source: &str) -> Result<MarkdownSuite> {
         cases.push(case);
     }
 
-    Ok(MarkdownSuite::new(cases))
+    Ok(HoloSuite::new(cases))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_markdown_suite;
+    use super::parse_holo_suite;
 
     #[test]
     fn parses_cases_and_blocks() {
@@ -117,7 +117,7 @@ error: cannot add `i64` and `f64`
 ```
 "#;
 
-        let suite = parse_markdown_suite(source).expect("suite should parse");
+        let suite = parse_holo_suite(source).expect("suite should parse");
         assert_eq!(suite.cases.len(), 2);
         assert_eq!(suite.cases[0].name.as_str(), "first");
         assert_eq!(suite.cases[0].blocks.len(), 2);

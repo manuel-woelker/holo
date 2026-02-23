@@ -13,10 +13,10 @@ Provide a data-driven, markdown-based test system that validates parsing, typech
 - The harness normalizes output into snapshot-friendly text.
 
 ## Where Do Fixture Files Live?
-- `test-suite/parser/*.md`
-- `test-suite/typechecker/*.md`
-- `test-suite/interpreter/*.md`
-- `test-suite/end_to_end/*.md`
+- `tests/conformance-tests/parser/*.md`
+- `tests/conformance-tests/typechecker/*.md`
+- `tests/conformance-tests/interpreter/*.md`
+- `tests/conformance-tests/end_to_end/*.md`
 
 ## What Is The Standard Case Format?
 ```markdown

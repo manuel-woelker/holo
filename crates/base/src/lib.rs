@@ -2,7 +2,6 @@
 
 pub mod error;
 pub mod logging;
-pub mod markdown_suite;
 pub mod source_diagnostic;
 pub mod span;
 pub mod timing;

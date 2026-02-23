@@ -1,0 +1,10 @@
+[package]
+name = "conformance-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Markdown-driven conformance test suite utilities for holo"
+license = "MIT"
+publish = false
+
+[dependencies]
+holo-base = { path = "../base" }

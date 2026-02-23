@@ -4,6 +4,7 @@ members = [
     "ast",
     "base",
     "cli",
+    "conformance-tests",
     "core",
     "deck",
     "db",
