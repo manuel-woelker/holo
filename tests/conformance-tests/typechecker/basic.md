@@ -7,7 +7,7 @@ fn bad() -> i64 { 1i64 + 2.0f64; }
 ```
 
 ```fails-typecheck
-error: cannot add `i64` and `f64`
+error: arithmetic operands must have the same type
 ```
 
 ## Case: rejects non-boolean assert
@@ -18,7 +18,7 @@ fn bad_assert() { assert(1i64); }
 ```
 
 ```fails-typecheck
-error: assert expects `bool`
+error: assert expects a boolean expression
 ```
 
 ## Case: accepts simple numeric function
