@@ -111,7 +111,10 @@ mod tests {
     use expect_test::expect;
     use holo_base::{DiagnosticKind, SourceDiagnostic, SourceExcerpt};
     use holo_core::CompilerCore;
-    use std::path::Path;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    const SUITES: &[&str] = &["parser", "typechecker", "interpreter", "end_to_end"];
 
     #[test]
     fn parses_cases_and_blocks() {
@@ -149,139 +152,89 @@ error: cannot add `i64` and `f64`
     }
 
     #[test]
-    fn loads_parser_fixture_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|path| path.parent())
-            .expect("workspace root should exist");
-        let fixture = root
-            .join("tests")
-            .join("conformance-tests")
-            .join("parser")
-            .join("test-parser.md");
-        let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
-        assert_eq!(suite.cases.len(), 2);
-        assert_eq!(suite.cases[0].name.as_str(), "parses basic function");
-        assert_eq!(suite.cases[1].name.as_str(), "reports missing close paren");
-        assert_eq!(suite.cases[0].blocks[0].info.as_str(), "holo");
-        assert_eq!(suite.cases[1].blocks[1].info.as_str(), "fails-parse");
+    fn loads_all_fixture_files() {
+        for fixture in all_fixture_paths() {
+            let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
+            assert!(
+                !suite.cases.is_empty(),
+                "fixture should contain at least one case: {}",
+                fixture.display()
+            );
+            for case in suite.cases {
+                assert!(
+                    case.blocks
+                        .iter()
+                        .any(|block| block.info.as_str() == "holo"),
+                    "case should contain a `holo` block in {} :: {}",
+                    fixture.display(),
+                    case.name
+                );
+                assert!(
+                    case.blocks.iter().any(|block| {
+                        block.info.as_str() == "text" || block.info.as_str().starts_with("fails-")
+                    }),
+                    "case should contain an expected output block in {} :: {}",
+                    fixture.display(),
+                    case.name
+                );
+            }
+        }
     }
 
     #[test]
-    fn loads_typechecker_fixture_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|path| path.parent())
-            .expect("workspace root should exist");
-        let fixture = root
-            .join("tests")
-            .join("conformance-tests")
-            .join("typechecker")
-            .join("test-typechecker.md");
-        let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
-        assert_eq!(suite.cases.len(), 3);
-        assert_eq!(suite.cases[0].name.as_str(), "rejects mixed numeric types");
-        assert_eq!(suite.cases[1].name.as_str(), "rejects non-boolean assert");
-        assert_eq!(
-            suite.cases[2].name.as_str(),
-            "accepts simple numeric function"
-        );
-    }
-
-    #[test]
-    fn loads_interpreter_fixture_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|path| path.parent())
-            .expect("workspace root should exist");
-        let fixture = root
-            .join("tests")
-            .join("conformance-tests")
-            .join("interpreter")
-            .join("test-interpreter.md");
-        let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
-        assert_eq!(suite.cases.len(), 2);
-        assert_eq!(suite.cases[0].name.as_str(), "evaluates arithmetic");
-        assert_eq!(suite.cases[1].name.as_str(), "reports division by zero");
-        assert_eq!(suite.cases[1].blocks[1].info.as_str(), "fails-interpreter");
-    }
-
-    #[test]
-    fn loads_end_to_end_fixture_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|path| path.parent())
-            .expect("workspace root should exist");
-        let fixture = root
-            .join("tests")
-            .join("conformance-tests")
-            .join("end_to_end")
-            .join("test-end-to-end.md");
-        let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
-        assert_eq!(suite.cases.len(), 3);
-        assert_eq!(suite.cases[0].name.as_str(), "simple test passes");
-        assert_eq!(
-            suite.cases[1].name.as_str(),
-            "compile error blocks execution"
-        );
-        assert_eq!(
-            suite.cases[2].name.as_str(),
-            "runtime failure reports error"
-        );
-        assert_eq!(suite.cases[1].blocks[1].info.as_str(), "fails-typecheck");
-        assert_eq!(suite.cases[2].blocks[1].info.as_str(), "fails-interpreter");
-    }
-
-    #[test]
-    fn executes_end_to_end_fixture_file() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(|path| path.parent())
-            .expect("workspace root should exist");
-        let fixture = root
-            .join("tests")
-            .join("conformance-tests")
-            .join("end_to_end")
-            .join("test-end-to-end.md");
-        let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
+    fn executes_all_fixture_files() {
+        let root = workspace_root();
         let mut core = CompilerCore::default();
         let mut report = String::new();
 
-        for case in &suite.cases {
-            let source_block = case
-                .blocks
-                .iter()
-                .find(|block| block.info.as_str() == "holo")
-                .expect("case should contain a `holo` block");
-            let expected_block = case
-                .blocks
-                .iter()
-                .find(|block| {
-                    block.info.as_str() == "text" || block.info.as_str().starts_with("fails-")
-                })
-                .expect("case should contain an expected-output block");
-            let actual =
-                run_end_to_end_case(&mut core, case.name.as_str(), source_block.content.as_str());
-            let expected = normalize_block_content(expected_block.content.as_str());
+        for fixture in all_fixture_paths() {
+            let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
+            let fixture_display = fixture
+                .strip_prefix(&root)
+                .unwrap_or(&fixture)
+                .display()
+                .to_string();
 
-            assert_eq!(
-                expected, actual,
-                "end-to-end conformance mismatch for case `{}`",
-                case.name
-            );
+            for case in &suite.cases {
+                let source_block = case
+                    .blocks
+                    .iter()
+                    .find(|block| block.info.as_str() == "holo")
+                    .expect("case should contain a `holo` block");
+                let expected_block = case
+                    .blocks
+                    .iter()
+                    .find(|block| {
+                        block.info.as_str() == "text" || block.info.as_str().starts_with("fails-")
+                    })
+                    .expect("case should contain an expected-output block");
+                let actual = run_conformance_case(&mut core, source_block.content.as_str());
+                let expected = normalize_block_content(expected_block.content.as_str());
 
-            report.push_str("## Case: ");
-            report.push_str(case.name.as_str());
-            report.push('\n');
-            report.push_str(&actual);
-            report.push('\n');
-            report.push('\n');
+                assert_eq!(
+                    expected, actual,
+                    "conformance mismatch for fixture {} case `{}`",
+                    fixture_display, case.name
+                );
+
+                report.push_str("# ");
+                report.push_str(&fixture_display);
+                report.push('\n');
+                report.push_str("## Case: ");
+                report.push_str(case.name.as_str());
+                report.push('\n');
+                report.push_str(&actual);
+                report.push('\n');
+                report.push('\n');
+            }
         }
 
         expect![[r#"
+# tests\conformance-tests\end_to_end\test-end-to-end.md
 ## Case: simple test passes
 ok
 
+# tests\conformance-tests\end_to_end\test-end-to-end.md
 ## Case: compile error blocks execution
 typecheck error: arithmetic operands must have the same type
 --> line 1, column 19
@@ -291,21 +244,100 @@ typecheck error: arithmetic operands must have the same type
    1 | fn bad() -> i64 { 1i64 + 2.0f64; }
      |                          ^^^^^^ right operand has type `f64`
 
+# tests\conformance-tests\end_to_end\test-end-to-end.md
 ## Case: runtime failure reports error
 test failure: division by zero
 --> line 1, column 20
    1 | fn boom() -> i64 { 1i64 / 0i64; }
      |                    ^^^^^^^^^^^ test failed here
 
+# tests\conformance-tests\interpreter\test-interpreter.md
+## Case: evaluates arithmetic
+ok
+
+# tests\conformance-tests\interpreter\test-interpreter.md
+## Case: reports division by zero
+test failure: division by zero
+--> line 1, column 20
+   1 | fn boom() -> i64 { 1i64 / 0i64; }
+     |                    ^^^^^^^^^^^ test failed here
+
+# tests\conformance-tests\parser\test-parser.md
+## Case: parses basic function
+ok
+
+# tests\conformance-tests\parser\test-parser.md
+## Case: reports missing close paren
+parsing error: expected `)` after expression
+--> line 1, column 51
+   1 | fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
+     |                                                   ^ expected `)`, found `;`
+
+# tests\conformance-tests\typechecker\test-typechecker.md
+## Case: rejects mixed numeric types
+typecheck error: arithmetic operands must have the same type
+--> line 1, column 19
+   1 | fn bad() -> i64 { 1i64 + 2.0f64; }
+     |                   ^^^^ left operand has type `i64`
+--> line 1, column 26
+   1 | fn bad() -> i64 { 1i64 + 2.0f64; }
+     |                          ^^^^^^ right operand has type `f64`
+
+# tests\conformance-tests\typechecker\test-typechecker.md
+## Case: rejects non-boolean assert
+typecheck error: assert expects a boolean expression
+--> line 2, column 19
+   2 | fn bad_assert() { assert(1i64); }
+     |                   ^^^^^^^^^^^^^ this assertion does not evaluate to `bool`
+
+# tests\conformance-tests\typechecker\test-typechecker.md
+## Case: accepts simple numeric function
+ok
+
 "#]]
         .assert_eq(&report);
     }
 
-    fn run_end_to_end_case(core: &mut CompilerCore, _case_name: &str, source: &str) -> String {
-        let file_path = "conformance-end-to-end-case.holo";
+    fn workspace_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|path| path.parent())
+            .expect("workspace root should exist")
+            .to_path_buf()
+    }
+
+    fn all_fixture_paths() -> Vec<PathBuf> {
+        let fixture_root = workspace_root().join("tests").join("conformance-tests");
+        let mut fixtures = Vec::new();
+        for suite_name in SUITES {
+            let suite_dir = fixture_root.join(suite_name);
+            if !suite_dir.exists() {
+                continue;
+            }
+            for entry in fs::read_dir(&suite_dir).expect("suite directory should be readable") {
+                let entry = entry.expect("fixture directory entry should be readable");
+                let path = entry.path();
+                if !entry
+                    .file_type()
+                    .expect("fixture entry type should be readable")
+                    .is_file()
+                {
+                    continue;
+                }
+                if path.extension().is_some_and(|extension| extension == "md") {
+                    fixtures.push(path);
+                }
+            }
+        }
+        fixtures.sort();
+        fixtures
+    }
+
+    fn run_conformance_case(core: &mut CompilerCore, source: &str) -> String {
+        let file_path = "conformance-case.holo";
         let summary = core
             .process_source(&file_path.into(), source)
-            .expect("end-to-end case should process");
+            .expect("conformance case should process");
 
         if let Some(diagnostic) = summary.diagnostics.iter().find(|diagnostic| {
             matches!(
