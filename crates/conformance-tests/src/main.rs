@@ -1,5 +1,5 @@
 use conformance_tests::load_holo_suite_from_path;
-use holo_base::{DiagnosticKind, Result, SharedString};
+use holo_base::{DiagnosticKind, Result, SharedString, SourceDiagnostic, SourceExcerpt};
 use holo_core::CompilerCore;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -187,8 +187,8 @@ fn fixture_paths_in_dir(path: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn run_case(core: &mut CompilerCore, case_name: &str, source: &str) -> CaseOutcome {
-    let file_path = format!("conformance-cli-{}.holo", case_name.replace(' ', "-"));
+fn run_case(core: &mut CompilerCore, _case_name: &str, source: &str) -> CaseOutcome {
+    let file_path = "conformance-case.holo";
     let summary = core
         .process_source(&file_path.into(), source)
         .expect("conformance case should process");
@@ -201,7 +201,7 @@ fn run_case(core: &mut CompilerCore, case_name: &str, source: &str) -> CaseOutco
     }) {
         return CaseOutcome {
             kind: "fails-parse".into(),
-            text: format!("error: {}", diagnostic.message).into(),
+            text: diagnostic.render_annotated(),
         };
     }
 
@@ -212,7 +212,7 @@ fn run_case(core: &mut CompilerCore, case_name: &str, source: &str) -> CaseOutco
     {
         return CaseOutcome {
             kind: "fails-typecheck".into(),
-            text: format!("error: {}", diagnostic.message).into(),
+            text: diagnostic.render_annotated(),
         };
     }
 
@@ -222,16 +222,21 @@ fn run_case(core: &mut CompilerCore, case_name: &str, source: &str) -> CaseOutco
         .iter()
         .find(|result| result.failure_reason.is_some())
     {
+        let failure_reason = result
+            .failure_reason
+            .as_ref()
+            .expect("failure reason should exist");
+        let diagnostic = SourceDiagnostic::new(DiagnosticKind::Test, failure_reason.clone())
+            .with_source_excerpt(SourceExcerpt::new(source, 1, 0).with_source_name(file_path))
+            .with_annotated_span(
+                result
+                    .failure_span
+                    .expect("failure span should exist for test failures"),
+                "test failed here",
+            );
         return CaseOutcome {
             kind: "fails-interpreter".into(),
-            text: format!(
-                "error: {}",
-                result
-                    .failure_reason
-                    .as_ref()
-                    .expect("failure reason should exist")
-            )
-            .into(),
+            text: diagnostic.render_annotated(),
         };
     }
 

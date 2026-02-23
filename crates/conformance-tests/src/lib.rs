@@ -109,7 +109,7 @@ pub fn load_holo_suite_from_path(path: &Path) -> Result<HoloSuite> {
 mod tests {
     use super::{load_holo_suite_from_path, parse_holo_suite};
     use expect_test::expect;
-    use holo_base::DiagnosticKind;
+    use holo_base::{DiagnosticKind, SourceDiagnostic, SourceExcerpt};
     use holo_core::CompilerCore;
     use std::path::Path;
 
@@ -283,20 +283,26 @@ error: cannot add `i64` and `f64`
 ok
 
 ## Case: compile error blocks execution
-error: arithmetic operands must have the same type
+typecheck error: arithmetic operands must have the same type
+--> line 1, column 19
+   1 | fn bad() -> i64 { 1i64 + 2.0f64; }
+     |                   ^^^^ left operand has type `i64`
+--> line 1, column 26
+   1 | fn bad() -> i64 { 1i64 + 2.0f64; }
+     |                          ^^^^^^ right operand has type `f64`
 
 ## Case: runtime failure reports error
-error: division by zero
+test failure: division by zero
+--> line 1, column 20
+   1 | fn boom() -> i64 { 1i64 / 0i64; }
+     |                    ^^^^^^^^^^^ test failed here
 
 "#]]
         .assert_eq(&report);
     }
 
-    fn run_end_to_end_case(core: &mut CompilerCore, case_name: &str, source: &str) -> String {
-        let file_path = format!(
-            "conformance-end-to-end-{}.holo",
-            case_name.replace(' ', "-")
-        );
+    fn run_end_to_end_case(core: &mut CompilerCore, _case_name: &str, source: &str) -> String {
+        let file_path = "conformance-end-to-end-case.holo";
         let summary = core
             .process_source(&file_path.into(), source)
             .expect("end-to-end case should process");
@@ -307,7 +313,7 @@ error: division by zero
                 DiagnosticKind::Lexing | DiagnosticKind::Parsing | DiagnosticKind::Typecheck
             )
         }) {
-            return format!("error: {}", diagnostic.message);
+            return diagnostic.render_annotated().to_string();
         }
 
         if let Some(result) = summary
@@ -316,13 +322,19 @@ error: division by zero
             .iter()
             .find(|result| result.failure_reason.is_some())
         {
-            return format!(
-                "error: {}",
-                result
-                    .failure_reason
-                    .as_ref()
-                    .expect("failure reason should be available for failed tests")
-            );
+            let failure_reason = result
+                .failure_reason
+                .as_ref()
+                .expect("failure reason should be available for failed tests");
+            let diagnostic = SourceDiagnostic::new(DiagnosticKind::Test, failure_reason.clone())
+                .with_source_excerpt(SourceExcerpt::new(source, 1, 0).with_source_name(file_path))
+                .with_annotated_span(
+                    result
+                        .failure_span
+                        .expect("failure span should be available for failed tests"),
+                    "test failed here",
+                );
+            return diagnostic.render_annotated().to_string();
         }
 
         "ok".to_owned()

@@ -16,6 +16,7 @@ Provide a data-driven, markdown-based test system that validates parsing, typech
 - Each case includes a name, an input `holo` code block, and expected output in a `text` block.
 - Tables are used to enumerate example inputs and outputs (truth tables, arithmetic tables), not metadata.
 - The harness normalizes output into snapshot-friendly text.
+- Failure expectations should contain the full annotated diagnostic output (multi-line), not only the first error line.
 
 ## Where Do Fixture Files Live?
 - `tests/conformance-tests/parser/*.md`
@@ -45,12 +46,12 @@ ok
 
 ## How Do We Encode Compilation Failures?
 - Use a code block whose info string encodes the failure kind, e.g. `fails-parse` or `fails-typecheck`.
-- Put the expected diagnostics in a `text` block.
+- Put the expected full pretty-printed diagnostic output in the failure block.
 - Prefer `expect_test` snapshots for diagnostics rendering.
 
 ## How Do We Encode Execution Failures?
 - Use a code block whose info string encodes the failure kind, e.g. `fails-interpreter` or `fails-execution`.
-- Include the runtime failure diagnostics in the `text` block.
+- Include the full pretty-printed runtime failure diagnostic output.
 
 ## What Does Failure Annotation Look Like?
 ```markdown
@@ -86,7 +87,7 @@ error: expected `)` after expression
 - Add new cases to existing fixture files.
 - Create a new fixture file when the topic is distinct.
 - Cover both success and failure cases for each feature.
-- Keep expected output to one normalized line (`ok` or `error: ...`) for end-to-end cases.
+- Keep success output as `ok`; include full annotated diagnostics for failures.
 
 ## What Do Example Tables Look Like?
 ```markdown

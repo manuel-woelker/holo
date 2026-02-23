@@ -31,5 +31,8 @@ fn division_by_zero_fails() {
 ```
 
 ```fails-interpreter
-error: division by zero
+test failure: division by zero
+--> line 1, column 20
+   1 | fn boom() -> i64 { 1i64 / 0i64; }
+     |                    ^^^^^^^^^^^ test failed here
 ```

@@ -17,5 +17,8 @@ fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
 ```
 
 ```fails-parse
-error: expected `)` after expression
+parsing error: expected `)` after expression
+--> line 1, column 51
+   1 | fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
+     |                                                   ^ expected `)`, found `;`
 ```
