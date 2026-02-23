@@ -21,6 +21,9 @@ jobs:
       - name: Build
         run: cargo build --manifest-path crates/Cargo.toml --workspace --all-targets --all-features
 
+      - name: Conformance
+        run: cargo run -p conformance-tests --manifest-path crates/Cargo.toml
+
       - name: Check
         run: cargo check --manifest-path crates/Cargo.toml --workspace --all-targets --all-features
 
