@@ -326,7 +326,10 @@ fn display_fixture_path(root: &Path, path: &Path) -> FilePath {
         }
         return rendered.into();
     }
-    path.to_string_lossy().into_owned().replace('\\', "/").into()
+    path.to_string_lossy()
+        .into_owned()
+        .replace('\\', "/")
+        .into()
 }
 
 pub fn fixture_paths_in_dir(path: &Path) -> Result<Vec<PathBuf>> {
@@ -906,4 +909,3 @@ ok
         .assert_eq(report.as_str());
     }
 }
-
