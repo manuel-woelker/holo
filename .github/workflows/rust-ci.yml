@@ -18,6 +18,11 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
       - name: Build
         run: cargo build --manifest-path crates/Cargo.toml --workspace --all-targets --all-features
 
