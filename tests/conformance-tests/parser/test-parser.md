@@ -23,3 +23,32 @@ conformance-case.holo:1
    1 │ fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
      │                                                   ─ expected `)`, found `;`
 ```
+
+## Case: parses numeric suffixes and precedence
+
+> Edge case note: mixed operator precedence with explicit numeric suffixes should parse without diagnostics.
+
+```holo
+fn calc() -> f64 { -1.0f64 + 2.0f64 * 3.0f64; }
+```
+
+### Succeeds
+
+## Case: rejects non-test attribute
+
+> Edge case note: only `#[test]` is accepted as an attribute marker.
+
+```holo
+#[bench]
+fn not_a_test() { assert(true); }
+```
+
+### Fails parsing
+
+```text
+⚒️ Parsing: expected `#[test]` attribute, found `#[bench]`
+
+conformance-case.holo:1
+   1 │ #[bench]
+     │   ───── unsupported test attribute `bench`
+```

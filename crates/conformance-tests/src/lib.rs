@@ -605,6 +605,18 @@ error: cannot add `i64` and `f64`
                1 │ fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
                  │                                                   ─ expected `)`, found `;`
 
+            # tests\conformance-tests\parser\test-parser.md
+            ## Case: parses numeric suffixes and precedence
+            ok
+
+            # tests\conformance-tests\parser\test-parser.md
+            ## Case: rejects non-test attribute
+            ⚒️ Parsing: expected `#[test]` attribute, found `#[bench]`
+
+            conformance-case.holo:1
+               1 │ #[bench]
+                 │   ───── unsupported test attribute `bench`
+
             # tests\conformance-tests\typechecker\test-typechecker.md
             ## Case: rejects mixed numeric types
             ⚒️ Typecheck: arithmetic operands must have the same type
@@ -626,6 +638,38 @@ error: cannot add `i64` and `f64`
             ## Case: accepts simple numeric function
             ok
 
+            # tests\conformance-tests\typechecker\test-typechecker.md
+            ## Case: accepts unary operators for valid types
+            ok
+
+            # tests\conformance-tests\typechecker\test-typechecker.md
+            ## Case: rejects modulo on floating point operands
+            ⚒️ Typecheck: operator `%` is only valid for integer types
+
+            conformance-case.holo:1
+               1 │ fn bad_mod() -> f64 { 5.0f64 % 2.0f64; }
+                 │                       ─────────────── operands have type `f64` but `%` requires integer types
+
+            # tests\conformance-tests\typechecker\test-typechecker.md
+            ## Case: rejects call argument count mismatch
+            ⚒️ Typecheck: function `add` expects 2 argument(s) but got 1
+
+            conformance-case.holo:1
+               1 │ fn add(a: i64, b: i64) -> i64 { a + b; }
+                 │ ──────────────────────────────────────── function `add` is defined here
+
+            conformance-case.holo:2
+               2 │ fn use_it() -> i64 { add(1i64); }
+                 │                      ───────── call argument count does not match function signature
+
+            # tests\conformance-tests\typechecker\test-typechecker.md
+            ## Case: rejects duplicate local binding
+            ⚒️ Typecheck: duplicate local binding `value`
+
+            conformance-case.holo:3
+               3 │     let value: i64 = 2i64;
+                 │     ────────────────────── this binding name is already defined in this scope
+
             # tests\conformance-tests\interpreter\test-interpreter.md
             ## Case: evaluates arithmetic
             ok
@@ -637,6 +681,26 @@ error: cannot add `i64` and `f64`
             conformance-case.holo:1
                1 │ fn boom() -> i64 { 1i64 / 0i64; }
                  │                    ─────────── test failed here
+
+            # tests\conformance-tests\interpreter\test-interpreter.md
+            ## Case: evaluates modulo and subtraction
+            ok
+
+            # tests\conformance-tests\interpreter\test-interpreter.md
+            ## Case: reports modulo by zero
+            🧪 Test: modulo by zero
+
+            conformance-case.holo:1
+               1 │ fn modulo_fail() -> i64 { 5i64 % 0i64; }
+                 │                           ─────────── test failed here
+
+            # tests\conformance-tests\interpreter\test-interpreter.md
+            ## Case: reports assertion failure
+            🧪 Test: assertion failed
+
+            conformance-case.holo:3
+               3 │     assert(false);
+                 │            ───── test failed here
 
             # tests\conformance-tests\end_to_end\test-end-to-end.md
             ## Case: simple test passes
@@ -658,6 +722,26 @@ error: cannot add `i64` and `f64`
             conformance-case.holo:1
                1 │ fn boom() -> i64 { 1i64 / 0i64; }
                  │                    ─────────── test failed here
+
+            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            ## Case: multiple tests pass in one module
+            ok
+
+            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            ## Case: parse error blocks execution
+            ⚒️ Parsing: expected `)` after function parameter list
+
+            conformance-case.holo:1
+               1 │ fn broken(a: i64 -> i64 { a; }
+                 │                  ── expected `)`, found `->`
+
+            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            ## Case: assertion failure propagates as runtime failure
+            🧪 Test: assertion failed
+
+            conformance-case.holo:3
+               3 │     assert(false);
+                 │            ───── test failed here
 
         "#]]
         .assert_eq(report.as_str());

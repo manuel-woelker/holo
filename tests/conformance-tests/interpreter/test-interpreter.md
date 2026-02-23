@@ -37,3 +37,64 @@ conformance-case.holo:1
    1 │ fn boom() -> i64 { 1i64 / 0i64; }
      │                    ─────────── test failed here
 ```
+
+## Case: evaluates modulo and subtraction
+
+> Edge case note: integer modulo and subtraction should execute with wrapping semantics where relevant.
+
+```holo
+fn compute() -> i64 { 9i64 % 4i64 - 1i64; }
+
+#[test]
+fn modulo_and_subtraction() {
+    let value: i64 = compute();
+    value;
+    assert(true);
+}
+```
+
+### Succeeds
+
+## Case: reports modulo by zero
+
+> Edge case note: modulo by zero is reported as runtime test failure.
+
+```holo
+fn modulo_fail() -> i64 { 5i64 % 0i64; }
+
+#[test]
+fn modulo_by_zero_fails() {
+    let value: i64 = modulo_fail();
+    value;
+    assert(true);
+}
+```
+
+### Fails interpreter
+
+```text
+🧪 Test: modulo by zero
+
+conformance-case.holo:1
+   1 │ fn modulo_fail() -> i64 { 5i64 % 0i64; }
+     │                           ─────────── test failed here
+```
+
+## Case: reports assertion failure
+
+```holo
+#[test]
+fn assertion_fails() {
+    assert(false);
+}
+```
+
+### Fails interpreter
+
+```text
+🧪 Test: assertion failed
+
+conformance-case.holo:3
+   3 │     assert(false);
+     │            ───── test failed here
+```

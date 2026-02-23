@@ -41,3 +41,80 @@ fn add(a: i64, b: i64) -> i64 { a + b; }
 ```
 
 ### Succeeds
+
+## Case: accepts unary operators for valid types
+
+> Edge case note: `!` only applies to bool and unary `-` only applies to signed numeric operands.
+
+```holo
+fn ops() -> i64 {
+    let truth: bool = !false;
+    let signed: i64 = -3i64;
+    signed;
+}
+```
+
+### Succeeds
+
+## Case: rejects modulo on floating point operands
+
+> Edge case note: `%` is restricted to integer types, even when both operand types match.
+
+```holo
+fn bad_mod() -> f64 { 5.0f64 % 2.0f64; }
+```
+
+### Fails typecheck
+
+```text
+⚒️ Typecheck: operator `%` is only valid for integer types
+
+conformance-case.holo:1
+   1 │ fn bad_mod() -> f64 { 5.0f64 % 2.0f64; }
+     │                       ─────────────── operands have type `f64` but `%` requires integer types
+```
+
+## Case: rejects call argument count mismatch
+
+> Edge case note: call arity mismatch should include a pointer to both call site and definition.
+
+```holo
+fn add(a: i64, b: i64) -> i64 { a + b; }
+fn use_it() -> i64 { add(1i64); }
+```
+
+### Fails typecheck
+
+```text
+⚒️ Typecheck: function `add` expects 2 argument(s) but got 1
+
+conformance-case.holo:1
+   1 │ fn add(a: i64, b: i64) -> i64 { a + b; }
+     │ ──────────────────────────────────────── function `add` is defined here
+
+conformance-case.holo:2
+   2 │ fn use_it() -> i64 { add(1i64); }
+     │                      ───────── call argument count does not match function signature
+```
+
+## Case: rejects duplicate local binding
+
+> Edge case note: duplicate names in the same function scope are rejected.
+
+```holo
+fn dup() -> i64 {
+    let value: i64 = 1i64;
+    let value: i64 = 2i64;
+    value;
+}
+```
+
+### Fails typecheck
+
+```text
+⚒️ Typecheck: duplicate local binding `value`
+
+conformance-case.holo:3
+   3 │     let value: i64 = 2i64;
+     │     ────────────────────── this binding name is already defined in this scope
+```
