@@ -40,10 +40,10 @@ ok
 - End-to-end fixtures that run full compile + tests on multi-file setups.
 
 ## Where Should Fixtures Live?
-- `test-suite/parser/*.md`
-- `test-suite/typechecker/*.md`
-- `test-suite/interpreter/*.md`
-- `test-suite/end_to_end/*.md`
+- `tests/conformance-tests/parser/*.md`
+- `tests/conformance-tests/typechecker/*.md`
+- `tests/conformance-tests/interpreter/*.md`
+- `tests/conformance-tests/end_to_end/*.md`
 
 ## How Should The Harness Be Structured?
 - A small loader that parses markdown into `Case` structs.
