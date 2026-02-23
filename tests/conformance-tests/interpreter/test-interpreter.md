@@ -31,8 +31,9 @@ fn division_by_zero_fails() {
 ```
 
 ```fails-interpreter
-test failure: division by zero
---> line 1, column 20
-   1 | fn boom() -> i64 { 1i64 / 0i64; }
-     |                    ^^^^^^^^^^^ test failed here
+🧪 Test: division by zero
+
+conformance-case.holo:1
+   1 │ fn boom() -> i64 { 1i64 / 0i64; }
+     │                    ─────────── test failed here
 ```

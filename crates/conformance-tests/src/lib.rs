@@ -109,7 +109,9 @@ pub fn load_holo_suite_from_path(path: &Path) -> Result<HoloSuite> {
 mod tests {
     use super::{load_holo_suite_from_path, parse_holo_suite};
     use expect_test::expect;
-    use holo_base::{DiagnosticKind, SourceDiagnostic, SourceExcerpt};
+    use holo_base::{
+        display_source_diagnostics, DiagnosticKind, SourceDiagnostic, SourceExcerpt,
+    };
     use holo_core::CompilerCore;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -230,71 +232,73 @@ error: cannot add `i64` and `f64`
         }
 
         expect![[r#"
-# tests\conformance-tests\end_to_end\test-end-to-end.md
-## Case: simple test passes
-ok
+            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            ## Case: simple test passes
+            ok
 
-# tests\conformance-tests\end_to_end\test-end-to-end.md
-## Case: compile error blocks execution
-typecheck error: arithmetic operands must have the same type
---> line 1, column 19
-   1 | fn bad() -> i64 { 1i64 + 2.0f64; }
-     |                   ^^^^ left operand has type `i64`
---> line 1, column 26
-   1 | fn bad() -> i64 { 1i64 + 2.0f64; }
-     |                          ^^^^^^ right operand has type `f64`
+            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            ## Case: compile error blocks execution
+            ⚒️ Typecheck: arithmetic operands must have the same type
 
-# tests\conformance-tests\end_to_end\test-end-to-end.md
-## Case: runtime failure reports error
-test failure: division by zero
---> line 1, column 20
-   1 | fn boom() -> i64 { 1i64 / 0i64; }
-     |                    ^^^^^^^^^^^ test failed here
+            conformance-case.holo:1
+               1 │ fn bad() -> i64 { 1i64 + 2.0f64; }
+                 │                   ───┬   ────── right operand has type `f64`
+                 │                      └─ left operand has type `i64`
 
-# tests\conformance-tests\interpreter\test-interpreter.md
-## Case: evaluates arithmetic
-ok
+            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            ## Case: runtime failure reports error
+            🧪 Test: division by zero
 
-# tests\conformance-tests\interpreter\test-interpreter.md
-## Case: reports division by zero
-test failure: division by zero
---> line 1, column 20
-   1 | fn boom() -> i64 { 1i64 / 0i64; }
-     |                    ^^^^^^^^^^^ test failed here
+            conformance-case.holo:1
+               1 │ fn boom() -> i64 { 1i64 / 0i64; }
+                 │                    ─────────── test failed here
 
-# tests\conformance-tests\parser\test-parser.md
-## Case: parses basic function
-ok
+            # tests\conformance-tests\interpreter\test-interpreter.md
+            ## Case: evaluates arithmetic
+            ok
 
-# tests\conformance-tests\parser\test-parser.md
-## Case: reports missing close paren
-parsing error: expected `)` after expression
---> line 1, column 51
-   1 | fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
-     |                                                   ^ expected `)`, found `;`
+            # tests\conformance-tests\interpreter\test-interpreter.md
+            ## Case: reports division by zero
+            🧪 Test: division by zero
 
-# tests\conformance-tests\typechecker\test-typechecker.md
-## Case: rejects mixed numeric types
-typecheck error: arithmetic operands must have the same type
---> line 1, column 19
-   1 | fn bad() -> i64 { 1i64 + 2.0f64; }
-     |                   ^^^^ left operand has type `i64`
---> line 1, column 26
-   1 | fn bad() -> i64 { 1i64 + 2.0f64; }
-     |                          ^^^^^^ right operand has type `f64`
+            conformance-case.holo:1
+               1 │ fn boom() -> i64 { 1i64 / 0i64; }
+                 │                    ─────────── test failed here
 
-# tests\conformance-tests\typechecker\test-typechecker.md
-## Case: rejects non-boolean assert
-typecheck error: assert expects a boolean expression
---> line 2, column 19
-   2 | fn bad_assert() { assert(1i64); }
-     |                   ^^^^^^^^^^^^^ this assertion does not evaluate to `bool`
+            # tests\conformance-tests\parser\test-parser.md
+            ## Case: parses basic function
+            ok
 
-# tests\conformance-tests\typechecker\test-typechecker.md
-## Case: accepts simple numeric function
-ok
+            # tests\conformance-tests\parser\test-parser.md
+            ## Case: reports missing close paren
+            ⚒️ Parsing: expected `)` after expression
 
-"#]]
+            conformance-case.holo:1
+               1 │ fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
+                 │                                                   ─ expected `)`, found `;`
+
+            # tests\conformance-tests\typechecker\test-typechecker.md
+            ## Case: rejects mixed numeric types
+            ⚒️ Typecheck: arithmetic operands must have the same type
+
+            conformance-case.holo:1
+               1 │ fn bad() -> i64 { 1i64 + 2.0f64; }
+                 │                   ───┬   ────── right operand has type `f64`
+                 │                      └─ left operand has type `i64`
+
+            # tests\conformance-tests\typechecker\test-typechecker.md
+            ## Case: rejects non-boolean assert
+            ⚒️ Typecheck: assert expects a boolean expression
+
+            conformance-case.holo:2
+               2 │ fn bad_assert() { assert(1i64); }
+                 │                   ───────────── this assertion does not evaluate to `bool`
+
+            # tests\conformance-tests\typechecker\test-typechecker.md
+            ## Case: accepts simple numeric function
+            ok
+
+        "#]]
         .assert_eq(&report);
     }
 
@@ -345,7 +349,9 @@ ok
                 DiagnosticKind::Lexing | DiagnosticKind::Parsing | DiagnosticKind::Typecheck
             )
         }) {
-            return diagnostic.render_annotated().to_string();
+            return normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(
+                diagnostic,
+            )));
         }
 
         if let Some(result) = summary
@@ -366,7 +372,9 @@ ok
                         .expect("failure span should be available for failed tests"),
                     "test failed here",
                 );
-            return diagnostic.render_annotated().to_string();
+            return normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(
+                &diagnostic,
+            )));
         }
 
         "ok".to_owned()
@@ -374,5 +382,27 @@ ok
 
     fn normalize_block_content(content: &str) -> String {
         content.replace("\r\n", "\n").trim().to_owned()
+    }
+
+    fn normalize_rendered_output(content: &str) -> String {
+        strip_ansi_sequences(content).trim().to_owned()
+    }
+
+    fn strip_ansi_sequences(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let mut chars = input.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+                chars.next();
+                for next in chars.by_ref() {
+                    if ('@'..='~').contains(&next) {
+                        break;
+                    }
+                }
+                continue;
+            }
+            out.push(ch);
+        }
+        out
     }
 }

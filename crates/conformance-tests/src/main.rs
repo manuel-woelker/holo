@@ -1,5 +1,8 @@
 use conformance_tests::load_holo_suite_from_path;
-use holo_base::{DiagnosticKind, Result, SharedString, SourceDiagnostic, SourceExcerpt};
+use holo_base::{
+    display_source_diagnostics, DiagnosticKind, Result, SharedString, SourceDiagnostic,
+    SourceExcerpt,
+};
 use holo_core::CompilerCore;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -201,7 +204,10 @@ fn run_case(core: &mut CompilerCore, _case_name: &str, source: &str) -> CaseOutc
     }) {
         return CaseOutcome {
             kind: "fails-parse".into(),
-            text: diagnostic.render_annotated(),
+            text: normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(
+                diagnostic,
+            )))
+            .into(),
         };
     }
 
@@ -212,7 +218,10 @@ fn run_case(core: &mut CompilerCore, _case_name: &str, source: &str) -> CaseOutc
     {
         return CaseOutcome {
             kind: "fails-typecheck".into(),
-            text: diagnostic.render_annotated(),
+            text: normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(
+                diagnostic,
+            )))
+            .into(),
         };
     }
 
@@ -236,7 +245,10 @@ fn run_case(core: &mut CompilerCore, _case_name: &str, source: &str) -> CaseOutc
             );
         return CaseOutcome {
             kind: "fails-interpreter".into(),
-            text: diagnostic.render_annotated(),
+            text: normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(
+                &diagnostic,
+            )))
+            .into(),
         };
     }
 
@@ -248,6 +260,28 @@ fn run_case(core: &mut CompilerCore, _case_name: &str, source: &str) -> CaseOutc
 
 fn normalize_content(content: &str) -> SharedString {
     content.replace("\r\n", "\n").trim().into()
+}
+
+fn normalize_rendered_output(content: &str) -> String {
+    strip_ansi_sequences(content).trim().to_owned()
+}
+
+fn strip_ansi_sequences(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            for next in chars.by_ref() {
+                if ('@'..='~').contains(&next) {
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn print_summary(summary: &RunSummary) {

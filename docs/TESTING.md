@@ -16,7 +16,8 @@ Provide a data-driven, markdown-based test system that validates parsing, typech
 - Each case includes a name, an input `holo` code block, and expected output in a `text` block.
 - Tables are used to enumerate example inputs and outputs (truth tables, arithmetic tables), not metadata.
 - The harness normalizes output into snapshot-friendly text.
-- Failure expectations should contain the full annotated diagnostic output (multi-line), not only the first error line.
+- Failure expectations should contain the full Unicode diagnostic output (multi-line), not only the first error line.
+- The harness strips ANSI color codes before comparing expected and actual output.
 
 ## Where Do Fixture Files Live?
 - `tests/conformance-tests/parser/*.md`
