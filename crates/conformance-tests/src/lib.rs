@@ -158,7 +158,7 @@ error: cannot add `i64` and `f64`
             .join("tests")
             .join("conformance-tests")
             .join("parser")
-            .join("basic.md");
+            .join("test-parser.md");
         let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
         assert_eq!(suite.cases.len(), 2);
         assert_eq!(suite.cases[0].name.as_str(), "parses basic function");
@@ -177,7 +177,7 @@ error: cannot add `i64` and `f64`
             .join("tests")
             .join("conformance-tests")
             .join("typechecker")
-            .join("basic.md");
+            .join("test-typechecker.md");
         let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
         assert_eq!(suite.cases.len(), 3);
         assert_eq!(suite.cases[0].name.as_str(), "rejects mixed numeric types");
@@ -198,7 +198,7 @@ error: cannot add `i64` and `f64`
             .join("tests")
             .join("conformance-tests")
             .join("interpreter")
-            .join("basic.md");
+            .join("test-interpreter.md");
         let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
         assert_eq!(suite.cases.len(), 2);
         assert_eq!(suite.cases[0].name.as_str(), "evaluates arithmetic");
@@ -216,7 +216,7 @@ error: cannot add `i64` and `f64`
             .join("tests")
             .join("conformance-tests")
             .join("end_to_end")
-            .join("basic.md");
+            .join("test-end-to-end.md");
         let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
         assert_eq!(suite.cases.len(), 3);
         assert_eq!(suite.cases[0].name.as_str(), "simple test passes");
@@ -242,7 +242,7 @@ error: cannot add `i64` and `f64`
             .join("tests")
             .join("conformance-tests")
             .join("end_to_end")
-            .join("basic.md");
+            .join("test-end-to-end.md");
         let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
         let mut core = CompilerCore::default();
         let mut report = String::new();
