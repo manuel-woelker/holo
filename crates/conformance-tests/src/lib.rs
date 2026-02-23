@@ -1,5 +1,5 @@
 use holo_base::{
-    display_source_diagnostics, holo_message_error, DiagnosticKind, Result, SharedString,
+    display_source_diagnostics, holo_message_error, DiagnosticKind, FilePath, Result, SharedString,
     SourceDiagnostic, SourceExcerpt,
 };
 use holo_core::CompilerCore;
@@ -61,7 +61,7 @@ pub struct CaseOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaseRecord {
-    pub fixture_path: SharedString,
+    pub fixture_path: FilePath,
     pub case_name: SharedString,
     pub expected_kind: SharedString,
     pub expected_text: SharedString,
@@ -81,7 +81,7 @@ pub struct SuiteSummary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConformanceFailure {
     pub suite_name: SharedString,
-    pub fixture_path: SharedString,
+    pub fixture_path: FilePath,
     pub case_name: SharedString,
     pub expected_kind: SharedString,
     pub actual_kind: SharedString,
@@ -318,6 +318,17 @@ pub fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
+fn display_fixture_path(root: &Path, path: &Path) -> FilePath {
+    if let Ok(relative) = path.strip_prefix(root) {
+        let mut rendered = relative.to_string_lossy().into_owned().replace('\\', "/");
+        if let Some(stripped) = rendered.strip_prefix("./") {
+            rendered = stripped.to_owned();
+        }
+        return rendered.into();
+    }
+    path.to_string_lossy().into_owned().replace('\\', "/").into()
+}
+
 pub fn fixture_paths_in_dir(path: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     if !path.exists() {
@@ -467,12 +478,7 @@ pub fn run_conformance_fixtures(
 
         for fixture_path in fixture_paths {
             let suite = load_holo_suite_from_path(&fixture_path)?;
-            let fixture_display: SharedString = fixture_path
-                .strip_prefix(&workspace_root)
-                .unwrap_or(&fixture_path)
-                .display()
-                .to_string()
-                .into();
+            let fixture_display = display_fixture_path(&workspace_root, &fixture_path);
             let lint_issues = lint_holo_suite(&suite);
             if !lint_issues.is_empty() {
                 for issue in lint_issues {
@@ -746,11 +752,11 @@ ok
 
         let report = format_case_report(&summary.cases);
         expect![[r#"
-            # tests\conformance-tests\parser\test-parser.md
+            # tests/conformance-tests/parser/test-parser.md
             ## Case: parses basic function
             ok
 
-            # tests\conformance-tests\parser\test-parser.md
+            # tests/conformance-tests/parser/test-parser.md
             ## Case: reports missing close paren
             ⚒️ Parsing: expected `)` after expression
 
@@ -758,11 +764,11 @@ ok
                1 │ fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
                  │                                                   ─ expected `)`, found `;`
 
-            # tests\conformance-tests\parser\test-parser.md
+            # tests/conformance-tests/parser/test-parser.md
             ## Case: parses numeric suffixes and precedence
             ok
 
-            # tests\conformance-tests\parser\test-parser.md
+            # tests/conformance-tests/parser/test-parser.md
             ## Case: rejects non-test attribute
             ⚒️ Parsing: expected `#[test]` attribute, found `#[bench]`
 
@@ -770,7 +776,7 @@ ok
                1 │ #[bench]
                  │   ───── unsupported test attribute `bench`
 
-            # tests\conformance-tests\typechecker\test-typechecker.md
+            # tests/conformance-tests/typechecker/test-typechecker.md
             ## Case: rejects mixed numeric types
             ⚒️ Typecheck: arithmetic operands must have the same type
 
@@ -779,7 +785,7 @@ ok
                  │                   ───┬   ────── right operand has type `f64`
                  │                      └─ left operand has type `i64`
 
-            # tests\conformance-tests\typechecker\test-typechecker.md
+            # tests/conformance-tests/typechecker/test-typechecker.md
             ## Case: rejects non-boolean assert
             ⚒️ Typecheck: assert expects a boolean expression
 
@@ -787,15 +793,15 @@ ok
                2 │ fn bad_assert() { assert(1i64); }
                  │                   ───────────── this assertion does not evaluate to `bool`
 
-            # tests\conformance-tests\typechecker\test-typechecker.md
+            # tests/conformance-tests/typechecker/test-typechecker.md
             ## Case: accepts simple numeric function
             ok
 
-            # tests\conformance-tests\typechecker\test-typechecker.md
+            # tests/conformance-tests/typechecker/test-typechecker.md
             ## Case: accepts unary operators for valid types
             ok
 
-            # tests\conformance-tests\typechecker\test-typechecker.md
+            # tests/conformance-tests/typechecker/test-typechecker.md
             ## Case: rejects modulo on floating point operands
             ⚒️ Typecheck: operator `%` is only valid for integer types
 
@@ -803,7 +809,7 @@ ok
                1 │ fn bad_mod() -> f64 { 5.0f64 % 2.0f64; }
                  │                       ─────────────── operands have type `f64` but `%` requires integer types
 
-            # tests\conformance-tests\typechecker\test-typechecker.md
+            # tests/conformance-tests/typechecker/test-typechecker.md
             ## Case: rejects call argument count mismatch
             ⚒️ Typecheck: function `add` expects 2 argument(s) but got 1
 
@@ -815,7 +821,7 @@ ok
                2 │ fn use_it() -> i64 { add(1i64); }
                  │                      ───────── call argument count does not match function signature
 
-            # tests\conformance-tests\typechecker\test-typechecker.md
+            # tests/conformance-tests/typechecker/test-typechecker.md
             ## Case: rejects duplicate local binding
             ⚒️ Typecheck: duplicate local binding `value`
 
@@ -823,11 +829,11 @@ ok
                3 │     let value: i64 = 2i64;
                  │     ────────────────────── this binding name is already defined in this scope
 
-            # tests\conformance-tests\interpreter\test-interpreter.md
+            # tests/conformance-tests/interpreter/test-interpreter.md
             ## Case: evaluates arithmetic
             ok
 
-            # tests\conformance-tests\interpreter\test-interpreter.md
+            # tests/conformance-tests/interpreter/test-interpreter.md
             ## Case: reports division by zero
             🧪 Test: division by zero
 
@@ -835,11 +841,11 @@ ok
                1 │ fn boom() -> i64 { 1i64 / 0i64; }
                  │                    ─────────── test failed here
 
-            # tests\conformance-tests\interpreter\test-interpreter.md
+            # tests/conformance-tests/interpreter/test-interpreter.md
             ## Case: evaluates modulo and subtraction
             ok
 
-            # tests\conformance-tests\interpreter\test-interpreter.md
+            # tests/conformance-tests/interpreter/test-interpreter.md
             ## Case: reports modulo by zero
             🧪 Test: modulo by zero
 
@@ -847,7 +853,7 @@ ok
                1 │ fn modulo_fail() -> i64 { 5i64 % 0i64; }
                  │                           ─────────── test failed here
 
-            # tests\conformance-tests\interpreter\test-interpreter.md
+            # tests/conformance-tests/interpreter/test-interpreter.md
             ## Case: reports assertion failure
             🧪 Test: assertion failed
 
@@ -855,11 +861,11 @@ ok
                3 │     assert(false);
                  │            ───── test failed here
 
-            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: simple test passes
             ok
 
-            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: compile error blocks execution
             ⚒️ Typecheck: arithmetic operands must have the same type
 
@@ -868,7 +874,7 @@ ok
                  │                   ───┬   ────── right operand has type `f64`
                  │                      └─ left operand has type `i64`
 
-            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: runtime failure reports error
             🧪 Test: division by zero
 
@@ -876,11 +882,11 @@ ok
                1 │ fn boom() -> i64 { 1i64 / 0i64; }
                  │                    ─────────── test failed here
 
-            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: multiple tests pass in one module
             ok
 
-            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: parse error blocks execution
             ⚒️ Parsing: expected `)` after function parameter list
 
@@ -888,7 +894,7 @@ ok
                1 │ fn broken(a: i64 -> i64 { a; }
                  │                  ── expected `)`, found `->`
 
-            # tests\conformance-tests\end_to_end\test-end-to-end.md
+            # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: assertion failure propagates as runtime failure
             🧪 Test: assertion failed
 
@@ -900,3 +906,4 @@ ok
         .assert_eq(report.as_str());
     }
 }
+
