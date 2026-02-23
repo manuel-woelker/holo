@@ -1,4 +1,6 @@
 use holo_base::{holo_message_error, Result, SharedString};
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HoloSuite {
@@ -93,9 +95,17 @@ pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
     Ok(HoloSuite::new(cases))
 }
 
+pub fn load_holo_suite_from_path(path: &Path) -> Result<HoloSuite> {
+    let source = fs::read_to_string(path).map_err(|error| {
+        holo_message_error!("failed to read {}", path.display()).with_std_source(error)
+    })?;
+    parse_holo_suite(&source)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_holo_suite;
+    use super::{load_holo_suite_from_path, parse_holo_suite};
+    use std::path::Path;
 
     #[test]
     fn parses_cases_and_blocks() {
@@ -130,5 +140,24 @@ error: cannot add `i64` and `f64`
             .contains("fn add"));
         assert_eq!(suite.cases[1].blocks.len(), 1);
         assert_eq!(suite.cases[1].blocks[0].info.as_str(), "fails-typecheck");
+    }
+
+    #[test]
+    fn loads_parser_fixture_file() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|path| path.parent())
+            .expect("workspace root should exist");
+        let fixture = root
+            .join("tests")
+            .join("conformance-tests")
+            .join("parser")
+            .join("basic.md");
+        let suite = load_holo_suite_from_path(&fixture).expect("fixture should load");
+        assert_eq!(suite.cases.len(), 2);
+        assert_eq!(suite.cases[0].name.as_str(), "parses basic function");
+        assert_eq!(suite.cases[1].name.as_str(), "reports missing close paren");
+        assert_eq!(suite.cases[0].blocks[0].info.as_str(), "holo");
+        assert_eq!(suite.cases[1].blocks[1].info.as_str(), "fails-parse");
     }
 }
