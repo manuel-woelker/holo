@@ -7,9 +7,7 @@
 fn ok() { assert(true); }
 ```
 
-```text
-ok
-```
+### Succeeds
 
 ## Case: compile error blocks execution
 
@@ -20,7 +18,9 @@ fn bad() -> i64 { 1i64 + 2.0f64; }
 fn ok() { assert(true); }
 ```
 
-```fails-typecheck
+### Fails typecheck
+
+```text
 ⚒️ Typecheck: arithmetic operands must have the same type
 
 conformance-case.holo:1
@@ -42,7 +42,9 @@ fn division_by_zero() {
 }
 ```
 
-```fails-interpreter
+### Fails interpreter
+
+```text
 🧪 Test: division by zero
 
 conformance-case.holo:1

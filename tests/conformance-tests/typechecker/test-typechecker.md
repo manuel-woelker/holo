@@ -6,7 +6,9 @@
 fn bad() -> i64 { 1i64 + 2.0f64; }
 ```
 
-```fails-typecheck
+### Fails typecheck
+
+```text
 ⚒️ Typecheck: arithmetic operands must have the same type
 
 conformance-case.holo:1
@@ -22,7 +24,9 @@ conformance-case.holo:1
 fn bad_assert() { assert(1i64); }
 ```
 
-```fails-typecheck
+### Fails typecheck
+
+```text
 ⚒️ Typecheck: assert expects a boolean expression
 
 conformance-case.holo:2
@@ -36,6 +40,4 @@ conformance-case.holo:2
 fn add(a: i64, b: i64) -> i64 { a + b; }
 ```
 
-```text
-ok
-```
+### Succeeds

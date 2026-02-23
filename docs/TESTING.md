@@ -13,7 +13,9 @@ Provide a data-driven, markdown-based test system that validates parsing, typech
 
 ## How Are Tests Driven By Markdown?
 - Test cases live in markdown files and are loaded by the test harness.
-- Each case includes a name, an input `holo` code block, and expected output in a `text` block.
+- Each case includes a name and an input `holo` code block.
+- Success cases use a visible `### Succeeds` subheading and do not need an expected `text` block.
+- Failure cases use a visible `### Fails ...` subheading plus an expected `text` block.
 - Tables are used to enumerate example inputs and outputs (truth tables, arithmetic tables), not metadata.
 - The harness normalizes output into snapshot-friendly text.
 - Failure expectations should contain the full Unicode diagnostic output (multi-line), not only the first error line.
@@ -33,25 +35,23 @@ Provide a data-driven, markdown-based test system that validates parsing, typech
 fn add(a: i64, b: i64) -> i64 { a + b; }
 ```
 
-```text
-ok
-```
+### Succeeds
 ```
 
 ## How Do I Add A New End-To-End Case Without Writing Rust Test Code?
 1. Add a new `## Case: ...` section to `tests/conformance-tests/end_to_end/*.md`.
 2. Add exactly one `holo` fenced block with the source under test.
-3. Add one expected-output block:
-4. Use `text` for success with `ok`, or `fails-typecheck` / `fails-interpreter` for expected failures.
+3. For success cases, add `### Succeeds` below the `holo` block and omit the expected output block.
+4. For failure cases, add a `### Fails ...` subheading and a `text` block with expected diagnostics.
 5. Run `cargo test -p conformance-tests --manifest-path crates/Cargo.toml`.
 
 ## How Do We Encode Compilation Failures?
-- Use a code block whose info string encodes the failure kind, e.g. `fails-parse` or `fails-typecheck`.
+- Use a visible subheading above the expected output block, e.g. `### Fails parsing` or `### Fails typecheck`.
 - Put the expected full pretty-printed diagnostic output in the failure block.
 - Prefer `expect_test` snapshots for diagnostics rendering.
 
 ## How Do We Encode Execution Failures?
-- Use a code block whose info string encodes the failure kind, e.g. `fails-interpreter` or `fails-execution`.
+- Use a visible subheading above the expected output block, e.g. `### Fails interpreter`.
 - Include the full pretty-printed runtime failure diagnostic output.
 
 ## What Does Failure Annotation Look Like?
@@ -62,7 +62,9 @@ ok
 fn bad() -> i64 { 1i64 + 2.0f64; }
 ```
 
-```fails-typecheck
+### Fails typecheck
+
+```text
 error: cannot add `i64` and `f64`
 ```
 ```
@@ -74,7 +76,9 @@ error: cannot add `i64` and `f64`
 fn broken() -> i64 { let value: i64 = (1i64 + 2i64; value; }
 ```
 
-```fails-parse
+### Fails parsing
+
+```text
 error: expected `)` after expression
 ```
 ```

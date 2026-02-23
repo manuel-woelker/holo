@@ -22,24 +22,34 @@ impl HoloSuite {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HoloCase {
     pub name: SharedString,
+    pub sections: Vec<SharedString>,
     pub blocks: Vec<HoloBlock>,
 }
 
 impl HoloCase {
-    pub fn new(name: SharedString, blocks: Vec<HoloBlock>) -> Self {
-        Self { name, blocks }
+    pub fn new(name: SharedString, sections: Vec<SharedString>, blocks: Vec<HoloBlock>) -> Self {
+        Self {
+            name,
+            sections,
+            blocks,
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HoloBlock {
     pub info: SharedString,
+    pub section: Option<SharedString>,
     pub content: SharedString,
 }
 
 impl HoloBlock {
-    pub fn new(info: SharedString, content: SharedString) -> Self {
-        Self { info, content }
+    pub fn new(info: SharedString, section: Option<SharedString>, content: SharedString) -> Self {
+        Self {
+            info,
+            section,
+            content,
+        }
     }
 }
 
@@ -93,6 +103,7 @@ pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
     let mut cases = Vec::new();
     let mut current_case: Option<HoloCase> = None;
     let mut pending_blocks: Vec<HoloBlock> = Vec::new();
+    let mut current_section: Option<SharedString> = None;
 
     let mut lines = source.lines().enumerate().peekable();
     while let Some((line_no, line)) = lines.next() {
@@ -108,8 +119,25 @@ pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
                     line_no + 1
                 ));
             }
-            current_case = Some(HoloCase::new(name.into(), Vec::new()));
+            current_case = Some(HoloCase::new(name.into(), Vec::new(), Vec::new()));
             pending_blocks.clear();
+            current_section = None;
+            continue;
+        }
+
+        if let Some(section) = trimmed.strip_prefix("###") {
+            let Some(case) = current_case.as_mut() else {
+                continue;
+            };
+            let section = section.trim();
+            if section.is_empty() {
+                return Err(holo_message_error!(
+                    "section heading missing name at line {}",
+                    line_no + 1
+                ));
+            }
+            case.sections.push(section.into());
+            current_section = Some(section.into());
             continue;
         }
 
@@ -138,7 +166,11 @@ pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
                 ));
             }
             let content = content_lines.join("\n");
-            pending_blocks.push(HoloBlock::new(info.into(), content.into()));
+            pending_blocks.push(HoloBlock::new(
+                info.into(),
+                current_section.take(),
+                content.into(),
+            ));
             case.blocks.extend(pending_blocks.drain(..));
         }
     }
@@ -148,6 +180,26 @@ pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
     }
 
     Ok(HoloSuite::new(cases))
+}
+
+fn expected_kind_from_section(section: Option<&str>) -> SharedString {
+    let Some(section) = section else {
+        return "text".into();
+    };
+    let normalized = section.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "succeeds" | "success" => "text".into(),
+        "fails parsing" | "fails parse" => "fails-parse".into(),
+        "fails typecheck" | "fails typechecking" => "fails-typecheck".into(),
+        "fails interpreter" | "fails execution" | "fails runtime" => "fails-interpreter".into(),
+        _ => "text".into(),
+    }
+}
+
+fn has_succeeds_section(case: &HoloCase) -> bool {
+    case.sections
+        .iter()
+        .any(|section| section.as_str().trim().eq_ignore_ascii_case("succeeds"))
 }
 
 pub fn load_holo_suite_from_path(path: &Path) -> Result<HoloSuite> {
@@ -329,19 +381,37 @@ pub fn run_conformance_fixtures(
                     .blocks
                     .iter()
                     .find(|block| block.info.as_str() == "holo");
-                let expected_block = case.blocks.iter().find(|block| {
-                    block.info.as_str() == "text" || block.info.as_str().starts_with("fails-")
-                });
+                let expected_block = case
+                    .blocks
+                    .iter()
+                    .find(|block| block.info.as_str() == "text");
 
                 let case_record = match (source_block, expected_block) {
                     (Some(source_block), Some(expected_block)) => {
                         let actual = run_conformance_case(&mut core, source_block.content.as_str());
-                        let expected_kind = expected_block.info.clone();
+                        let expected_kind =
+                            expected_kind_from_section(expected_block.section.as_deref());
                         let expected_text =
                             normalize_block_content(expected_block.content.as_str());
                         let passed = (expected_kind.as_str() == "text"
                             || expected_kind.as_str() == actual.kind.as_str())
                             && expected_text.as_str() == actual.text.as_str();
+
+                        CaseRecord {
+                            fixture_path: fixture_display.clone(),
+                            case_name: case.name.clone(),
+                            expected_kind,
+                            expected_text,
+                            actual_kind: actual.kind,
+                            actual_text: actual.text,
+                            passed,
+                        }
+                    }
+                    (Some(source_block), None) if has_succeeds_section(case) => {
+                        let actual = run_conformance_case(&mut core, source_block.content.as_str());
+                        let expected_kind: SharedString = "text".into();
+                        let expected_text: SharedString = "ok".into();
+                        let passed = actual.kind.as_str() == "text" && actual.text.as_str() == "ok";
 
                         CaseRecord {
                             fixture_path: fixture_display.clone(),
@@ -365,8 +435,9 @@ pub fn run_conformance_fixtures(
                     (_, None) => CaseRecord {
                         fixture_path: fixture_display.clone(),
                         case_name: case.name.clone(),
-                        expected_kind: "text|fails-*".into(),
-                        expected_text: "case should contain one expected block".into(),
+                        expected_kind: "text".into(),
+                        expected_text: "case should contain one expected block or `### Succeeds`"
+                            .into(),
                         actual_kind: "missing-expected-block".into(),
                         actual_text: "no expected block found".into(),
                         passed: false,
@@ -424,8 +495,8 @@ pub fn format_case_report(cases: &[CaseRecord]) -> SharedString {
 #[cfg(test)]
 mod tests {
     use super::{
-        all_fixture_paths, format_case_report, load_holo_suite_from_path, parse_holo_suite,
-        run_conformance_fixtures, workspace_root, DEFAULT_SUITES,
+        all_fixture_paths, format_case_report, has_succeeds_section, load_holo_suite_from_path,
+        parse_holo_suite, run_conformance_fixtures, workspace_root, DEFAULT_SUITES,
     };
     use expect_test::expect;
 
@@ -434,17 +505,17 @@ mod tests {
         let source = r#"
 ## Case: first
 
+### Succeeds
+
 ```holo
 fn add(a: i64, b: i64) -> i64 { a + b; }
 ```
 
-```text
-ok
-```
-
 ## Case: second
 
-```fails-typecheck
+### Fails typecheck
+
+```text
 error: cannot add `i64` and `f64`
 ```
 "#;
@@ -452,7 +523,8 @@ error: cannot add `i64` and `f64`
         let suite = parse_holo_suite(source).expect("suite should parse");
         assert_eq!(suite.cases.len(), 2);
         assert_eq!(suite.cases[0].name.as_str(), "first");
-        assert_eq!(suite.cases[0].blocks.len(), 2);
+        assert_eq!(suite.cases[0].blocks.len(), 1);
+        assert_eq!(suite.cases[0].sections[0].as_str(), "Succeeds");
         assert_eq!(suite.cases[0].blocks[0].info.as_str(), "holo");
         assert!(suite.cases[0]
             .blocks
@@ -461,7 +533,15 @@ error: cannot add `i64` and `f64`
             .content
             .contains("fn add"));
         assert_eq!(suite.cases[1].blocks.len(), 1);
-        assert_eq!(suite.cases[1].blocks[0].info.as_str(), "fails-typecheck");
+        assert_eq!(suite.cases[1].blocks[0].info.as_str(), "text");
+        assert_eq!(
+            suite.cases[1].blocks[0]
+                .section
+                .as_ref()
+                .expect("section should exist")
+                .as_str(),
+            "Fails typecheck"
+        );
     }
 
     #[test]
@@ -484,14 +564,18 @@ error: cannot add `i64` and `f64`
                     fixture.display(),
                     case.name
                 );
-                assert!(
-                    case.blocks.iter().any(|block| {
-                        block.info.as_str() == "text" || block.info.as_str().starts_with("fails-")
-                    }),
-                    "case should contain an expected output block in {} :: {}",
-                    fixture.display(),
-                    case.name
-                );
+                if !case
+                    .blocks
+                    .iter()
+                    .any(|block| block.info.as_str() == "text")
+                {
+                    assert!(
+                        has_succeeds_section(&case),
+                        "case without expected block must declare `### Succeeds` in {} :: {}",
+                        fixture.display(),
+                        case.name
+                    );
+                }
             }
         }
     }

@@ -13,9 +13,7 @@ fn arithmetic_runs() {
 }
 ```
 
-```text
-ok
-```
+### Succeeds
 
 ## Case: reports division by zero
 
@@ -30,7 +28,9 @@ fn division_by_zero_fails() {
 }
 ```
 
-```fails-interpreter
+### Fails interpreter
+
+```text
 🧪 Test: division by zero
 
 conformance-case.holo:1
