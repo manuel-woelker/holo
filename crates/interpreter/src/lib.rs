@@ -75,6 +75,36 @@ struct RuntimeError {
     message: SharedString,
 }
 
+#[derive(Debug, Default)]
+struct RuntimeScopes {
+    scopes: Vec<HashMap<SharedString, Value>>,
+}
+
+impl RuntimeScopes {
+    fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn pop_scope(&mut self) {
+        let _ = self.scopes.pop();
+    }
+
+    fn insert(&mut self, name: SharedString, value: Value) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, value);
+        }
+    }
+
+    fn lookup(&self, name: &SharedString) -> Option<Value> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(value) = scope.get(name) {
+                return Some(value.clone());
+            }
+        }
+        None
+    }
+}
+
 impl BasicInterpreter {
     fn parse_number_literal(literal: &str) -> Option<Value> {
         if let Some(raw) = literal.strip_suffix("u32") {
@@ -103,7 +133,7 @@ impl BasicInterpreter {
 
     fn eval_expr(
         expression: &Expr,
-        locals: &HashMap<SharedString, Value>,
+        scopes: &mut RuntimeScopes,
         functions: &HashMap<SharedString, FunctionItem>,
     ) -> Result<Value, RuntimeError> {
         match &expression.kind {
@@ -114,12 +144,12 @@ impl BasicInterpreter {
                     message: "invalid number literal".into(),
                 })
             }
-            ExprKind::Identifier(name) => locals.get(name).cloned().ok_or(RuntimeError {
+            ExprKind::Identifier(name) => scopes.lookup(name).ok_or(RuntimeError {
                 span: expression.span,
                 message: format!("unknown identifier `{name}`").into(),
             }),
             ExprKind::Negation(inner) => {
-                let inner_value = Self::eval_expr(inner, locals, functions)?;
+                let inner_value = Self::eval_expr(inner, scopes, functions)?;
                 match inner_value {
                     Value::Bool(value) => Ok(Value::Bool(!value)),
                     _ => Err(RuntimeError {
@@ -129,7 +159,7 @@ impl BasicInterpreter {
                 }
             }
             ExprKind::UnaryMinus(inner) => {
-                let inner_value = Self::eval_expr(inner, locals, functions)?;
+                let inner_value = Self::eval_expr(inner, scopes, functions)?;
                 match inner_value {
                     Value::I32(value) => Ok(Value::I32(-value)),
                     Value::I64(value) => Ok(Value::I64(-value)),
@@ -142,8 +172,8 @@ impl BasicInterpreter {
                 }
             }
             ExprKind::Binary(binary) => {
-                let left = Self::eval_expr(&binary.left, locals, functions)?;
-                let right = Self::eval_expr(&binary.right, locals, functions)?;
+                let left = Self::eval_expr(&binary.left, scopes, functions)?;
+                let right = Self::eval_expr(&binary.right, scopes, functions)?;
                 Self::eval_binary(expression.span, binary.operator, left, right)
             }
             ExprKind::Call(call) => {
@@ -173,10 +203,63 @@ impl BasicInterpreter {
 
                 let mut call_locals = HashMap::new();
                 for (argument, parameter) in call.arguments.iter().zip(function.parameters.iter()) {
-                    let value = Self::eval_expr(argument, locals, functions)?;
+                    let value = Self::eval_expr(argument, scopes, functions)?;
                     call_locals.insert(parameter.name.clone(), value);
                 }
-                Self::run_function(function, &mut call_locals, functions)
+                Self::run_function(function, call_locals, functions)
+            }
+            ExprKind::If(if_expression) => {
+                let condition = Self::eval_expr(&if_expression.condition, scopes, functions)?;
+                let is_true = match condition {
+                    Value::Bool(value) => value,
+                    _ => {
+                        return Err(RuntimeError {
+                            span: if_expression.condition.span,
+                            message: "if condition must evaluate to bool".into(),
+                        });
+                    }
+                };
+
+                if is_true {
+                    Self::eval_expr(&if_expression.then_branch, scopes, functions)
+                } else if let Some(else_branch) = &if_expression.else_branch {
+                    Self::eval_expr(else_branch, scopes, functions)
+                } else {
+                    Ok(Value::Unit)
+                }
+            }
+            ExprKind::While(while_expression) => {
+                loop {
+                    let condition =
+                        Self::eval_expr(&while_expression.condition, scopes, functions)?;
+                    let is_true = match condition {
+                        Value::Bool(value) => value,
+                        _ => {
+                            return Err(RuntimeError {
+                                span: while_expression.condition.span,
+                                message: "while condition must evaluate to bool".into(),
+                            });
+                        }
+                    };
+                    if !is_true {
+                        break;
+                    }
+                    let _ = Self::eval_expr(&while_expression.body, scopes, functions)?;
+                }
+                Ok(Value::Unit)
+            }
+            ExprKind::Block(block_expression) => {
+                scopes.push_scope();
+                for statement in &block_expression.statements {
+                    let _ = Self::run_statement(statement, scopes, functions)?;
+                }
+                let value = if let Some(result) = &block_expression.result {
+                    Self::eval_expr(result, scopes, functions)?
+                } else {
+                    Value::Unit
+                };
+                scopes.pop_scope();
+                Ok(value)
             }
         }
     }
@@ -327,41 +410,55 @@ impl BasicInterpreter {
         }
     }
 
-    fn run_function(
-        function: &FunctionItem,
-        locals: &mut HashMap<SharedString, Value>,
+    fn run_statement(
+        statement: &Statement,
+        scopes: &mut RuntimeScopes,
         functions: &HashMap<SharedString, FunctionItem>,
-    ) -> Result<Value, RuntimeError> {
-        let mut last_value = Value::Unit;
-        for statement in &function.statements {
-            match statement {
-                Statement::Assert(assertion) => {
-                    let value = Self::eval_expr(&assertion.expression, locals, functions)?;
-                    match value {
-                        Value::Bool(true) => {}
-                        Value::Bool(false) => {
-                            return Err(RuntimeError {
-                                span: assertion.expression.span,
-                                message: "assertion failed".into(),
-                            });
-                        }
-                        _ => {
-                            return Err(RuntimeError {
-                                span: assertion.expression.span,
-                                message: "assertion expression did not evaluate to bool".into(),
-                            });
-                        }
-                    }
-                }
-                Statement::Let(let_statement) => {
-                    let value = Self::eval_expr(&let_statement.value, locals, functions)?;
-                    locals.insert(let_statement.name.clone(), value);
-                }
-                Statement::Expr(expr_statement) => {
-                    last_value = Self::eval_expr(&expr_statement.expression, locals, functions)?;
+    ) -> Result<Option<Value>, RuntimeError> {
+        match statement {
+            Statement::Assert(assertion) => {
+                let value = Self::eval_expr(&assertion.expression, scopes, functions)?;
+                match value {
+                    Value::Bool(true) => Ok(None),
+                    Value::Bool(false) => Err(RuntimeError {
+                        span: assertion.expression.span,
+                        message: "assertion failed".into(),
+                    }),
+                    _ => Err(RuntimeError {
+                        span: assertion.expression.span,
+                        message: "assertion expression did not evaluate to bool".into(),
+                    }),
                 }
             }
+            Statement::Let(let_statement) => {
+                let value = Self::eval_expr(&let_statement.value, scopes, functions)?;
+                scopes.insert(let_statement.name.clone(), value);
+                Ok(None)
+            }
+            Statement::Expr(expr_statement) => {
+                let value = Self::eval_expr(&expr_statement.expression, scopes, functions)?;
+                Ok(Some(value))
+            }
         }
+    }
+
+    fn run_function(
+        function: &FunctionItem,
+        initial_scope: HashMap<SharedString, Value>,
+        functions: &HashMap<SharedString, FunctionItem>,
+    ) -> Result<Value, RuntimeError> {
+        let mut scopes = RuntimeScopes::default();
+        scopes.push_scope();
+        for (name, value) in initial_scope {
+            scopes.insert(name, value);
+        }
+        let mut last_value = Value::Unit;
+        for statement in &function.statements {
+            if let Some(value) = Self::run_statement(statement, &mut scopes, functions)? {
+                last_value = value;
+            }
+        }
+        scopes.pop_scope();
         Ok(last_value)
     }
 
@@ -370,63 +467,20 @@ impl BasicInterpreter {
         test: &TestItem,
         functions: &HashMap<SharedString, FunctionItem>,
     ) -> TestResult {
-        let mut locals = HashMap::new();
+        let mut scopes = RuntimeScopes::default();
+        scopes.push_scope();
         let mut status = TestStatus::Passed;
         let mut failure_span = None;
         let mut failure_reason = None;
         for statement in &test.statements {
-            match statement {
-                Statement::Assert(assertion) => {
-                    let value = Self::eval_expr(&assertion.expression, &locals, functions);
-                    match value {
-                        Ok(Value::Bool(true)) => {}
-                        Ok(Value::Bool(false)) => {
-                            status = TestStatus::Failed;
-                            failure_span = Some(assertion.expression.span);
-                            failure_reason = Some("assertion failed".into());
-                            break;
-                        }
-                        Ok(_) => {
-                            status = TestStatus::Failed;
-                            failure_span = Some(assertion.expression.span);
-                            failure_reason =
-                                Some("assertion expression did not evaluate to bool".into());
-                            break;
-                        }
-                        Err(error) => {
-                            status = TestStatus::Failed;
-                            failure_span = Some(error.span);
-                            failure_reason = Some(error.message);
-                            break;
-                        }
-                    }
-                }
-                Statement::Let(let_statement) => {
-                    let value = Self::eval_expr(&let_statement.value, &locals, functions);
-                    match value {
-                        Ok(value) => {
-                            locals.insert(let_statement.name.clone(), value);
-                        }
-                        Err(error) => {
-                            status = TestStatus::Failed;
-                            failure_span = Some(error.span);
-                            failure_reason = Some(error.message);
-                            break;
-                        }
-                    }
-                }
-                Statement::Expr(expr_statement) => {
-                    if let Err(error) =
-                        Self::eval_expr(&expr_statement.expression, &locals, functions)
-                    {
-                        status = TestStatus::Failed;
-                        failure_span = Some(error.span);
-                        failure_reason = Some(error.message);
-                        break;
-                    }
-                }
+            if let Err(error) = Self::run_statement(statement, &mut scopes, functions) {
+                status = TestStatus::Failed;
+                failure_span = Some(error.span);
+                failure_reason = Some(error.message);
+                break;
             }
         }
+        scopes.pop_scope();
 
         TestResult {
             name: test.name.clone(),
@@ -740,5 +794,115 @@ mod tests {
             assert_eq!(summary.passed, 1, "{name}");
             assert_eq!(summary.failed, 0, "{name}");
         }
+    }
+
+    #[test]
+    fn evaluates_if_expression_branch() {
+        let module = Module {
+            functions: Vec::new(),
+            tests: vec![TestItem {
+                name: "if_branch".into(),
+                statements: vec![
+                    Statement::Let(holo_ast::LetStatement {
+                        name: "picked".into(),
+                        ty: Some(TypeRef::Bool),
+                        value: Expr::if_expression(
+                            Expr::bool_literal(true, Span::new(0, 4)),
+                            Expr::block(
+                                Vec::new(),
+                                Some(Expr::bool_literal(true, Span::new(10, 14))),
+                                Span::new(8, 16),
+                            ),
+                            Some(Expr::block(
+                                Vec::new(),
+                                Some(Expr::bool_literal(false, Span::new(24, 29))),
+                                Span::new(22, 31),
+                            )),
+                            Span::new(0, 31),
+                        ),
+                        span: Span::new(0, 31),
+                    }),
+                    Statement::Assert(AssertStatement {
+                        expression: Expr::identifier("picked", Span::new(32, 38)),
+                        span: Span::new(32, 39),
+                    }),
+                ],
+                span: Span::new(0, 39),
+            }],
+        };
+
+        let summary = BasicInterpreter.run_tests(&module);
+        assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn while_expression_executes_and_returns_unit() {
+        let module = Module {
+            functions: Vec::new(),
+            tests: vec![TestItem {
+                name: "while_once".into(),
+                statements: vec![
+                    Statement::Let(holo_ast::LetStatement {
+                        name: "ran".into(),
+                        ty: Some(TypeRef::Bool),
+                        value: Expr::bool_literal(false, Span::new(0, 5)),
+                        span: Span::new(0, 5),
+                    }),
+                    Statement::Expr(ExprStatement {
+                        expression: Expr::while_expression(
+                            Expr::identifier("ran", Span::new(6, 9)),
+                            Expr::block(Vec::new(), None, Span::new(10, 12)),
+                            Span::new(6, 12),
+                        ),
+                        span: Span::new(6, 13),
+                    }),
+                    Statement::Assert(AssertStatement {
+                        expression: Expr::bool_literal(true, Span::new(14, 18)),
+                        span: Span::new(14, 19),
+                    }),
+                ],
+                span: Span::new(0, 19),
+            }],
+        };
+
+        let summary = BasicInterpreter.run_tests(&module);
+        assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn block_expression_scopes_locals_at_runtime() {
+        let module = Module {
+            functions: Vec::new(),
+            tests: vec![TestItem {
+                name: "block_scope".into(),
+                statements: vec![
+                    Statement::Expr(ExprStatement {
+                        expression: Expr::block(
+                            vec![Statement::Let(holo_ast::LetStatement {
+                                name: "inner".into(),
+                                ty: Some(TypeRef::Bool),
+                                value: Expr::bool_literal(true, Span::new(0, 4)),
+                                span: Span::new(0, 4),
+                            })],
+                            Some(Expr::identifier("inner", Span::new(5, 10))),
+                            Span::new(0, 11),
+                        ),
+                        span: Span::new(0, 12),
+                    }),
+                    Statement::Expr(ExprStatement {
+                        expression: Expr::identifier("inner", Span::new(13, 18)),
+                        span: Span::new(13, 19),
+                    }),
+                ],
+                span: Span::new(0, 19),
+            }],
+        };
+
+        let summary = BasicInterpreter.run_tests(&module);
+        assert_eq!(summary.failed, 1);
+        assert!(summary.results[0]
+            .failure_reason
+            .as_ref()
+            .is_some_and(|reason| reason.contains("unknown identifier `inner`")));
     }
 }

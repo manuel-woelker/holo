@@ -255,6 +255,7 @@ impl BasicTypechecker {
                     function_types,
                     function_spans,
                     scopes,
+                    assertion_count,
                 );
                 if expression_type != Type::Bool {
                     diagnostics.push(
@@ -281,6 +282,7 @@ impl BasicTypechecker {
                     function_types,
                     function_spans,
                     scopes,
+                    assertion_count,
                 );
                 if scopes.lookup_current_scope(&let_statement.name).is_some() {
                     diagnostics.push(
@@ -333,6 +335,7 @@ impl BasicTypechecker {
                     function_types,
                     function_spans,
                     scopes,
+                    assertion_count,
                 );
             }
         }
@@ -344,7 +347,8 @@ impl BasicTypechecker {
         source: &str,
         function_types: &HashMap<SharedString, FunctionType>,
         function_spans: &HashMap<SharedString, holo_base::Span>,
-        scopes: &ScopeStack,
+        scopes: &mut ScopeStack,
+        assertion_count: &mut usize,
     ) -> Type {
         match &expression.kind {
             ExprKind::BoolLiteral(_) => Type::Bool,
@@ -371,6 +375,7 @@ impl BasicTypechecker {
                     function_types,
                     function_spans,
                     scopes,
+                    assertion_count,
                 );
                 if inner_type != Type::Bool && inner_type != Type::Unknown {
                     diagnostics.push(
@@ -392,6 +397,7 @@ impl BasicTypechecker {
                     function_types,
                     function_spans,
                     scopes,
+                    assertion_count,
                 );
                 if matches!(inner_type, Type::I32 | Type::I64 | Type::F32 | Type::F64) {
                     inner_type
@@ -417,6 +423,7 @@ impl BasicTypechecker {
                     function_types,
                     function_spans,
                     scopes,
+                    assertion_count,
                 );
                 let right_type = Self::typecheck_expression(
                     &binary.right,
@@ -425,6 +432,7 @@ impl BasicTypechecker {
                     function_types,
                     function_spans,
                     scopes,
+                    assertion_count,
                 );
                 if left_type == Type::Unknown || right_type == Type::Unknown {
                     return Type::Unknown;
@@ -510,6 +518,7 @@ impl BasicTypechecker {
                             function_types,
                             function_spans,
                             scopes,
+                            assertion_count,
                         );
                     }
                     return Type::Unknown;
@@ -544,6 +553,7 @@ impl BasicTypechecker {
                             function_types,
                             function_spans,
                             scopes,
+                            assertion_count,
                         );
                     }
                     return function_type.return_type;
@@ -557,6 +567,7 @@ impl BasicTypechecker {
                         function_types,
                         function_spans,
                         scopes,
+                        assertion_count,
                     );
                     let expected_type = function_type.parameter_types[index];
                     if argument_type == Type::Unknown {
@@ -574,6 +585,150 @@ impl BasicTypechecker {
                 }
 
                 function_type.return_type
+            }
+            ExprKind::If(if_expression) => {
+                let condition_type = Self::typecheck_expression(
+                    &if_expression.condition,
+                    diagnostics,
+                    source,
+                    function_types,
+                    function_spans,
+                    scopes,
+                    assertion_count,
+                );
+                if condition_type != Type::Bool && condition_type != Type::Unknown {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            "if condition must evaluate to `bool`",
+                        )
+                        .with_annotated_span(
+                            if_expression.condition.span,
+                            "this condition is not `bool`",
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                }
+
+                let then_type = Self::typecheck_expression(
+                    &if_expression.then_branch,
+                    diagnostics,
+                    source,
+                    function_types,
+                    function_spans,
+                    scopes,
+                    assertion_count,
+                );
+                let else_type = if let Some(else_branch) = &if_expression.else_branch {
+                    Self::typecheck_expression(
+                        else_branch,
+                        diagnostics,
+                        source,
+                        function_types,
+                        function_spans,
+                        scopes,
+                        assertion_count,
+                    )
+                } else {
+                    Type::Unit
+                };
+
+                if !Self::check_same_type(
+                    diagnostics,
+                    source,
+                    then_type,
+                    if_expression.then_branch.span,
+                    else_type,
+                    if_expression
+                        .else_branch
+                        .as_ref()
+                        .map(|branch| branch.span)
+                        .unwrap_or(expression.span),
+                    "if branches must evaluate to the same type",
+                ) {
+                    return Type::Unknown;
+                }
+                then_type
+            }
+            ExprKind::While(while_expression) => {
+                let condition_type = Self::typecheck_expression(
+                    &while_expression.condition,
+                    diagnostics,
+                    source,
+                    function_types,
+                    function_spans,
+                    scopes,
+                    assertion_count,
+                );
+                if condition_type != Type::Bool && condition_type != Type::Unknown {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            "while condition must evaluate to `bool`",
+                        )
+                        .with_annotated_span(
+                            while_expression.condition.span,
+                            "this condition is not `bool`",
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                }
+
+                let body_type = Self::typecheck_expression(
+                    &while_expression.body,
+                    diagnostics,
+                    source,
+                    function_types,
+                    function_spans,
+                    scopes,
+                    assertion_count,
+                );
+                if body_type != Type::Unit && body_type != Type::Unknown {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Typecheck,
+                            "while body must evaluate to `()`",
+                        )
+                        .with_annotated_span(
+                            while_expression.body.span,
+                            format!(
+                                "this body evaluates to `{}` but loops require `()`",
+                                Self::type_name(body_type)
+                            ),
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                }
+                Type::Unit
+            }
+            ExprKind::Block(block_expression) => {
+                scopes.push_scope();
+                for statement in &block_expression.statements {
+                    Self::typecheck_statement(
+                        statement,
+                        diagnostics,
+                        source,
+                        function_types,
+                        function_spans,
+                        scopes,
+                        assertion_count,
+                    );
+                }
+                let result_type = if let Some(result) = &block_expression.result {
+                    Self::typecheck_expression(
+                        result,
+                        diagnostics,
+                        source,
+                        function_types,
+                        function_spans,
+                        scopes,
+                        assertion_count,
+                    )
+                } else {
+                    Type::Unit
+                };
+                scopes.pop_scope();
+                result_type
             }
         }
     }
@@ -1099,5 +1254,108 @@ mod tests {
         let rendered = holo_base::display_source_diagnostics(std::slice::from_ref(diagnostic));
         assert!(rendered.contains("first declaration"), "{rendered}");
         assert!(rendered.contains("duplicate declaration"), "{rendered}");
+    }
+
+    #[test]
+    fn rejects_if_branch_type_mismatch() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "branch".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
+                statements: vec![Statement::Expr(holo_ast::ExprStatement {
+                    expression: Expr::if_expression(
+                        Expr::bool_literal(true, Span::new(0, 4)),
+                        Expr::block(
+                            Vec::new(),
+                            Some(Expr::number_literal("1i64", Span::new(10, 14))),
+                            Span::new(8, 16),
+                        ),
+                        Some(Expr::block(
+                            Vec::new(),
+                            Some(Expr::bool_literal(false, Span::new(24, 29))),
+                            Span::new(22, 31),
+                        )),
+                        Span::new(0, 31),
+                    ),
+                    span: Span::new(0, 32),
+                })],
+                is_test: false,
+                span: Span::new(0, 32),
+            }],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "if true { 1i64 } else { false };");
+        assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("if branches must evaluate to the same type")));
+    }
+
+    #[test]
+    fn rejects_non_bool_while_condition() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "loop_bad".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
+                statements: vec![Statement::Expr(holo_ast::ExprStatement {
+                    expression: Expr::while_expression(
+                        Expr::number_literal("1i64", Span::new(0, 4)),
+                        Expr::block(Vec::new(), None, Span::new(6, 8)),
+                        Span::new(0, 8),
+                    ),
+                    span: Span::new(0, 9),
+                })],
+                is_test: false,
+                span: Span::new(0, 9),
+            }],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "while 1i64 { };");
+        assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("while condition must evaluate to `bool`")));
+    }
+
+    #[test]
+    fn block_expression_scopes_locals() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "block_scope".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
+                statements: vec![
+                    Statement::Expr(holo_ast::ExprStatement {
+                        expression: Expr::block(
+                            vec![Statement::Let(holo_ast::LetStatement {
+                                name: "inner".into(),
+                                ty: Some(TypeRef::I64),
+                                value: Expr::number_literal("1i64", Span::new(8, 12)),
+                                span: Span::new(0, 13),
+                            })],
+                            Some(Expr::identifier("inner", Span::new(14, 19))),
+                            Span::new(0, 20),
+                        ),
+                        span: Span::new(0, 21),
+                    }),
+                    Statement::Expr(holo_ast::ExprStatement {
+                        expression: Expr::identifier("inner", Span::new(22, 27)),
+                        span: Span::new(22, 28),
+                    }),
+                ],
+                is_test: false,
+                span: Span::new(0, 28),
+            }],
+            tests: Vec::new(),
+        };
+
+        let result =
+            BasicTypechecker.typecheck_module(&module, "{ let inner: i64 = 1i64; inner }; inner;");
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("unknown identifier `inner`")));
     }
 }

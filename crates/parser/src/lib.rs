@@ -348,6 +348,13 @@ impl<'a> ParserState<'a> {
     }
 
     fn parse_primary(&mut self) -> Option<Expr> {
+        if self.check(TokenKind::If) {
+            return self.parse_if_expression();
+        }
+        if self.check(TokenKind::While) {
+            return self.parse_while_expression();
+        }
+
         if let Some(token) = self.peek() {
             match token.kind {
                 TokenKind::True => {
@@ -376,6 +383,10 @@ impl<'a> ParserState<'a> {
                         kind: expr.kind,
                     });
                 }
+                TokenKind::OpenBrace => {
+                    let open = self.advance().expect("peek guaranteed token");
+                    return self.parse_block_expression_after_open(open.span.start);
+                }
                 _ => {}
             }
         }
@@ -388,6 +399,88 @@ impl<'a> ParserState<'a> {
         );
         self.advance();
         None
+    }
+
+    fn parse_if_expression(&mut self) -> Option<Expr> {
+        let if_keyword = self.expect(TokenKind::If, "expected `if`")?;
+        let condition = self.parse_expression()?;
+        let then_open = self.expect(TokenKind::OpenBrace, "expected `{` after if condition")?;
+        let then_branch = self.parse_block_expression_after_open(then_open.span.start)?;
+        let else_branch = if self.consume_if(TokenKind::Else).is_some() {
+            let else_open = self.expect(TokenKind::OpenBrace, "expected `{` after `else`")?;
+            Some(self.parse_block_expression_after_open(else_open.span.start)?)
+        } else {
+            None
+        };
+        let end = else_branch
+            .as_ref()
+            .map(|expr| expr.span.end)
+            .unwrap_or(then_branch.span.end);
+        Some(Expr::if_expression(
+            condition,
+            then_branch,
+            else_branch,
+            Span::new(if_keyword.span.start, end),
+        ))
+    }
+
+    fn parse_while_expression(&mut self) -> Option<Expr> {
+        let while_keyword = self.expect(TokenKind::While, "expected `while`")?;
+        let condition = self.parse_expression()?;
+        let body_open = self.expect(TokenKind::OpenBrace, "expected `{` after while condition")?;
+        let body = self.parse_block_expression_after_open(body_open.span.start)?;
+        let end = body.span.end;
+        Some(Expr::while_expression(
+            condition,
+            body,
+            Span::new(while_keyword.span.start, end),
+        ))
+    }
+
+    fn parse_block_expression_after_open(&mut self, start: usize) -> Option<Expr> {
+        let mut statements = Vec::new();
+        let mut result = None;
+
+        while self.peek().is_some() && !self.check(TokenKind::CloseBrace) {
+            if self.check(TokenKind::Let) {
+                statements.push(Statement::Let(self.parse_let_statement()?));
+                continue;
+            }
+            if self.check(TokenKind::Assert) {
+                statements.push(Statement::Assert(self.parse_assert_statement()?));
+                continue;
+            }
+
+            let expression = self.parse_expression()?;
+            if let Some(semicolon) = self.consume_if(TokenKind::Semicolon) {
+                statements.push(Statement::Expr(ExprStatement {
+                    span: Span::new(expression.span.start, semicolon.span.end),
+                    expression,
+                }));
+                continue;
+            }
+
+            if self.check(TokenKind::CloseBrace) {
+                result = Some(expression);
+                break;
+            }
+
+            let token = self.peek()?;
+            self.report_current(
+                "expected `;` after expression in block".into(),
+                token.span,
+                format!("found `{}` instead", token.lexeme).into(),
+            );
+            self.recover_statement();
+        }
+
+        let close_brace =
+            self.expect(TokenKind::CloseBrace, "expected `}` after block expression")?;
+        Some(Expr::block(
+            statements,
+            result,
+            Span::new(start, close_brace.span.end),
+        ))
     }
 
     fn previous_span_end(&self) -> usize {
@@ -490,6 +583,9 @@ fn token_kind_name(kind: TokenKind) -> &'static str {
         TokenKind::False => "`false`",
         TokenKind::Assert => "`assert`",
         TokenKind::Let => "`let`",
+        TokenKind::If => "`if`",
+        TokenKind::Else => "`else`",
+        TokenKind::While => "`while`",
         TokenKind::Bang => "`!`",
         TokenKind::Plus => "`+`",
         TokenKind::Minus => "`-`",
@@ -649,5 +745,35 @@ mod tests {
         assert!(!result.diagnostics.is_empty());
         assert_eq!(result.module.tests.len(), 1);
         assert_eq!(result.module.tests[0].name, "ok");
+    }
+
+    #[test]
+    fn parses_if_else_and_block_result_expression() {
+        let source = "fn pick() -> i64 { if true { let a: i64 = 1i64; a } else { 2i64 }; }";
+        let lexed = BasicLexer.lex(source);
+        let parsed = BasicParser.parse_module(&lexed.tokens, source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let function = &parsed.module.functions[0];
+        let Statement::Expr(expr_statement) = &function.statements[0] else {
+            panic!("expected expression statement");
+        };
+        let ExprKind::If(if_expression) = &expr_statement.expression.kind else {
+            panic!("expected if expression");
+        };
+        assert!(matches!(if_expression.then_branch.kind, ExprKind::Block(_)));
+        assert!(if_expression.else_branch.is_some());
+    }
+
+    #[test]
+    fn parses_while_expression_statement() {
+        let source = "fn loop_test() -> () { while false { assert(true); }; }";
+        let lexed = BasicLexer.lex(source);
+        let parsed = BasicParser.parse_module(&lexed.tokens, source);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let function = &parsed.module.functions[0];
+        let Statement::Expr(expr_statement) = &function.statements[0] else {
+            panic!("expected expression statement");
+        };
+        assert!(matches!(expr_statement.expression.kind, ExprKind::While(_)));
     }
 }

@@ -21,7 +21,7 @@ Define a high-level implementation roadmap for the next compiler evolution, with
 - Ensure identifier lookup diagnostics are consistent and span-annotated.
 
 2. **Control Flow Constructs**
-- Status: `Pending`
+- Status: `Done`
 - Add `if`, `while`, and block-expression semantics.
 - Enforce type consistency across branches and loop bodies.
 

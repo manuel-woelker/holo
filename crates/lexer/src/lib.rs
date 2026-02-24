@@ -9,6 +9,9 @@ pub enum TokenKind {
     False,
     Assert,
     Let,
+    If,
+    Else,
+    While,
     Bang,
     Plus,
     Minus,
@@ -92,6 +95,9 @@ impl Lexer for BasicLexer {
                     "false" => TokenKind::False,
                     "assert" => TokenKind::Assert,
                     "let" => TokenKind::Let,
+                    "if" => TokenKind::If,
+                    "else" => TokenKind::Else,
+                    "while" => TokenKind::While,
                     "fn" => TokenKind::Fn,
                     _ => TokenKind::Identifier,
                 };
@@ -235,5 +241,24 @@ mod tests {
             .tokens
             .iter()
             .any(|token| token.kind == TokenKind::True));
+    }
+
+    #[test]
+    fn lexes_control_flow_keywords() {
+        let lexer = BasicLexer;
+        let result = lexer.lex("fn f() -> () { if true { while false { } } else { } }");
+        assert!(result.diagnostics.is_empty());
+        assert!(result
+            .tokens
+            .iter()
+            .any(|token| token.kind == TokenKind::If));
+        assert!(result
+            .tokens
+            .iter()
+            .any(|token| token.kind == TokenKind::Else));
+        assert!(result
+            .tokens
+            .iter()
+            .any(|token| token.kind == TokenKind::While));
     }
 }

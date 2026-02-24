@@ -118,6 +118,12 @@ pub enum ExprKind {
     Binary(BinaryExpr),
     /// Function call.
     Call(CallExpr),
+    /// If expression with block branches.
+    If(IfExpr),
+    /// While loop expression.
+    While(WhileExpr),
+    /// Block expression.
+    Block(BlockExpr),
 }
 
 /// Binary expression payload.
@@ -138,6 +144,35 @@ pub struct CallExpr {
     pub callee: Box<Expr>,
     /// Ordered call arguments.
     pub arguments: Vec<Expr>,
+}
+
+/// If expression payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IfExpr {
+    /// Condition expression.
+    pub condition: Box<Expr>,
+    /// Then branch block.
+    pub then_branch: Box<Expr>,
+    /// Optional else branch block.
+    pub else_branch: Option<Box<Expr>>,
+}
+
+/// While expression payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhileExpr {
+    /// Loop condition expression.
+    pub condition: Box<Expr>,
+    /// Loop body block.
+    pub body: Box<Expr>,
+}
+
+/// Block expression payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockExpr {
+    /// Statements evaluated in order.
+    pub statements: Vec<Statement>,
+    /// Optional trailing expression result.
+    pub result: Option<Box<Expr>>,
 }
 
 /// Arithmetic binary operators supported by the parser.
@@ -222,6 +257,45 @@ impl Expr {
             kind: ExprKind::Call(CallExpr {
                 callee: Box::new(callee),
                 arguments,
+            }),
+            span,
+        }
+    }
+
+    /// Creates an if expression.
+    pub fn if_expression(
+        condition: Expr,
+        then_branch: Expr,
+        else_branch: Option<Expr>,
+        span: Span,
+    ) -> Self {
+        Self {
+            kind: ExprKind::If(IfExpr {
+                condition: Box::new(condition),
+                then_branch: Box::new(then_branch),
+                else_branch: else_branch.map(Box::new),
+            }),
+            span,
+        }
+    }
+
+    /// Creates a while expression.
+    pub fn while_expression(condition: Expr, body: Expr, span: Span) -> Self {
+        Self {
+            kind: ExprKind::While(WhileExpr {
+                condition: Box::new(condition),
+                body: Box::new(body),
+            }),
+            span,
+        }
+    }
+
+    /// Creates a block expression.
+    pub fn block(statements: Vec<Statement>, result: Option<Expr>, span: Span) -> Self {
+        Self {
+            kind: ExprKind::Block(BlockExpr {
+                statements,
+                result: result.map(Box::new),
             }),
             span,
         }
