@@ -12,6 +12,7 @@ holo-ast = { path = "../ast" }
 holo-base = { path = "../base" }
 holo-db = { path = "../db" }
 holo-interpreter = { path = "../interpreter" }
+holo-ir = { path = "../ir" }
 holo-lexer = { path = "../lexer" }
 holo-parser = { path = "../parser" }
 holo-query = { path = "../query" }

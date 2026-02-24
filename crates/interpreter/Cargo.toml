@@ -7,6 +7,6 @@ license = "MIT"
 publish = false
 
 [dependencies]
-holo-ast = { path = "../ast" }
 holo-base = { path = "../base" }
+holo-ir = { path = "../ir" }
 tracing = "0.1"

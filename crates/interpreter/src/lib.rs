@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use holo_ast::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, TestItem};
 use holo_base::{SharedString, Span, TaskTimer, TaskTiming};
+use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, TestItem};
 use tracing::info;
 
 /// Final status for a single test.
@@ -114,25 +114,25 @@ impl BasicInterpreter {
 
     fn parse_number_literal(
         literal: &str,
-        expected_type: Option<holo_ast::TypeRef>,
+        expected_type: Option<holo_ir::TypeRef>,
     ) -> Option<Value> {
         if !Self::has_explicit_numeric_suffix(literal) {
             if let Some(expected_type) = expected_type {
                 if let Ok(number) = literal.parse::<i64>() {
                     return match expected_type {
-                        holo_ast::TypeRef::U32 => u32::try_from(number).ok().map(Value::U32),
-                        holo_ast::TypeRef::U64 => u64::try_from(number).ok().map(Value::U64),
-                        holo_ast::TypeRef::I32 => i32::try_from(number).ok().map(Value::I32),
-                        holo_ast::TypeRef::I64 => Some(Value::I64(number)),
-                        holo_ast::TypeRef::F32 => Some(Value::F32(number as f32)),
-                        holo_ast::TypeRef::F64 => Some(Value::F64(number as f64)),
+                        holo_ir::TypeRef::U32 => u32::try_from(number).ok().map(Value::U32),
+                        holo_ir::TypeRef::U64 => u64::try_from(number).ok().map(Value::U64),
+                        holo_ir::TypeRef::I32 => i32::try_from(number).ok().map(Value::I32),
+                        holo_ir::TypeRef::I64 => Some(Value::I64(number)),
+                        holo_ir::TypeRef::F32 => Some(Value::F32(number as f32)),
+                        holo_ir::TypeRef::F64 => Some(Value::F64(number as f64)),
                         _ => None,
                     };
                 }
                 if let Ok(number) = literal.parse::<f64>() {
                     return match expected_type {
-                        holo_ast::TypeRef::F32 => Some(Value::F32(number as f32)),
-                        holo_ast::TypeRef::F64 => Some(Value::F64(number)),
+                        holo_ir::TypeRef::F32 => Some(Value::F32(number as f32)),
+                        holo_ir::TypeRef::F64 => Some(Value::F64(number)),
                         _ => None,
                     };
                 }
@@ -167,7 +167,7 @@ impl BasicInterpreter {
         expression: &Expr,
         scopes: &mut RuntimeScopes,
         functions: &HashMap<SharedString, FunctionItem>,
-        expected_type: Option<holo_ast::TypeRef>,
+        expected_type: Option<holo_ir::TypeRef>,
     ) -> Result<Value, RuntimeError> {
         match &expression.kind {
             ExprKind::BoolLiteral(value) => Ok(Value::Bool(*value)),
@@ -595,11 +595,11 @@ impl Interpreter for BasicInterpreter {
 #[cfg(test)]
 mod tests {
     use super::{BasicInterpreter, Interpreter, TestStatus};
-    use holo_ast::{
+    use holo_base::Span;
+    use holo_ir::{
         AssertStatement, BinaryOperator, Expr, ExprStatement, FunctionItem, FunctionParameter,
         Module, Statement, TestItem, TypeRef,
     };
-    use holo_base::Span;
 
     #[test]
     fn marks_false_assertion_as_failed_test() {
@@ -836,7 +836,7 @@ mod tests {
             tests: vec![TestItem {
                 name: "if_branch".into(),
                 statements: vec![
-                    Statement::Let(holo_ast::LetStatement {
+                    Statement::Let(holo_ir::LetStatement {
                         name: "picked".into(),
                         ty: Some(TypeRef::Bool),
                         value: Expr::if_expression(
@@ -875,7 +875,7 @@ mod tests {
             tests: vec![TestItem {
                 name: "while_once".into(),
                 statements: vec![
-                    Statement::Let(holo_ast::LetStatement {
+                    Statement::Let(holo_ir::LetStatement {
                         name: "ran".into(),
                         ty: Some(TypeRef::Bool),
                         value: Expr::bool_literal(false, Span::new(0, 5)),
@@ -911,7 +911,7 @@ mod tests {
                 statements: vec![
                     Statement::Expr(ExprStatement {
                         expression: Expr::block(
-                            vec![Statement::Let(holo_ast::LetStatement {
+                            vec![Statement::Let(holo_ir::LetStatement {
                                 name: "inner".into(),
                                 ty: Some(TypeRef::Bool),
                                 value: Expr::bool_literal(true, Span::new(0, 4)),
@@ -946,7 +946,7 @@ mod tests {
             tests: vec![TestItem {
                 name: "typed_let".into(),
                 statements: vec![
-                    Statement::Let(holo_ast::LetStatement {
+                    Statement::Let(holo_ir::LetStatement {
                         name: "value".into(),
                         ty: Some(TypeRef::U32),
                         value: Expr::number_literal("1", Span::new(0, 1)),

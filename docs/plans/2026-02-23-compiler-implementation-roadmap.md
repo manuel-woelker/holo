@@ -36,7 +36,7 @@ Define a high-level implementation roadmap for the next compiler evolution, with
 - Add actionable hints/fix guidance where deterministic.
 
 5. **Typed Intermediate Representation (IR)**
-- Status: `Pending`
+- Status: `Done`
 - Add a typed IR layer between frontend analysis and execution/backend.
 - Keep AST-focused parsing/typechecking concerns separate from execution concerns.
 

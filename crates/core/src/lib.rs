@@ -8,13 +8,14 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use bitcode::{Decode, Encode};
-use holo_ast::{Module, TestItem};
+use holo_ast::Module as AstModule;
 use holo_base::{
     holo_message_error, project_revision, time_task, DiagnosticKind, FilePath, Result,
     SourceDiagnostic, Span, TaskTiming,
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{BasicInterpreter, Interpreter, TestRunSummary, TestStatus};
+use holo_ir::{lower_module, Module as IrModule, TestItem as IrTestItem};
 use holo_lexer::{BasicLexer, Lexer};
 use holo_parser::{BasicParser, Parser};
 use holo_query::{InMemoryQueryStore, QueryKey, QueryStage, QueryStore, QueryValue};
@@ -49,7 +50,7 @@ pub struct CompilerCore {
 }
 
 impl CompilerCore {
-    fn collect_tests(module: &Module) -> Vec<TestItem> {
+    fn collect_tests(module: &IrModule) -> Vec<IrTestItem> {
         module.tests.clone()
     }
 
@@ -132,7 +133,7 @@ impl CompilerCore {
         let (parsed, parse_timing) = time_task(format!("parse `{}`", file_path), || {
             self.parser.parse_module(&tokens, source)
         });
-        let module = parsed.module;
+        let module: AstModule = parsed.module;
         diagnostics.extend(parsed.diagnostics);
         info!(
             file_path = %file_path,
@@ -183,8 +184,28 @@ impl CompilerCore {
             QueryValue::Complete,
         );
 
+        info!("lowering typed IR");
+        let (typed_module, lower_ir_timing) =
+            time_task(format!("lower ir `{}`", file_path), || {
+                lower_module(&module)
+            });
+        info!(
+            file_path = %file_path,
+            stage = "lower_ir",
+            elapsed_ms = lower_ir_timing.elapsed.as_secs_f64() * 1000.0,
+            "stage timing"
+        );
+        self.query_store.put(
+            QueryKey {
+                file_path: file_path.clone(),
+                stage: QueryStage::LowerIr,
+                content_hash,
+            },
+            QueryValue::Complete,
+        );
+
         info!("collecting tests");
-        let collected_tests = Self::collect_tests(&module);
+        let collected_tests = Self::collect_tests(&typed_module);
         debug!(
             collected_tests = collected_tests.len(),
             "test collection completed"
@@ -200,7 +221,7 @@ impl CompilerCore {
 
         info!("running tests");
         let (tests, run_tests_timing) = time_task(format!("run tests `{}`", file_path), || {
-            self.interpreter.run_tests(&module)
+            self.interpreter.run_tests(&typed_module)
         });
         info!(
             file_path = %file_path,
@@ -247,6 +268,7 @@ impl CompilerCore {
                 let mut timings = Vec::new();
                 timings.push(parse_timing);
                 timings.push(typecheck_timing);
+                timings.push(lower_ir_timing);
                 timings.push(run_tests_timing);
                 timings.extend(typecheck_timings);
                 timings.extend(test_timings);
@@ -643,6 +665,10 @@ mod tests {
         assert!(summary.token_count > 0);
         assert_eq!(
             core.query_value(&"smoke.holo".into(), QueryStage::Parse, source),
+            Some(&QueryValue::Complete)
+        );
+        assert_eq!(
+            core.query_value(&"smoke.holo".into(), QueryStage::LowerIr, source),
             Some(&QueryValue::Complete)
         );
     }

@@ -9,6 +9,7 @@ pub enum QueryStage {
     Lex,
     Parse,
     Typecheck,
+    LowerIr,
     CollectTests,
     RunTests,
 }
