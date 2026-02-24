@@ -82,6 +82,12 @@ impl SourceExcerpt {
 pub struct SourceDiagnostic {
     /// Human-readable primary message for the diagnostic.
     pub message: SharedString,
+    /// Stable machine-readable diagnostic error code.
+    #[serde(default)]
+    pub error_code: Option<SharedString>,
+    /// Optional actionable hint for resolving the issue.
+    #[serde(default)]
+    pub hint: Option<SharedString>,
     /// Compilation stage that produced this diagnostic.
     pub kind: DiagnosticKind,
     /// Source span annotations associated with this diagnostic.
@@ -95,10 +101,24 @@ impl SourceDiagnostic {
     pub fn new(kind: DiagnosticKind, message: impl Into<SharedString>) -> Self {
         Self {
             message: message.into(),
+            error_code: None,
+            hint: None,
             kind,
             annotated_spans: Vec::new(),
             source_excerpts: Vec::new(),
         }
+    }
+
+    /// Attaches a stable error code.
+    pub fn with_error_code(mut self, error_code: impl Into<SharedString>) -> Self {
+        self.error_code = Some(error_code.into());
+        self
+    }
+
+    /// Attaches a deterministic remediation hint.
+    pub fn with_hint(mut self, hint: impl Into<SharedString>) -> Self {
+        self.hint = Some(hint.into());
+        self
     }
 
     /// Appends one annotated span and returns the updated diagnostic.
@@ -444,10 +464,17 @@ mod tests {
     #[test]
     fn creates_source_diagnostic_with_annotations() {
         let diagnostic = SourceDiagnostic::new(DiagnosticKind::Parsing, "expected ')'")
+            .with_error_code("P1000")
+            .with_hint("add the missing closing delimiter")
             .with_annotated_span(Span::new(4, 5), "missing closing parenthesis");
 
         assert_eq!(diagnostic.kind, DiagnosticKind::Parsing);
         assert_eq!(diagnostic.message, "expected ')'");
+        assert_eq!(diagnostic.error_code.as_deref(), Some("P1000"));
+        assert_eq!(
+            diagnostic.hint.as_deref(),
+            Some("add the missing closing delimiter")
+        );
         assert_eq!(diagnostic.annotated_spans.len(), 1);
         assert_eq!(
             diagnostic.annotated_spans[0].message,

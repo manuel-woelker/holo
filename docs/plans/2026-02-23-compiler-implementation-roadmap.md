@@ -31,7 +31,7 @@ Define a high-level implementation roadmap for the next compiler evolution, with
 - Document strict/no-coercion rules or approved coercion paths.
 
 4. **Diagnostics System Hardening**
-- Status: `Pending`
+- Status: `Done`
 - Introduce stable error codes for parser/type/runtime diagnostics.
 - Add actionable hints/fix guidance where deterministic.
 

@@ -110,6 +110,7 @@ impl<'a> ParserState<'a> {
                 .into(),
                 attribute.span,
                 format!("unsupported test attribute `{}`", attribute.lexeme).into(),
+                Some("use `#[test]` for executable test functions".into()),
             );
             self.recover_to_next_item();
             return None;
@@ -204,6 +205,7 @@ impl<'a> ParserState<'a> {
                     "unknown type name".into(),
                     token.span,
                     format!("unsupported type `{}`", token.lexeme).into(),
+                    None,
                 );
                 None
             }
@@ -396,6 +398,7 @@ impl<'a> ParserState<'a> {
             "expected expression".into(),
             token.span,
             format!("found `{}` instead", token.lexeme).into(),
+            None,
         );
         self.advance();
         None
@@ -470,6 +473,7 @@ impl<'a> ParserState<'a> {
                 "expected `;` after expression in block".into(),
                 token.span,
                 format!("found `{}` instead", token.lexeme).into(),
+                Some("add `;` or make this the trailing block expression".into()),
             );
             self.recover_statement();
         }
@@ -523,6 +527,7 @@ impl<'a> ParserState<'a> {
                 context.into(),
                 eof_span,
                 format!("expected {}, found end of input", token_kind_name(kind)).into(),
+                Some("add the missing token to complete this construct".into()),
             );
             return None;
         };
@@ -537,6 +542,7 @@ impl<'a> ParserState<'a> {
                     token.lexeme
                 )
                 .into(),
+                None,
             );
             return None;
         }
@@ -544,12 +550,21 @@ impl<'a> ParserState<'a> {
         Some(token)
     }
 
-    fn report_current(&mut self, message: SharedString, span: Span, annotation: SharedString) {
-        self.diagnostics.push(
-            SourceDiagnostic::new(DiagnosticKind::Parsing, message)
-                .with_annotated_span(span, annotation)
-                .with_source_excerpt(SourceExcerpt::new(self.source, 1, 0)),
-        );
+    fn report_current(
+        &mut self,
+        message: SharedString,
+        span: Span,
+        annotation: SharedString,
+        hint: Option<SharedString>,
+    ) {
+        let mut diagnostic = SourceDiagnostic::new(DiagnosticKind::Parsing, message)
+            .with_error_code("P1000")
+            .with_annotated_span(span, annotation)
+            .with_source_excerpt(SourceExcerpt::new(self.source, 1, 0));
+        if let Some(hint) = hint {
+            diagnostic = diagnostic.with_hint(hint);
+        }
+        self.diagnostics.push(diagnostic);
     }
 
     fn recover_to_next_item(&mut self) {
@@ -702,6 +717,8 @@ mod tests {
             "actual diagnostics: {:?}",
             result.diagnostics
         );
+        assert_eq!(result.diagnostics[0].error_code.as_deref(), Some("P1000"));
+        assert!(result.diagnostics[0].hint.is_some());
     }
 
     #[test]

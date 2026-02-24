@@ -201,6 +201,7 @@ impl BasicTypechecker {
         }
         diagnostics.push(
             SourceDiagnostic::new(DiagnosticKind::Typecheck, message)
+                .with_error_code("T1100")
                 .with_annotated_span(
                     left_span,
                     format!("left operand has type `{}`", Self::type_name(left)),
@@ -213,6 +214,7 @@ impl BasicTypechecker {
                     right_span,
                     "implicit numeric conversions are not allowed; use explicit literal suffixes",
                 )
+                .with_hint("align operand types with explicit literal suffixes")
                 .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
         );
         false
@@ -238,6 +240,8 @@ impl BasicTypechecker {
                 DiagnosticKind::Typecheck,
                 "arithmetic operands must have the same type",
             )
+            .with_error_code("T1101")
+            .with_hint("use matching numeric types on both operands")
             .with_source_excerpt_annotations(
                 SourceExcerpt::new(source, 1, 0),
                 [
@@ -282,6 +286,8 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "assert expects a boolean expression",
                         )
+                        .with_error_code("T1001")
+                        .with_hint("change the asserted expression to produce `bool`")
                         .with_annotated_span(
                             assertion.span,
                             "this assertion does not evaluate to `bool`",
@@ -310,6 +316,7 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             format!("duplicate local binding `{}`", let_statement.name),
                         )
+                        .with_error_code("T1002")
                         .with_annotated_span(
                             let_statement.span,
                             "this binding name is already defined in this scope",
@@ -386,6 +393,7 @@ impl BasicTypechecker {
                         DiagnosticKind::Typecheck,
                         format!("unknown identifier `{name}`"),
                     )
+                    .with_error_code("T1003")
                     .with_annotated_span(expression.span, "this name is not defined in scope")
                     .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                 );
@@ -408,6 +416,8 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "operator `!` expects a boolean operand",
                         )
+                        .with_error_code("T1004")
+                        .with_hint("apply `!` only to expressions of type `bool`")
                         .with_annotated_span(inner.span, "this operand is not `bool`")
                         .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                     );
@@ -434,6 +444,8 @@ impl BasicTypechecker {
                                 DiagnosticKind::Typecheck,
                                 "operator `-` expects a signed numeric operand",
                             )
+                            .with_error_code("T1005")
+                            .with_hint("use i32/i64/f32/f64 or adjust the operand type")
                             .with_annotated_span(inner.span, "this operand is not signed numeric")
                             .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                         );
@@ -472,6 +484,8 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "arithmetic operators require numeric operands",
                         )
+                        .with_error_code("T1006")
+                        .with_hint("use numeric operand types for arithmetic operations")
                         .with_annotated_span(
                             binary.left.span,
                             format!("left operand has type `{}`", Self::type_name(left_type)),
@@ -502,6 +516,8 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "operator `%` is only valid for integer types",
                         )
+                        .with_error_code("T1007")
+                        .with_hint("use integer operands or replace `%` with another operator")
                         .with_annotated_span(
                             expression.span,
                             format!(
@@ -523,6 +539,8 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "call target must be a function name",
                         )
+                        .with_error_code("T1008")
+                        .with_hint("call a named function identifier")
                         .with_annotated_span(call.callee.span, "this expression is not callable")
                         .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                     );
@@ -535,6 +553,7 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             format!("unknown function `{callee_name}`"),
                         )
+                        .with_error_code("T1009")
                         .with_annotated_span(call.callee.span, "this function is not defined")
                         .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                     );
@@ -562,6 +581,8 @@ impl BasicTypechecker {
                             call.arguments.len()
                         ),
                     )
+                    .with_error_code("T1010")
+                    .with_hint("pass the exact number of arguments required by the function")
                     .with_annotated_span(
                         expression.span,
                         "call argument count does not match function signature",
@@ -634,6 +655,8 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "if condition must evaluate to `bool`",
                         )
+                        .with_error_code("T1011")
+                        .with_hint("make the if condition evaluate to `bool`")
                         .with_annotated_span(
                             if_expression.condition.span,
                             "this condition is not `bool`",
@@ -701,6 +724,8 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "while condition must evaluate to `bool`",
                         )
+                        .with_error_code("T1012")
+                        .with_hint("make the while condition evaluate to `bool`")
                         .with_annotated_span(
                             while_expression.condition.span,
                             "this condition is not `bool`",
@@ -725,6 +750,8 @@ impl BasicTypechecker {
                             DiagnosticKind::Typecheck,
                             "while body must evaluate to `()`",
                         )
+                        .with_error_code("T1013")
+                        .with_hint("remove trailing values from the loop body")
                         .with_annotated_span(
                             while_expression.body.span,
                             format!(
@@ -787,6 +814,7 @@ impl Typechecker for BasicTypechecker {
                         DiagnosticKind::Typecheck,
                         format!("duplicate function name `{}` in module", function.name),
                     )
+                    .with_error_code("T1014")
                     .with_annotated_span(first_span, "first declaration")
                     .with_annotated_span(function.span, "duplicate declaration")
                     .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
@@ -827,6 +855,7 @@ impl Typechecker for BasicTypechecker {
                                 parameter.name, function.name
                             ),
                         )
+                        .with_error_code("T1015")
                         .with_annotated_span(first_declaration_span, "first declaration")
                         .with_annotated_span(parameter.span, "duplicate declaration")
                         .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
@@ -868,6 +897,7 @@ impl Typechecker for BasicTypechecker {
                         DiagnosticKind::Typecheck,
                         format!("duplicate test function name `{}` in module", test.name),
                     )
+                    .with_error_code("T1016")
                     .with_annotated_span(first_span, "first declaration of this test name")
                     .with_annotated_span(test.span, "duplicate declaration")
                     .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
@@ -1525,5 +1555,7 @@ mod tests {
             rendered.contains("implicit numeric conversions are not allowed"),
             "{rendered}"
         );
+        assert_eq!(diagnostic.error_code.as_deref(), Some("T1100"));
+        assert!(diagnostic.hint.is_some());
     }
 }

@@ -105,6 +105,26 @@ struct CaseLintIssue {
     message: SharedString,
 }
 
+fn runtime_diagnostic_metadata(reason: &str) -> (&'static str, Option<&'static str>) {
+    if reason.contains("division by zero") {
+        (
+            "R2001",
+            Some("ensure the divisor is non-zero before division"),
+        )
+    } else if reason.contains("modulo by zero") {
+        ("R2002", Some("ensure the modulo divisor is non-zero"))
+    } else if reason.contains("assertion failed") {
+        (
+            "R2003",
+            Some("inspect the asserted expression and expected value"),
+        )
+    } else if reason.contains("did not evaluate to bool") {
+        ("R2004", Some("assert expressions must evaluate to `bool`"))
+    } else {
+        ("R2000", None)
+    }
+}
+
 pub fn parse_holo_suite(source: &str) -> Result<HoloSuite> {
     let mut cases = Vec::new();
     let mut current_case: Option<HoloCase> = None;
@@ -435,7 +455,9 @@ pub fn run_conformance_case(core: &mut CompilerCore, source: &str) -> CaseOutcom
             .failure_reason
             .as_ref()
             .expect("failure reason should exist");
-        let diagnostic = SourceDiagnostic::new(DiagnosticKind::Test, failure_reason.clone())
+        let (error_code, hint) = runtime_diagnostic_metadata(failure_reason.as_str());
+        let mut diagnostic = SourceDiagnostic::new(DiagnosticKind::Test, failure_reason.clone())
+            .with_error_code(error_code)
             .with_source_excerpt(SourceExcerpt::new(source, 1, 0).with_source_name(file_path))
             .with_annotated_span(
                 result
@@ -443,6 +465,9 @@ pub fn run_conformance_case(core: &mut CompilerCore, source: &str) -> CaseOutcom
                     .expect("failure span should exist for test failures"),
                 "test failed here",
             );
+        if let Some(hint) = hint {
+            diagnostic = diagnostic.with_hint(hint);
+        }
         return CaseOutcome {
             kind: "fails-interpreter".into(),
             text: normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(

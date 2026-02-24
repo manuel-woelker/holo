@@ -103,6 +103,26 @@ struct PendingChange {
     last_change_ms: u64,
 }
 
+fn runtime_diagnostic_metadata(reason: &str) -> (&'static str, Option<&'static str>) {
+    if reason.contains("division by zero") {
+        (
+            "R2001",
+            Some("ensure the divisor is non-zero before division"),
+        )
+    } else if reason.contains("modulo by zero") {
+        ("R2002", Some("ensure the modulo divisor is non-zero"))
+    } else if reason.contains("assertion failed") {
+        (
+            "R2003",
+            Some("inspect the asserted expression and expected value"),
+        )
+    } else if reason.contains("did not evaluate to bool") {
+        ("R2004", Some("assert expressions must evaluate to `bool`"))
+    } else {
+        ("R2000", None)
+    }
+}
+
 impl CoreDaemon {
     /// Creates a daemon with debounce duration in milliseconds.
     pub fn new(debounce_ms: u64) -> Self {
@@ -183,15 +203,21 @@ impl CoreDaemon {
                                     .failure_reason
                                     .clone()
                                     .unwrap_or_else(|| "assertion failed".into());
-                                let diagnostic = SourceDiagnostic::new(
+                                let (error_code, hint) =
+                                    runtime_diagnostic_metadata(reason.as_str());
+                                let mut diagnostic = SourceDiagnostic::new(
                                     DiagnosticKind::Test,
                                     format!("test `{}` {reason}", test.name),
                                 )
+                                .with_error_code(error_code)
                                 .with_annotated_span(span, reason)
                                 .with_source_excerpt(
                                     SourceExcerpt::new(pending.source.clone(), 1, 0)
                                         .with_source_name(file_path.clone()),
                                 );
+                                if let Some(hint) = hint {
+                                    diagnostic = diagnostic.with_hint(hint);
+                                }
                                 update.test_failures.push(FileDiagnostic {
                                     file_path: file_path.clone(),
                                     message: diagnostic.render_annotated(),
@@ -401,5 +427,11 @@ error: z.holo: typecheck failed";
         assert!(result.failure_span.is_some());
         assert_eq!(update.test_failures.len(), 1);
         assert_eq!(update.test_failures[0].file_path, "suite.holo");
+        let diagnostic = update.test_failures[0]
+            .source_diagnostic
+            .as_ref()
+            .expect("test failure diagnostic should exist");
+        assert_eq!(diagnostic.error_code.as_deref(), Some("R2003"));
+        assert!(diagnostic.hint.is_some());
     }
 }
