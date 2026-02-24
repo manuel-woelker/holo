@@ -41,7 +41,7 @@ Define a high-level implementation roadmap for the next compiler evolution, with
 - Keep AST-focused parsing/typechecking concerns separate from execution concerns.
 
 6. **Finer-Grained Incremental Queries**
-- Status: `Pending`
+- Status: `Done`
 - Move from coarse file-level invalidation toward item/function-level invalidation.
 - Preserve correctness while reducing unnecessary recomputation.
 

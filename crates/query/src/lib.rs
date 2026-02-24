@@ -11,6 +11,7 @@ pub enum QueryStage {
     Typecheck,
     LowerIr,
     CollectTests,
+    RunSingleTest,
     RunTests,
 }
 
@@ -21,6 +22,8 @@ pub struct QueryKey {
     pub file_path: FilePath,
     /// Pipeline stage this query belongs to.
     pub stage: QueryStage,
+    /// Optional item name for finer-grained stage values (for example a test name).
+    pub item_name: Option<SharedString>,
     /// Hash of the file contents used to produce the value.
     pub content_hash: u64,
 }
@@ -97,6 +100,7 @@ mod tests {
         let key = QueryKey {
             file_path: "sample.holo".into(),
             stage: QueryStage::Lex,
+            item_name: None,
             content_hash: 11,
         };
         store.put(key.clone(), QueryValue::Complete);
@@ -119,6 +123,7 @@ mod tests {
         let key = QueryKey {
             file_path: "sample.holo".into(),
             stage: QueryStage::Lex,
+            item_name: None,
             content_hash: 11,
         };
         store.invalidate_if_hash_changed(&"sample.holo".into(), 11);

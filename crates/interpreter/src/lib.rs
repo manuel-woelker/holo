@@ -45,6 +45,8 @@ pub struct TestRunSummary {
 pub trait Interpreter {
     /// Executes one collected test item.
     fn run_test(&self, test: &TestItem) -> TestResult;
+    /// Executes one test item using functions from a typed module.
+    fn run_test_in_module(&self, module: &Module, test: &TestItem) -> TestResult;
     /// Executes a collected test set and returns run summary details.
     fn run_collected_tests(&self, tests: &[TestItem]) -> TestRunSummary;
     /// Executes tests in a module and returns run summary details.
@@ -589,6 +591,11 @@ impl Interpreter for BasicInterpreter {
         }
 
         summary
+    }
+
+    fn run_test_in_module(&self, module: &Module, test: &TestItem) -> TestResult {
+        let functions = Self::function_map_from_module(module);
+        self.run_test_with_functions(test, &functions)
     }
 }
 

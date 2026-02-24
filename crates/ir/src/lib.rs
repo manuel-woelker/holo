@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use holo_base::{SharedString, Span};
 
 /// Full file-level typed IR module.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Module {
     /// Function items declared in this source file.
     pub functions: Vec<FunctionItem>,
@@ -14,7 +14,7 @@ pub struct Module {
 }
 
 /// A typed function item.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionItem {
     /// Function name.
     pub name: SharedString,
@@ -31,7 +31,7 @@ pub struct FunctionItem {
 }
 
 /// Typed function parameter declaration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionParameter {
     /// Parameter name.
     pub name: SharedString,
@@ -42,7 +42,7 @@ pub struct FunctionParameter {
 }
 
 /// A typed test item.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TestItem {
     /// Test function name.
     pub name: SharedString,
@@ -53,7 +53,7 @@ pub struct TestItem {
 }
 
 /// Typed statement forms.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Statement {
     /// `assert(<expr>);`
     Assert(AssertStatement),
@@ -64,7 +64,7 @@ pub enum Statement {
 }
 
 /// Typed assertion statement node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssertStatement {
     /// Expression that must evaluate to `true`.
     pub expression: Expr,
@@ -73,7 +73,7 @@ pub struct AssertStatement {
 }
 
 /// Typed let-binding statement node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LetStatement {
     /// Bound identifier.
     pub name: SharedString,
@@ -86,7 +86,7 @@ pub struct LetStatement {
 }
 
 /// Typed expression statement node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExprStatement {
     /// Evaluated expression.
     pub expression: Expr,
@@ -95,7 +95,7 @@ pub struct ExprStatement {
 }
 
 /// Typed expression node with span and computed/static type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Expr {
     /// Expression variant payload.
     pub kind: ExprKind,
@@ -106,7 +106,7 @@ pub struct Expr {
 }
 
 /// Typed expression kinds in IR.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind {
     BoolLiteral(bool),
     NumberLiteral(SharedString),
@@ -121,7 +121,7 @@ pub enum ExprKind {
 }
 
 /// Typed binary expression payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BinaryExpr {
     pub operator: BinaryOperator,
     pub left: Box<Expr>,
@@ -129,14 +129,14 @@ pub struct BinaryExpr {
 }
 
 /// Typed function call payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CallExpr {
     pub callee: Box<Expr>,
     pub arguments: Vec<Expr>,
 }
 
 /// Typed if expression payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IfExpr {
     pub condition: Box<Expr>,
     pub then_branch: Box<Expr>,
@@ -144,21 +144,21 @@ pub struct IfExpr {
 }
 
 /// Typed while expression payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WhileExpr {
     pub condition: Box<Expr>,
     pub body: Box<Expr>,
 }
 
 /// Typed block expression payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BlockExpr {
     pub statements: Vec<Statement>,
     pub result: Option<Box<Expr>>,
 }
 
 /// IR type for execution/backend boundaries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
     Bool,
     U32,
@@ -172,7 +172,7 @@ pub enum Type {
 }
 
 /// Arithmetic operators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOperator {
     Add,
     Subtract,

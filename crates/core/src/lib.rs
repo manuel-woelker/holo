@@ -3,7 +3,7 @@
 pub mod daemon;
 
 use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -46,7 +46,14 @@ pub struct CompilerCore {
     interpreter: BasicInterpreter,
     query_store: InMemoryQueryStore,
     cycle_cache: HashMap<(FilePath, u64), CoreCycleSummary>,
+    test_result_cache: HashMap<(FilePath, holo_base::SharedString, u64), CachedTestRun>,
     persisted_cache: Option<PersistedCache>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CachedTestRun {
+    result: holo_interpreter::TestResult,
+    timing: TaskTiming,
 }
 
 impl CompilerCore {
@@ -83,8 +90,8 @@ impl CompilerCore {
         source: &str,
     ) -> Result<CoreCycleSummary> {
         info!("starting compile-and-test cycle");
-        let content_hash_bytes = content_hash_bytes(source);
-        let content_hash = content_hash_u64(&content_hash_bytes);
+        let source_hash_bytes = content_hash_bytes(source);
+        let content_hash = content_hash_u64(&source_hash_bytes);
         if !self
             .query_store
             .invalidate_if_hash_changed(file_path, content_hash)
@@ -103,7 +110,7 @@ impl CompilerCore {
         }
 
         if let Some(cache) = &self.persisted_cache {
-            if let Some(summary) = cache.load_summary(file_path, content_hash_bytes)? {
+            if let Some(summary) = cache.load_summary(file_path, source_hash_bytes)? {
                 info!("cache hit from persisted database");
                 self.cycle_cache
                     .insert((file_path.clone(), content_hash), summary.clone());
@@ -124,6 +131,7 @@ impl CompilerCore {
             QueryKey {
                 file_path: file_path.clone(),
                 stage: QueryStage::Lex,
+                item_name: None,
                 content_hash,
             },
             QueryValue::Message(format!("{} token(s)", tokens.len()).into()),
@@ -150,6 +158,7 @@ impl CompilerCore {
             QueryKey {
                 file_path: file_path.into(),
                 stage: QueryStage::Parse,
+                item_name: None,
                 content_hash,
             },
             QueryValue::Complete,
@@ -179,6 +188,7 @@ impl CompilerCore {
             QueryKey {
                 file_path: file_path.clone(),
                 stage: QueryStage::Typecheck,
+                item_name: None,
                 content_hash,
             },
             QueryValue::Complete,
@@ -199,6 +209,7 @@ impl CompilerCore {
             QueryKey {
                 file_path: file_path.clone(),
                 stage: QueryStage::LowerIr,
+                item_name: None,
                 content_hash,
             },
             QueryValue::Complete,
@@ -214,15 +225,89 @@ impl CompilerCore {
             QueryKey {
                 file_path: file_path.clone(),
                 stage: QueryStage::CollectTests,
+                item_name: None,
                 content_hash,
             },
             QueryValue::Message(format!("{} collected test(s)", collected_tests.len()).into()),
         );
 
         info!("running tests");
+        let non_test_functions: Vec<_> = typed_module
+            .functions
+            .iter()
+            .filter(|function| !function.is_test)
+            .collect();
+        let function_fingerprint =
+            content_hash_u64(&content_hash_bytes(&format!("{:?}", non_test_functions)));
+        let mut valid_item_keys = HashSet::new();
         let (tests, run_tests_timing) = time_task(format!("run tests `{}`", file_path), || {
-            self.interpreter.run_tests(&typed_module)
+            let mut summary = TestRunSummary::default();
+            for test in &collected_tests {
+                let test_fingerprint = {
+                    let mut hasher = DefaultHasher::new();
+                    function_fingerprint.hash(&mut hasher);
+                    test.hash(&mut hasher);
+                    hasher.finish()
+                };
+                let cache_key = (file_path.clone(), test.name.clone(), test_fingerprint);
+                valid_item_keys.insert((test.name.clone(), test_fingerprint));
+
+                if let Some(cached) = self.test_result_cache.get(&cache_key).cloned() {
+                    summary.executed += 1;
+                    match cached.result.status {
+                        TestStatus::Passed => summary.passed += 1,
+                        TestStatus::Failed => summary.failed += 1,
+                    }
+                    summary.timings.push(cached.timing.clone());
+                    summary.results.push(cached.result);
+                    self.query_store.put(
+                        QueryKey {
+                            file_path: file_path.clone(),
+                            stage: QueryStage::RunSingleTest,
+                            item_name: Some(test.name.clone()),
+                            content_hash,
+                        },
+                        QueryValue::Message("cached result reused".into()),
+                    );
+                    continue;
+                }
+
+                let (result, timing) = time_task(format!("run test `{}`", test.name), || {
+                    self.interpreter.run_test_in_module(&typed_module, test)
+                });
+                summary.executed += 1;
+                match result.status {
+                    TestStatus::Passed => summary.passed += 1,
+                    TestStatus::Failed => summary.failed += 1,
+                }
+                summary.timings.push(timing.clone());
+                summary.results.push(result.clone());
+                self.test_result_cache.insert(
+                    cache_key,
+                    CachedTestRun {
+                        result,
+                        timing: timing.clone(),
+                    },
+                );
+                self.query_store.put(
+                    QueryKey {
+                        file_path: file_path.clone(),
+                        stage: QueryStage::RunSingleTest,
+                        item_name: Some(test.name.clone()),
+                        content_hash,
+                    },
+                    QueryValue::Message("executed".into()),
+                );
+            }
+            summary
         });
+        self.test_result_cache
+            .retain(|(path, name, fingerprint), _| {
+                if path != file_path {
+                    return true;
+                }
+                valid_item_keys.contains(&(name.clone(), *fingerprint))
+            });
         info!(
             file_path = %file_path,
             stage = "run_tests",
@@ -239,6 +324,7 @@ impl CompilerCore {
             QueryKey {
                 file_path: file_path.clone(),
                 stage: QueryStage::RunTests,
+                item_name: None,
                 content_hash,
             },
             QueryValue::Message(
@@ -278,7 +364,7 @@ impl CompilerCore {
         self.cycle_cache
             .insert((file_path.clone(), content_hash), summary.clone());
         if let Some(cache) = &self.persisted_cache {
-            cache.store_summary(file_path, content_hash_bytes, &summary)?;
+            cache.store_summary(file_path, source_hash_bytes, &summary)?;
         }
         info!("compile-and-test cycle completed");
 
@@ -295,6 +381,24 @@ impl CompilerCore {
         let key = QueryKey {
             file_path: file_path.clone(),
             stage,
+            item_name: None,
+            content_hash: content_hash_u64(&content_hash_bytes(source)),
+        };
+        self.query_store.get(&key)
+    }
+
+    /// Returns the latest per-item query value for a stage when available.
+    pub fn query_item_value(
+        &self,
+        file_path: &FilePath,
+        stage: QueryStage,
+        item_name: &str,
+        source: &str,
+    ) -> Option<&QueryValue> {
+        let key = QueryKey {
+            file_path: file_path.clone(),
+            stage,
+            item_name: Some(item_name.into()),
             content_hash: content_hash_u64(&content_hash_bytes(source)),
         };
         self.query_store.get(&key)
@@ -752,6 +856,47 @@ mod tests {
 
         assert_eq!(first.tests.failed, 0);
         assert_eq!(second.tests.failed, 1);
+    }
+
+    #[test]
+    fn reuses_unchanged_test_results_when_only_one_test_changes() {
+        let mut core = CompilerCore::default();
+        let first_source = "\
+#[test] fn stable_case() { assert(true); }
+#[test] fn changed_case() { assert(true); }";
+        let second_source = "\
+#[test] fn stable_case() { assert(true); }
+#[test] fn changed_case() { assert(false); }";
+
+        let first = core
+            .process_source(&"test_reuse.holo".into(), first_source)
+            .expect("first run should succeed");
+        assert_eq!(first.tests.passed, 2);
+
+        let second = core
+            .process_source(&"test_reuse.holo".into(), second_source)
+            .expect("second run should succeed");
+        assert_eq!(second.tests.executed, 2);
+        assert_eq!(second.tests.passed, 1);
+        assert_eq!(second.tests.failed, 1);
+        assert_eq!(
+            core.query_item_value(
+                &"test_reuse.holo".into(),
+                QueryStage::RunSingleTest,
+                "stable_case",
+                second_source,
+            ),
+            Some(&QueryValue::Message("cached result reused".into()))
+        );
+        assert_eq!(
+            core.query_item_value(
+                &"test_reuse.holo".into(),
+                QueryStage::RunSingleTest,
+                "changed_case",
+                second_source,
+            ),
+            Some(&QueryValue::Message("executed".into()))
+        );
     }
 
     #[test]
