@@ -46,7 +46,7 @@ Define a high-level implementation roadmap for the next compiler evolution, with
 - Preserve correctness while reducing unnecessary recomputation.
 
 7. **Module And Import System**
-- Status: `Pending`
+- Status: `Done`
 - Implement modules/import resolution and dependency tracking.
 - Add robust cycle diagnostics and import error reporting.
 

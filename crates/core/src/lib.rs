@@ -11,7 +11,7 @@ use bitcode::{Decode, Encode};
 use holo_ast::Module as AstModule;
 use holo_base::{
     holo_message_error, project_revision, time_task, DiagnosticKind, FilePath, Result,
-    SourceDiagnostic, Span, TaskTiming,
+    SharedString, SourceDiagnostic, SourceExcerpt, Span, TaskTiming,
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{BasicInterpreter, Interpreter, TestRunSummary, TestStatus};
@@ -54,6 +54,19 @@ pub struct CompilerCore {
 struct CachedTestRun {
     result: holo_interpreter::TestResult,
     timing: TaskTiming,
+}
+
+#[derive(Debug, Clone)]
+struct ImportDirective {
+    module_name: SharedString,
+    span: Span,
+}
+
+#[derive(Debug, Default)]
+struct ImportResolution {
+    functions: Vec<holo_ast::FunctionItem>,
+    diagnostics: Vec<SourceDiagnostic>,
+    resolved_dependency_count: usize,
 }
 
 impl CompilerCore {
@@ -119,9 +132,14 @@ impl CompilerCore {
         }
 
         info!("lexing source");
-        let lexed = self.lexer.lex(source);
+        let (root_imports, filtered_source, mut import_diagnostics) =
+            extract_imports(source, file_path);
+        let mut import_resolution = self.resolve_imports(file_path, &root_imports)?;
+        import_diagnostics.append(&mut import_resolution.diagnostics);
+        let lexed = self.lexer.lex(&filtered_source);
         let tokens = lexed.tokens;
         let mut diagnostics = lexed.diagnostics;
+        diagnostics.append(&mut import_diagnostics);
         debug!(
             token_count = tokens.len(),
             diagnostics = diagnostics.len(),
@@ -139,9 +157,10 @@ impl CompilerCore {
 
         info!("parsing tokens");
         let (parsed, parse_timing) = time_task(format!("parse `{}`", file_path), || {
-            self.parser.parse_module(&tokens, source)
+            self.parser.parse_module(&tokens, &filtered_source)
         });
-        let module: AstModule = parsed.module;
+        let mut module: AstModule = parsed.module;
+        module.functions.splice(0..0, import_resolution.functions);
         diagnostics.extend(parsed.diagnostics);
         info!(
             file_path = %file_path,
@@ -163,11 +182,26 @@ impl CompilerCore {
             },
             QueryValue::Complete,
         );
+        self.query_store.put(
+            QueryKey {
+                file_path: file_path.clone(),
+                stage: QueryStage::ResolveImports,
+                item_name: None,
+                content_hash,
+            },
+            QueryValue::Message(
+                format!(
+                    "{} resolved import dependency file(s)",
+                    import_resolution.resolved_dependency_count
+                )
+                .into(),
+            ),
+        );
 
         info!("typechecking module");
         let (typechecked, typecheck_timing) =
             time_task(format!("typecheck `{}`", file_path), || {
-                self.typechecker.typecheck_module(&module, source)
+                self.typechecker.typecheck_module(&module, &filtered_source)
             });
         let typecheck = typechecked.summary;
         let typecheck_timings = typechecked.timings;
@@ -403,6 +437,229 @@ impl CompilerCore {
         };
         self.query_store.get(&key)
     }
+
+    fn resolve_imports(
+        &self,
+        root_file: &FilePath,
+        root_imports: &[ImportDirective],
+    ) -> Result<ImportResolution> {
+        let resolver = ImportResolver::new(&self.lexer, &self.parser);
+        resolver.resolve(root_file, root_imports)
+    }
+}
+
+#[derive(Debug)]
+struct ImportResolver<'a> {
+    lexer: &'a BasicLexer,
+    parser: &'a BasicParser,
+    visited: HashSet<FilePath>,
+    stack: Vec<FilePath>,
+    functions: Vec<holo_ast::FunctionItem>,
+    diagnostics: Vec<SourceDiagnostic>,
+}
+
+impl<'a> ImportResolver<'a> {
+    fn new(lexer: &'a BasicLexer, parser: &'a BasicParser) -> Self {
+        Self {
+            lexer,
+            parser,
+            visited: HashSet::new(),
+            stack: Vec::new(),
+            functions: Vec::new(),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn resolve(
+        mut self,
+        root_file: &FilePath,
+        root_imports: &[ImportDirective],
+    ) -> Result<ImportResolution> {
+        self.stack.push(root_file.clone());
+        for import in root_imports {
+            let target = resolve_import_target(root_file, import.module_name.as_str());
+            self.resolve_one(root_file, &target, import)?;
+        }
+        self.stack.pop();
+        Ok(ImportResolution {
+            functions: self.functions,
+            diagnostics: self.diagnostics,
+            resolved_dependency_count: self.visited.len(),
+        })
+    }
+
+    fn resolve_one(
+        &mut self,
+        source_file: &FilePath,
+        target_file: &FilePath,
+        import: &ImportDirective,
+    ) -> Result<()> {
+        if self.stack.contains(target_file) {
+            let cycle = self
+                .stack
+                .iter()
+                .map(ToString::to_string)
+                .chain(std::iter::once(target_file.to_string()))
+                .collect::<Vec<_>>()
+                .join(" -> ");
+            self.diagnostics.push(
+                SourceDiagnostic::new(DiagnosticKind::Typecheck, "import cycle detected")
+                    .with_error_code("M3002")
+                    .with_hint("break the cycle by removing or restructuring one import")
+                    .with_annotated_span(import.span, format!("cycle: {cycle}"))
+                    .with_source_excerpt(
+                        SourceExcerpt::new(
+                            std::fs::read_to_string(source_file.as_str()).unwrap_or_default(),
+                            1,
+                            0,
+                        )
+                        .with_source_name(source_file.clone()),
+                    ),
+            );
+            return Ok(());
+        }
+
+        if self.visited.contains(target_file) {
+            return Ok(());
+        }
+        self.visited.insert(target_file.clone());
+        self.stack.push(target_file.clone());
+
+        let imported_source = match std::fs::read_to_string(target_file.as_str()) {
+            Ok(source) => source,
+            Err(_) => {
+                self.diagnostics.push(
+                    SourceDiagnostic::new(
+                        DiagnosticKind::Typecheck,
+                        format!("import not found `{}`", import.module_name),
+                    )
+                    .with_error_code("M3001")
+                    .with_hint("create the target module file or fix the import name")
+                    .with_annotated_span(import.span, "this import target cannot be resolved")
+                    .with_source_excerpt(
+                        SourceExcerpt::new(
+                            std::fs::read_to_string(source_file.as_str()).unwrap_or_default(),
+                            1,
+                            0,
+                        )
+                        .with_source_name(source_file.clone()),
+                    ),
+                );
+                self.stack.pop();
+                return Ok(());
+            }
+        };
+
+        let (imports, filtered_source, mut extraction_diagnostics) =
+            extract_imports(&imported_source, target_file);
+        for diagnostic in &mut extraction_diagnostics {
+            for excerpt in &mut diagnostic.source_excerpts {
+                if excerpt.source_name.is_none() {
+                    excerpt.set_source_name(target_file.clone());
+                }
+            }
+        }
+        self.diagnostics.extend(extraction_diagnostics);
+
+        let lexed = self.lexer.lex(&filtered_source);
+        let mut lex_diagnostics = lexed.diagnostics;
+        for diagnostic in &mut lex_diagnostics {
+            for excerpt in &mut diagnostic.source_excerpts {
+                if excerpt.source_name.is_none() {
+                    excerpt.set_source_name(target_file.clone());
+                }
+            }
+        }
+        self.diagnostics.extend(lex_diagnostics);
+
+        let parsed = self.parser.parse_module(&lexed.tokens, &filtered_source);
+        let mut parse_diagnostics = parsed.diagnostics;
+        for diagnostic in &mut parse_diagnostics {
+            for excerpt in &mut diagnostic.source_excerpts {
+                if excerpt.source_name.is_none() {
+                    excerpt.set_source_name(target_file.clone());
+                }
+            }
+        }
+        self.diagnostics.extend(parse_diagnostics);
+        self.functions.extend(parsed.module.functions);
+
+        for nested in imports {
+            let nested_target = resolve_import_target(target_file, nested.module_name.as_str());
+            self.resolve_one(target_file, &nested_target, &nested)?;
+        }
+
+        self.stack.pop();
+        Ok(())
+    }
+}
+
+fn resolve_import_target(source_file: &FilePath, module_name: &str) -> FilePath {
+    let parent = Path::new(source_file.as_str())
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    let relative = format!("{}.holo", module_name.replace('.', "/"));
+    normalize_path(parent.join(relative))
+}
+
+fn normalize_path(path: PathBuf) -> FilePath {
+    path.to_string_lossy().replace('\\', "/").into()
+}
+
+fn extract_imports(
+    source: &str,
+    file_path: &FilePath,
+) -> (Vec<ImportDirective>, String, Vec<SourceDiagnostic>) {
+    let mut imports = Vec::new();
+    let mut filtered = String::with_capacity(source.len());
+    let mut diagnostics = Vec::new();
+    let mut offset = 0usize;
+
+    for line in source.split_inclusive('\n') {
+        let line_without_newline = line.strip_suffix('\n').unwrap_or(line);
+        let trimmed = line_without_newline.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("import ") {
+            let module = rest.trim_end_matches(';').trim();
+            let is_valid = rest.trim_end().ends_with(';')
+                && !module.is_empty()
+                && module
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.');
+            if is_valid {
+                let start = offset + line_without_newline.find(trimmed).unwrap_or(0);
+                let module_start = start + "import ".len();
+                imports.push(ImportDirective {
+                    module_name: module.into(),
+                    span: Span::new(module_start, module_start + module.len()),
+                });
+            } else {
+                diagnostics.push(
+                    SourceDiagnostic::new(DiagnosticKind::Parsing, "invalid import declaration")
+                        .with_error_code("M3000")
+                        .with_hint("use `import module_name;` syntax")
+                        .with_annotated_span(
+                            Span::new(offset, offset + line_without_newline.len().max(1)),
+                            "this import declaration is malformed",
+                        )
+                        .with_source_excerpt(
+                            SourceExcerpt::new(source, 1, 0).with_source_name(file_path.clone()),
+                        ),
+                );
+            }
+            for ch in line.chars() {
+                if ch == '\n' {
+                    filtered.push('\n');
+                } else {
+                    filtered.push(' ');
+                }
+            }
+        } else {
+            filtered.push_str(line);
+        }
+        offset += line.len();
+    }
+
+    (imports, filtered, diagnostics)
 }
 
 fn persistent_db_dir(root_dir: &Path) -> PathBuf {
@@ -985,6 +1242,76 @@ mod tests {
         assert_eq!(sanitized, "v1.2.3_4_main".to_owned());
     }
 
+    #[test]
+    fn resolves_imported_module_functions() {
+        let root = temp_root_dir("resolves_imported_module_functions");
+        let helper_path = root.join("helper.holo");
+        fs::write(&helper_path, "fn helper() -> bool { true; }").expect("write helper module");
+
+        let main_source = "import helper;\n#[test] fn smoke() { assert(helper()); }";
+        let main_path = normalize_file_path(root.join("main.holo"));
+        let mut core = CompilerCore::default();
+        let summary = core
+            .process_source(&main_path, main_source)
+            .expect("pipeline should run with imports");
+
+        assert_eq!(summary.tests.executed, 1);
+        assert_eq!(summary.tests.failed, 0);
+        assert_eq!(
+            core.query_value(&main_path, QueryStage::ResolveImports, main_source),
+            Some(&QueryValue::Message(
+                "1 resolved import dependency file(s)".into()
+            ))
+        );
+
+        fs::remove_dir_all(root).expect("cleanup should succeed");
+    }
+
+    #[test]
+    fn reports_missing_import_with_stable_error_code() {
+        let root = temp_root_dir("reports_missing_import_with_stable_error_code");
+        let main_source = "import missing;\n#[test] fn smoke() { assert(true); }";
+        let main_path = normalize_file_path(root.join("main.holo"));
+        let mut core = CompilerCore::default();
+        let summary = core
+            .process_source(&main_path, main_source)
+            .expect("pipeline should run with import diagnostic");
+
+        let diagnostic = summary
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.error_code.as_deref() == Some("M3001"))
+            .expect("expected missing import diagnostic");
+        assert!(diagnostic.message.contains("import not found"));
+
+        fs::remove_dir_all(root).expect("cleanup should succeed");
+    }
+
+    #[test]
+    fn reports_import_cycle_with_stable_error_code() {
+        let root = temp_root_dir("reports_import_cycle_with_stable_error_code");
+        fs::write(root.join("a.holo"), "import b;\nfn a() -> bool { true; }")
+            .expect("write a module");
+        fs::write(root.join("b.holo"), "import a;\nfn b() -> bool { true; }")
+            .expect("write b module");
+
+        let main_source = "import a;\n#[test] fn smoke() { assert(true); }";
+        let main_path = normalize_file_path(root.join("main.holo"));
+        let mut core = CompilerCore::default();
+        let summary = core
+            .process_source(&main_path, main_source)
+            .expect("pipeline should run with cycle diagnostic");
+
+        let diagnostic = summary
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.error_code.as_deref() == Some("M3002"))
+            .expect("expected import cycle diagnostic");
+        assert!(diagnostic.message.contains("import cycle"));
+
+        fs::remove_dir_all(root).expect("cleanup should succeed");
+    }
+
     fn temp_root_dir(name: &str) -> std::path::PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -993,5 +1320,9 @@ mod tests {
         let path = std::env::temp_dir().join(format!("holo-core-{name}-{suffix}"));
         fs::create_dir_all(&path).expect("temp root dir should be created");
         path
+    }
+
+    fn normalize_file_path(path: std::path::PathBuf) -> holo_base::FilePath {
+        path.to_string_lossy().replace('\\', "/").into()
     }
 }
