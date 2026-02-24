@@ -108,6 +108,18 @@ impl RuntimeScopes {
 }
 
 impl BasicInterpreter {
+    fn ordered_tests<'a>(tests: &'a [TestItem]) -> Vec<&'a TestItem> {
+        let mut ordered = tests.iter().collect::<Vec<_>>();
+        ordered.sort_by(|left, right| {
+            left.name
+                .as_str()
+                .cmp(right.name.as_str())
+                .then_with(|| left.span.start.cmp(&right.span.start))
+                .then_with(|| left.span.end.cmp(&right.span.end))
+        });
+        ordered
+    }
+
     fn has_explicit_numeric_suffix(literal: &str) -> bool {
         ["u32", "u64", "i32", "i64", "f32", "f64"]
             .iter()
@@ -543,7 +555,7 @@ impl Interpreter for BasicInterpreter {
     fn run_collected_tests(&self, tests: &[TestItem]) -> TestRunSummary {
         let mut summary = TestRunSummary::default();
 
-        for test in tests {
+        for test in Self::ordered_tests(tests) {
             let timer = TaskTimer::start(format!("run test `{}`", test.name));
             let result = self.run_test(test);
             let timing = timer.finish();
@@ -570,7 +582,7 @@ impl Interpreter for BasicInterpreter {
         let mut summary = TestRunSummary::default();
         let functions = Self::function_map_from_module(module);
 
-        for test in &module.tests {
+        for test in Self::ordered_tests(&module.tests) {
             let timer = TaskTimer::start(format!("run test `{}`", test.name));
             let result = self.run_test_with_functions(test, &functions);
             let timing = timer.finish();
@@ -657,8 +669,18 @@ mod tests {
         assert_eq!(summary.executed, 2);
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.failed, 1);
-        assert_eq!(summary.results[0].failure_span, None);
-        assert_eq!(summary.results[1].failure_span, Some(Span::new(17, 22)));
+        let passing = summary
+            .results
+            .iter()
+            .find(|result| result.name == "pass")
+            .expect("passing result should exist");
+        let failing = summary
+            .results
+            .iter()
+            .find(|result| result.name == "fail")
+            .expect("failing result should exist");
+        assert_eq!(passing.failure_span, None);
+        assert_eq!(failing.failure_span, Some(Span::new(17, 22)));
     }
 
     #[test]
@@ -1026,5 +1048,74 @@ mod tests {
 
         let summary = BasicInterpreter.run_tests(&module);
         assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn executes_tests_in_deterministic_order() {
+        let tests = vec![
+            TestItem {
+                name: "z_case".into(),
+                statements: vec![Statement::Assert(AssertStatement {
+                    expression: Expr::bool_literal(true, Span::new(0, 4)),
+                    span: Span::new(0, 5),
+                })],
+                span: Span::new(40, 45),
+            },
+            TestItem {
+                name: "a_case".into(),
+                statements: vec![Statement::Assert(AssertStatement {
+                    expression: Expr::bool_literal(true, Span::new(0, 4)),
+                    span: Span::new(0, 5),
+                })],
+                span: Span::new(0, 5),
+            },
+        ];
+
+        let summary = BasicInterpreter.run_collected_tests(&tests);
+        assert_eq!(summary.executed, 2);
+        assert_eq!(summary.results[0].name.as_str(), "a_case");
+        assert_eq!(summary.results[1].name.as_str(), "z_case");
+    }
+
+    #[test]
+    fn isolates_each_test_scope() {
+        let module = Module {
+            functions: Vec::new(),
+            tests: vec![
+                TestItem {
+                    name: "a_setup".into(),
+                    statements: vec![
+                        Statement::Let(holo_ir::LetStatement {
+                            name: "shared".into(),
+                            ty: Some(TypeRef::Bool),
+                            value: Expr::bool_literal(true, Span::new(0, 4)),
+                            span: Span::new(0, 5),
+                        }),
+                        Statement::Assert(AssertStatement {
+                            expression: Expr::bool_literal(true, Span::new(6, 10)),
+                            span: Span::new(6, 11),
+                        }),
+                    ],
+                    span: Span::new(0, 11),
+                },
+                TestItem {
+                    name: "b_consumer".into(),
+                    statements: vec![Statement::Assert(AssertStatement {
+                        expression: Expr::identifier("shared", Span::new(12, 18)),
+                        span: Span::new(12, 19),
+                    })],
+                    span: Span::new(12, 19),
+                },
+            ],
+        };
+
+        let summary = BasicInterpreter.run_tests(&module);
+        assert_eq!(summary.executed, 2);
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failed, 1);
+        assert!(summary
+            .results
+            .iter()
+            .any(|result| result.name == "b_consumer" && result.status == TestStatus::Failed));
     }
 }

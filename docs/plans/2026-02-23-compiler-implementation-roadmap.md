@@ -51,7 +51,7 @@ Define a high-level implementation roadmap for the next compiler evolution, with
 - Add robust cycle diagnostics and import error reporting.
 
 8. **Runtime Test Execution Semantics**
-- Status: `Pending`
+- Status: `Done`
 - Define deterministic ordering and isolation semantics for test execution.
 - Ensure runtime failures map cleanly into diagnostics and summaries.
 

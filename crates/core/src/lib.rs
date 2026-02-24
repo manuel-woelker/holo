@@ -71,7 +71,15 @@ struct ImportResolution {
 
 impl CompilerCore {
     fn collect_tests(module: &IrModule) -> Vec<IrTestItem> {
-        module.tests.clone()
+        let mut tests = module.tests.clone();
+        tests.sort_by(|left, right| {
+            left.name
+                .as_str()
+                .cmp(right.name.as_str())
+                .then_with(|| left.span.start.cmp(&right.span.start))
+                .then_with(|| left.span.end.cmp(&right.span.end))
+        });
+        tests
     }
 
     /// Creates a core that persists cycle summaries in `<root_dir>/.holo/db/<revision>`.

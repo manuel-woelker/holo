@@ -420,8 +420,14 @@ error: z.holo: typecheck failed";
         let result = update
             .processed_files
             .first()
-            .and_then(|file| file.summary.tests.results.get(1))
-            .expect("second test result should exist");
+            .and_then(|file| {
+                file.summary
+                    .tests
+                    .results
+                    .iter()
+                    .find(|result| result.name == "fail_case")
+            })
+            .expect("failing test result should exist");
         assert_eq!(result.name, "fail_case");
         assert_eq!(result.status, TestStatus::Failed);
         assert!(result.failure_span.is_some());
