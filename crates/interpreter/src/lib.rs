@@ -106,7 +106,39 @@ impl RuntimeScopes {
 }
 
 impl BasicInterpreter {
-    fn parse_number_literal(literal: &str) -> Option<Value> {
+    fn has_explicit_numeric_suffix(literal: &str) -> bool {
+        ["u32", "u64", "i32", "i64", "f32", "f64"]
+            .iter()
+            .any(|suffix| literal.ends_with(suffix))
+    }
+
+    fn parse_number_literal(
+        literal: &str,
+        expected_type: Option<holo_ast::TypeRef>,
+    ) -> Option<Value> {
+        if !Self::has_explicit_numeric_suffix(literal) {
+            if let Some(expected_type) = expected_type {
+                if let Ok(number) = literal.parse::<i64>() {
+                    return match expected_type {
+                        holo_ast::TypeRef::U32 => u32::try_from(number).ok().map(Value::U32),
+                        holo_ast::TypeRef::U64 => u64::try_from(number).ok().map(Value::U64),
+                        holo_ast::TypeRef::I32 => i32::try_from(number).ok().map(Value::I32),
+                        holo_ast::TypeRef::I64 => Some(Value::I64(number)),
+                        holo_ast::TypeRef::F32 => Some(Value::F32(number as f32)),
+                        holo_ast::TypeRef::F64 => Some(Value::F64(number as f64)),
+                        _ => None,
+                    };
+                }
+                if let Ok(number) = literal.parse::<f64>() {
+                    return match expected_type {
+                        holo_ast::TypeRef::F32 => Some(Value::F32(number as f32)),
+                        holo_ast::TypeRef::F64 => Some(Value::F64(number)),
+                        _ => None,
+                    };
+                }
+            }
+        }
+
         if let Some(raw) = literal.strip_suffix("u32") {
             return raw.parse().ok().map(Value::U32);
         }
@@ -135,21 +167,21 @@ impl BasicInterpreter {
         expression: &Expr,
         scopes: &mut RuntimeScopes,
         functions: &HashMap<SharedString, FunctionItem>,
+        expected_type: Option<holo_ast::TypeRef>,
     ) -> Result<Value, RuntimeError> {
         match &expression.kind {
             ExprKind::BoolLiteral(value) => Ok(Value::Bool(*value)),
-            ExprKind::NumberLiteral(literal) => {
-                Self::parse_number_literal(literal).ok_or(RuntimeError {
+            ExprKind::NumberLiteral(literal) => Self::parse_number_literal(literal, expected_type)
+                .ok_or(RuntimeError {
                     span: expression.span,
                     message: "invalid number literal".into(),
-                })
-            }
+                }),
             ExprKind::Identifier(name) => scopes.lookup(name).ok_or(RuntimeError {
                 span: expression.span,
                 message: format!("unknown identifier `{name}`").into(),
             }),
             ExprKind::Negation(inner) => {
-                let inner_value = Self::eval_expr(inner, scopes, functions)?;
+                let inner_value = Self::eval_expr(inner, scopes, functions, None)?;
                 match inner_value {
                     Value::Bool(value) => Ok(Value::Bool(!value)),
                     _ => Err(RuntimeError {
@@ -159,7 +191,7 @@ impl BasicInterpreter {
                 }
             }
             ExprKind::UnaryMinus(inner) => {
-                let inner_value = Self::eval_expr(inner, scopes, functions)?;
+                let inner_value = Self::eval_expr(inner, scopes, functions, None)?;
                 match inner_value {
                     Value::I32(value) => Ok(Value::I32(-value)),
                     Value::I64(value) => Ok(Value::I64(-value)),
@@ -172,8 +204,8 @@ impl BasicInterpreter {
                 }
             }
             ExprKind::Binary(binary) => {
-                let left = Self::eval_expr(&binary.left, scopes, functions)?;
-                let right = Self::eval_expr(&binary.right, scopes, functions)?;
+                let left = Self::eval_expr(&binary.left, scopes, functions, None)?;
+                let right = Self::eval_expr(&binary.right, scopes, functions, None)?;
                 Self::eval_binary(expression.span, binary.operator, left, right)
             }
             ExprKind::Call(call) => {
@@ -203,13 +235,13 @@ impl BasicInterpreter {
 
                 let mut call_locals = HashMap::new();
                 for (argument, parameter) in call.arguments.iter().zip(function.parameters.iter()) {
-                    let value = Self::eval_expr(argument, scopes, functions)?;
+                    let value = Self::eval_expr(argument, scopes, functions, Some(parameter.ty))?;
                     call_locals.insert(parameter.name.clone(), value);
                 }
                 Self::run_function(function, call_locals, functions)
             }
             ExprKind::If(if_expression) => {
-                let condition = Self::eval_expr(&if_expression.condition, scopes, functions)?;
+                let condition = Self::eval_expr(&if_expression.condition, scopes, functions, None)?;
                 let is_true = match condition {
                     Value::Bool(value) => value,
                     _ => {
@@ -221,9 +253,9 @@ impl BasicInterpreter {
                 };
 
                 if is_true {
-                    Self::eval_expr(&if_expression.then_branch, scopes, functions)
+                    Self::eval_expr(&if_expression.then_branch, scopes, functions, expected_type)
                 } else if let Some(else_branch) = &if_expression.else_branch {
-                    Self::eval_expr(else_branch, scopes, functions)
+                    Self::eval_expr(else_branch, scopes, functions, expected_type)
                 } else {
                     Ok(Value::Unit)
                 }
@@ -231,7 +263,7 @@ impl BasicInterpreter {
             ExprKind::While(while_expression) => {
                 loop {
                     let condition =
-                        Self::eval_expr(&while_expression.condition, scopes, functions)?;
+                        Self::eval_expr(&while_expression.condition, scopes, functions, None)?;
                     let is_true = match condition {
                         Value::Bool(value) => value,
                         _ => {
@@ -244,7 +276,7 @@ impl BasicInterpreter {
                     if !is_true {
                         break;
                     }
-                    let _ = Self::eval_expr(&while_expression.body, scopes, functions)?;
+                    let _ = Self::eval_expr(&while_expression.body, scopes, functions, None)?;
                 }
                 Ok(Value::Unit)
             }
@@ -254,7 +286,7 @@ impl BasicInterpreter {
                     let _ = Self::run_statement(statement, scopes, functions)?;
                 }
                 let value = if let Some(result) = &block_expression.result {
-                    Self::eval_expr(result, scopes, functions)?
+                    Self::eval_expr(result, scopes, functions, expected_type)?
                 } else {
                     Value::Unit
                 };
@@ -417,7 +449,7 @@ impl BasicInterpreter {
     ) -> Result<Option<Value>, RuntimeError> {
         match statement {
             Statement::Assert(assertion) => {
-                let value = Self::eval_expr(&assertion.expression, scopes, functions)?;
+                let value = Self::eval_expr(&assertion.expression, scopes, functions, None)?;
                 match value {
                     Value::Bool(true) => Ok(None),
                     Value::Bool(false) => Err(RuntimeError {
@@ -431,12 +463,13 @@ impl BasicInterpreter {
                 }
             }
             Statement::Let(let_statement) => {
-                let value = Self::eval_expr(&let_statement.value, scopes, functions)?;
+                let value =
+                    Self::eval_expr(&let_statement.value, scopes, functions, let_statement.ty)?;
                 scopes.insert(let_statement.name.clone(), value);
                 Ok(None)
             }
             Statement::Expr(expr_statement) => {
-                let value = Self::eval_expr(&expr_statement.expression, scopes, functions)?;
+                let value = Self::eval_expr(&expr_statement.expression, scopes, functions, None)?;
                 Ok(Some(value))
             }
         }
@@ -904,5 +937,87 @@ mod tests {
             .failure_reason
             .as_ref()
             .is_some_and(|reason| reason.contains("unknown identifier `inner`")));
+    }
+
+    #[test]
+    fn uses_let_annotation_to_interpret_unsuffixed_numeric_literal() {
+        let module = Module {
+            functions: Vec::new(),
+            tests: vec![TestItem {
+                name: "typed_let".into(),
+                statements: vec![
+                    Statement::Let(holo_ast::LetStatement {
+                        name: "value".into(),
+                        ty: Some(TypeRef::U32),
+                        value: Expr::number_literal("1", Span::new(0, 1)),
+                        span: Span::new(0, 2),
+                    }),
+                    Statement::Expr(ExprStatement {
+                        expression: Expr::binary(
+                            BinaryOperator::Add,
+                            Expr::identifier("value", Span::new(3, 8)),
+                            Expr::number_literal("1u32", Span::new(9, 13)),
+                            Span::new(3, 13),
+                        ),
+                        span: Span::new(3, 14),
+                    }),
+                    Statement::Assert(AssertStatement {
+                        expression: Expr::bool_literal(true, Span::new(15, 19)),
+                        span: Span::new(15, 20),
+                    }),
+                ],
+                span: Span::new(0, 20),
+            }],
+        };
+
+        let summary = BasicInterpreter.run_tests(&module);
+        assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn uses_parameter_type_to_interpret_unsuffixed_call_literal() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "inc".into(),
+                parameters: vec![FunctionParameter {
+                    name: "value".into(),
+                    ty: TypeRef::U32,
+                    span: Span::new(0, 1),
+                }],
+                return_type: TypeRef::U32,
+                statements: vec![Statement::Expr(ExprStatement {
+                    expression: Expr::binary(
+                        BinaryOperator::Add,
+                        Expr::identifier("value", Span::new(0, 5)),
+                        Expr::number_literal("1u32", Span::new(6, 10)),
+                        Span::new(0, 10),
+                    ),
+                    span: Span::new(0, 11),
+                })],
+                is_test: false,
+                span: Span::new(0, 11),
+            }],
+            tests: vec![TestItem {
+                name: "call_infer".into(),
+                statements: vec![
+                    Statement::Expr(ExprStatement {
+                        expression: Expr::call(
+                            Expr::identifier("inc", Span::new(12, 15)),
+                            vec![Expr::number_literal("1", Span::new(16, 17))],
+                            Span::new(12, 18),
+                        ),
+                        span: Span::new(12, 19),
+                    }),
+                    Statement::Assert(AssertStatement {
+                        expression: Expr::bool_literal(true, Span::new(20, 24)),
+                        span: Span::new(20, 25),
+                    }),
+                ],
+                span: Span::new(12, 25),
+            }],
+        };
+
+        let summary = BasicInterpreter.run_tests(&module);
+        assert_eq!(summary.failed, 0);
     }
 }

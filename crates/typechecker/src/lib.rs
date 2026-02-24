@@ -117,6 +117,12 @@ impl ScopeStack {
 }
 
 impl BasicTypechecker {
+    fn has_explicit_numeric_suffix(literal: &str) -> bool {
+        ["u32", "u64", "i32", "i64", "f32", "f64"]
+            .iter()
+            .any(|suffix| literal.ends_with(suffix))
+    }
+
     fn type_name(ty: Type) -> &'static str {
         match ty {
             Type::Bool => "bool",
@@ -144,7 +150,15 @@ impl BasicTypechecker {
         }
     }
 
-    fn infer_number_literal_type(literal: &str) -> Type {
+    fn infer_number_literal_type(literal: &str, expected_type: Option<Type>) -> Type {
+        if !Self::has_explicit_numeric_suffix(literal) {
+            if let Some(expected_type) = expected_type {
+                if Self::is_numeric_type(expected_type) {
+                    return expected_type;
+                }
+            }
+        }
+
         if literal.ends_with("u32") {
             Type::U32
         } else if literal.ends_with("u64") {
@@ -194,6 +208,10 @@ impl BasicTypechecker {
                 .with_annotated_span(
                     right_span,
                     format!("right operand has type `{}`", Self::type_name(right)),
+                )
+                .with_annotated_span(
+                    right_span,
+                    "implicit numeric conversions are not allowed; use explicit literal suffixes",
                 )
                 .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
         );
@@ -256,6 +274,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    None,
                 );
                 if expression_type != Type::Bool {
                     diagnostics.push(
@@ -283,6 +302,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    let_statement.ty.map(Self::type_from_ref),
                 );
                 if scopes.lookup_current_scope(&let_statement.name).is_some() {
                     diagnostics.push(
@@ -336,6 +356,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    None,
                 );
             }
         }
@@ -349,10 +370,13 @@ impl BasicTypechecker {
         function_spans: &HashMap<SharedString, holo_base::Span>,
         scopes: &mut ScopeStack,
         assertion_count: &mut usize,
+        expected_type: Option<Type>,
     ) -> Type {
         match &expression.kind {
             ExprKind::BoolLiteral(_) => Type::Bool,
-            ExprKind::NumberLiteral(literal) => Self::infer_number_literal_type(literal),
+            ExprKind::NumberLiteral(literal) => {
+                Self::infer_number_literal_type(literal, expected_type)
+            }
             ExprKind::Identifier(name) => {
                 if let Some(symbol) = scopes.lookup(name) {
                     return symbol.ty;
@@ -376,6 +400,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    None,
                 );
                 if inner_type != Type::Bool && inner_type != Type::Unknown {
                     diagnostics.push(
@@ -398,6 +423,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    None,
                 );
                 if matches!(inner_type, Type::I32 | Type::I64 | Type::F32 | Type::F64) {
                     inner_type
@@ -424,6 +450,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    None,
                 );
                 let right_type = Self::typecheck_expression(
                     &binary.right,
@@ -433,6 +460,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    Some(left_type),
                 );
                 if left_type == Type::Unknown || right_type == Type::Unknown {
                     return Type::Unknown;
@@ -519,6 +547,7 @@ impl BasicTypechecker {
                             function_spans,
                             scopes,
                             assertion_count,
+                            None,
                         );
                     }
                     return Type::Unknown;
@@ -554,6 +583,7 @@ impl BasicTypechecker {
                             function_spans,
                             scopes,
                             assertion_count,
+                            None,
                         );
                     }
                     return function_type.return_type;
@@ -568,6 +598,7 @@ impl BasicTypechecker {
                         function_spans,
                         scopes,
                         assertion_count,
+                        Some(function_type.parameter_types[index]),
                     );
                     let expected_type = function_type.parameter_types[index];
                     if argument_type == Type::Unknown {
@@ -595,6 +626,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    None,
                 );
                 if condition_type != Type::Bool && condition_type != Type::Unknown {
                     diagnostics.push(
@@ -618,6 +650,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    expected_type,
                 );
                 let else_type = if let Some(else_branch) = &if_expression.else_branch {
                     Self::typecheck_expression(
@@ -628,6 +661,7 @@ impl BasicTypechecker {
                         function_spans,
                         scopes,
                         assertion_count,
+                        expected_type,
                     )
                 } else {
                     Type::Unit
@@ -659,6 +693,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    None,
                 );
                 if condition_type != Type::Bool && condition_type != Type::Unknown {
                     diagnostics.push(
@@ -682,6 +717,7 @@ impl BasicTypechecker {
                     function_spans,
                     scopes,
                     assertion_count,
+                    None,
                 );
                 if body_type != Type::Unit && body_type != Type::Unknown {
                     diagnostics.push(
@@ -723,6 +759,7 @@ impl BasicTypechecker {
                         function_spans,
                         scopes,
                         assertion_count,
+                        expected_type,
                     )
                 } else {
                     Type::Unit
@@ -1357,5 +1394,136 @@ mod tests {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic.message.contains("unknown identifier `inner`")));
+    }
+
+    #[test]
+    fn infers_unsuffixed_literal_from_let_annotation() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "typed_let".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
+                statements: vec![Statement::Let(holo_ast::LetStatement {
+                    name: "value".into(),
+                    ty: Some(TypeRef::U32),
+                    value: Expr::number_literal("1", Span::new(0, 1)),
+                    span: Span::new(0, 2),
+                })],
+                is_test: false,
+                span: Span::new(0, 2),
+            }],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "let value: u32 = 1;");
+        assert!(
+            result.diagnostics.iter().all(|diagnostic| !diagnostic
+                .message
+                .contains("let binding type does not match")),
+            "unexpected diagnostics: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
+    fn infers_unsuffixed_literal_from_call_parameter_type() {
+        let module = Module {
+            functions: vec![
+                FunctionItem {
+                    name: "takes_u32".into(),
+                    parameters: vec![FunctionParameter {
+                        name: "x".into(),
+                        ty: TypeRef::U32,
+                        span: Span::new(0, 1),
+                    }],
+                    return_type: TypeRef::Unit,
+                    statements: Vec::new(),
+                    is_test: false,
+                    span: Span::new(0, 1),
+                },
+                FunctionItem {
+                    name: "entry".into(),
+                    parameters: Vec::new(),
+                    return_type: TypeRef::Unit,
+                    statements: vec![Statement::Expr(holo_ast::ExprStatement {
+                        expression: Expr::call(
+                            Expr::identifier("takes_u32", Span::new(0, 9)),
+                            vec![Expr::number_literal("1", Span::new(10, 11))],
+                            Span::new(0, 12),
+                        ),
+                        span: Span::new(0, 13),
+                    })],
+                    is_test: false,
+                    span: Span::new(0, 13),
+                },
+            ],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(&module, "takes_u32(1);");
+        assert!(result.diagnostics.iter().all(|diagnostic| !diagnostic
+            .message
+            .contains("call argument type does not match")));
+    }
+
+    #[test]
+    fn keeps_no_implicit_coercion_for_non_literal_values() {
+        let module = Module {
+            functions: vec![
+                FunctionItem {
+                    name: "takes_u32".into(),
+                    parameters: vec![FunctionParameter {
+                        name: "x".into(),
+                        ty: TypeRef::U32,
+                        span: Span::new(0, 1),
+                    }],
+                    return_type: TypeRef::Unit,
+                    statements: Vec::new(),
+                    is_test: false,
+                    span: Span::new(0, 1),
+                },
+                FunctionItem {
+                    name: "entry".into(),
+                    parameters: Vec::new(),
+                    return_type: TypeRef::Unit,
+                    statements: vec![
+                        Statement::Let(holo_ast::LetStatement {
+                            name: "value".into(),
+                            ty: Some(TypeRef::I64),
+                            value: Expr::number_literal("1i64", Span::new(0, 4)),
+                            span: Span::new(0, 5),
+                        }),
+                        Statement::Expr(holo_ast::ExprStatement {
+                            expression: Expr::call(
+                                Expr::identifier("takes_u32", Span::new(6, 15)),
+                                vec![Expr::identifier("value", Span::new(16, 21))],
+                                Span::new(6, 22),
+                            ),
+                            span: Span::new(6, 23),
+                        }),
+                    ],
+                    is_test: false,
+                    span: Span::new(0, 23),
+                },
+            ],
+            tests: Vec::new(),
+        };
+
+        let result =
+            BasicTypechecker.typecheck_module(&module, "let value: i64 = 1i64; takes_u32(value);");
+        let diagnostic = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic
+                    .message
+                    .contains("call argument type does not match")
+            })
+            .expect("expected no-implicit-coercion diagnostic");
+        let rendered = holo_base::display_source_diagnostics(std::slice::from_ref(diagnostic));
+        assert!(
+            rendered.contains("implicit numeric conversions are not allowed"),
+            "{rendered}"
+        );
     }
 }

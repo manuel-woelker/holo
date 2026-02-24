@@ -26,7 +26,7 @@ Define a high-level implementation roadmap for the next compiler evolution, with
 - Enforce type consistency across branches and loop bodies.
 
 3. **Type Inference And Conversion Policy**
-- Status: `Pending`
+- Status: `Done`
 - Expand inference where appropriate and define explicit conversion behavior.
 - Document strict/no-coercion rules or approved coercion paths.
 
