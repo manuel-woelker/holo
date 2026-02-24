@@ -98,3 +98,61 @@ conformance-case.holo:3
    3 │     assert(false);
      │            ───── test failed here
 ```
+
+## Case: evaluates recursive function
+
+> Edge case note: recursion should work without stack overflow, even for deep call chains.
+
+```holo
+fn countdown(continue: bool) -> i64 {
+    if continue { countdown(false) } else { 0i64 };
+}
+
+#[test]
+fn recursive_countdown() {
+    let result: i64 = countdown(true);
+    assert(!false);
+}
+```
+
+### Succeeds
+
+## Case: evaluates mutual recursion
+
+```holo
+fn is_zero(continue: bool) -> bool {
+    if !continue { true } else { false };
+}
+
+fn decrement_and_check(continue: bool) -> bool {
+    if !continue { false } else { is_zero(false) };
+}
+
+#[test]
+fn mutual_recursion() {
+    assert(!is_zero(true));
+    assert(is_zero(false));
+    assert(decrement_and_check(true));
+    assert(!decrement_and_check(false));
+}
+```
+
+### Succeeds
+
+## Case: evaluates deeply nested function calls
+
+```holo
+fn add_one(x: i64) -> i64 { x + 1i64; }
+fn add_two(x: i64) -> i64 { add_one(add_one(x)); }
+fn add_three(x: i64) -> i64 { add_two(add_one(x)); }
+fn add_four(x: i64) -> i64 { add_three(add_one(x)); }
+fn add_five(x: i64) -> i64 { add_four(add_one(x)); }
+
+#[test]
+fn nested_calls() {
+    let result: i64 = add_five(5i64);
+    add_one(result);
+}
+```
+
+### Succeeds

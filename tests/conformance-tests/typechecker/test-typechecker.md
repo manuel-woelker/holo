@@ -118,3 +118,46 @@ conformance-case.holo:3
    3 │     let value: i64 = 2i64;
      │     ────────────────────── this binding name is already defined in this scope
 ```
+
+## Case: accepts matching return type
+
+```holo
+fn returns_i64() -> i64 { 42i64; }
+```
+
+### Succeeds
+
+## Case: rejects unknown function call
+
+```holo
+fn use_unknown() -> i64 { unknown_fn(); }
+```
+
+### Fails typecheck
+
+```text
+⚒️ Typecheck: unknown function `unknown_fn`
+
+conformance-case.holo:1
+   1 │ fn use_unknown() -> i64 { unknown_fn(); }
+     │                           ────────── this function is not defined
+```
+
+## Case: rejects call with wrong argument type
+
+```holo
+fn takes_i64(x: i64) -> i64 { x; }
+fn wrong_arg() -> i64 { takes_i64(1.0f64); }
+```
+
+### Fails typecheck
+
+```text
+⚒️ Typecheck: call argument type does not match parameter type
+
+conformance-case.holo:2
+   2 │ fn wrong_arg() -> i64 { takes_i64(1.0f64); }
+     │                                   ────── left operand has type `i64`
+     │                                        └─ right operand has type `f64`
+     │                                        └─ implicit numeric conversions are not allowed; use explicit literal suffixes
+```
