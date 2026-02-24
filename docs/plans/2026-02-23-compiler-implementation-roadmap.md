@@ -16,7 +16,7 @@ Define a high-level implementation roadmap for the next compiler evolution, with
 
 ## What Milestones Should We Track?
 1. **Lexical Scope And Symbol Resolution**
-- Status: `Pending`
+- Status: `Done`
 - Implement lexical scopes, symbol tables, and shadowing rules for locals/parameters.
 - Ensure identifier lookup diagnostics are consistent and span-annotated.
 

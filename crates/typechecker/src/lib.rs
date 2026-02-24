@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use holo_ast::{BinaryOperator, Expr, ExprKind, Module, Statement, TypeRef};
 use holo_base::{
-    DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, TaskTimer, TaskTiming,
+    DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, Span, TaskTimer, TaskTiming,
 };
 use tracing::info;
 
@@ -62,6 +62,59 @@ pub trait Typechecker {
 /// Minimal typechecker for boolean expressions and assert statements.
 #[derive(Debug, Default)]
 pub struct BasicTypechecker;
+
+/// Category of symbol stored in lexical scopes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SymbolKind {
+    Parameter,
+    Local,
+}
+
+/// One symbol table entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SymbolEntry {
+    ty: Type,
+    kind: SymbolKind,
+    declaration_span: Span,
+}
+
+/// Lexical scope stack used for identifier resolution.
+#[derive(Debug, Default)]
+struct ScopeStack {
+    scopes: Vec<HashMap<SharedString, SymbolEntry>>,
+}
+
+impl ScopeStack {
+    fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn pop_scope(&mut self) {
+        let _ = self.scopes.pop();
+    }
+
+    fn lookup(&self, name: &SharedString) -> Option<SymbolEntry> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(symbol) = scope.get(name) {
+                return Some(*symbol);
+            }
+        }
+        None
+    }
+
+    fn lookup_current_scope(&self, name: &SharedString) -> Option<SymbolEntry> {
+        self.scopes
+            .last()
+            .and_then(|scope| scope.get(name))
+            .copied()
+    }
+
+    fn insert_current_scope(&mut self, name: SharedString, entry: SymbolEntry) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, entry);
+        }
+    }
+}
 
 impl BasicTypechecker {
     fn type_name(ty: Type) -> &'static str {
@@ -190,7 +243,7 @@ impl BasicTypechecker {
         source: &str,
         function_types: &HashMap<SharedString, FunctionType>,
         function_spans: &HashMap<SharedString, holo_base::Span>,
-        locals: &mut HashMap<SharedString, Type>,
+        scopes: &mut ScopeStack,
         assertion_count: &mut usize,
     ) {
         match statement {
@@ -201,7 +254,7 @@ impl BasicTypechecker {
                     source,
                     function_types,
                     function_spans,
-                    locals,
+                    scopes,
                 );
                 if expression_type != Type::Bool {
                     diagnostics.push(
@@ -227,9 +280,9 @@ impl BasicTypechecker {
                     source,
                     function_types,
                     function_spans,
-                    locals,
+                    scopes,
                 );
-                if locals.contains_key(&let_statement.name) {
+                if scopes.lookup_current_scope(&let_statement.name).is_some() {
                     diagnostics.push(
                         SourceDiagnostic::new(
                             DiagnosticKind::Typecheck,
@@ -263,7 +316,14 @@ impl BasicTypechecker {
                 } else {
                     value_type
                 };
-                locals.insert(let_statement.name.clone(), final_type);
+                scopes.insert_current_scope(
+                    let_statement.name.clone(),
+                    SymbolEntry {
+                        ty: final_type,
+                        kind: SymbolKind::Local,
+                        declaration_span: let_statement.span,
+                    },
+                );
             }
             Statement::Expr(expr_statement) => {
                 let _ = Self::typecheck_expression(
@@ -272,7 +332,7 @@ impl BasicTypechecker {
                     source,
                     function_types,
                     function_spans,
-                    locals,
+                    scopes,
                 );
             }
         }
@@ -284,14 +344,14 @@ impl BasicTypechecker {
         source: &str,
         function_types: &HashMap<SharedString, FunctionType>,
         function_spans: &HashMap<SharedString, holo_base::Span>,
-        locals: &HashMap<SharedString, Type>,
+        scopes: &ScopeStack,
     ) -> Type {
         match &expression.kind {
             ExprKind::BoolLiteral(_) => Type::Bool,
             ExprKind::NumberLiteral(literal) => Self::infer_number_literal_type(literal),
             ExprKind::Identifier(name) => {
-                if let Some(ty) = locals.get(name) {
-                    return *ty;
+                if let Some(symbol) = scopes.lookup(name) {
+                    return symbol.ty;
                 }
                 diagnostics.push(
                     SourceDiagnostic::new(
@@ -310,7 +370,7 @@ impl BasicTypechecker {
                     source,
                     function_types,
                     function_spans,
-                    locals,
+                    scopes,
                 );
                 if inner_type != Type::Bool && inner_type != Type::Unknown {
                     diagnostics.push(
@@ -331,7 +391,7 @@ impl BasicTypechecker {
                     source,
                     function_types,
                     function_spans,
-                    locals,
+                    scopes,
                 );
                 if matches!(inner_type, Type::I32 | Type::I64 | Type::F32 | Type::F64) {
                     inner_type
@@ -356,7 +416,7 @@ impl BasicTypechecker {
                     source,
                     function_types,
                     function_spans,
-                    locals,
+                    scopes,
                 );
                 let right_type = Self::typecheck_expression(
                     &binary.right,
@@ -364,7 +424,7 @@ impl BasicTypechecker {
                     source,
                     function_types,
                     function_spans,
-                    locals,
+                    scopes,
                 );
                 if left_type == Type::Unknown || right_type == Type::Unknown {
                     return Type::Unknown;
@@ -449,7 +509,7 @@ impl BasicTypechecker {
                             source,
                             function_types,
                             function_spans,
-                            locals,
+                            scopes,
                         );
                     }
                     return Type::Unknown;
@@ -483,7 +543,7 @@ impl BasicTypechecker {
                             source,
                             function_types,
                             function_spans,
-                            locals,
+                            scopes,
                         );
                     }
                     return function_type.return_type;
@@ -496,7 +556,7 @@ impl BasicTypechecker {
                         source,
                         function_types,
                         function_spans,
-                        locals,
+                        scopes,
                     );
                     let expected_type = function_type.parameter_types[index];
                     if argument_type == Type::Unknown {
@@ -559,9 +619,14 @@ impl Typechecker for BasicTypechecker {
 
         for function in &module.functions {
             let mut parameter_names = HashSet::new();
-            let mut locals = HashMap::new();
+            let mut scopes = ScopeStack::default();
+            scopes.push_scope();
             for parameter in &function.parameters {
                 if !parameter_names.insert(parameter.name.clone()) {
+                    let first_declaration_span = scopes
+                        .lookup_current_scope(&parameter.name)
+                        .map(|entry| entry.declaration_span)
+                        .unwrap_or(parameter.span);
                     diagnostics.push(
                         SourceDiagnostic::new(
                             DiagnosticKind::Typecheck,
@@ -570,17 +635,24 @@ impl Typechecker for BasicTypechecker {
                                 parameter.name, function.name
                             ),
                         )
-                        .with_annotated_span(
-                            parameter.span,
-                            "this parameter name is already declared",
-                        )
+                        .with_annotated_span(first_declaration_span, "first declaration")
+                        .with_annotated_span(parameter.span, "duplicate declaration")
                         .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                     );
                     continue;
                 }
-                locals.insert(parameter.name.clone(), Self::type_from_ref(parameter.ty));
+                scopes.insert_current_scope(
+                    parameter.name.clone(),
+                    SymbolEntry {
+                        ty: Self::type_from_ref(parameter.ty),
+                        kind: SymbolKind::Parameter,
+                        declaration_span: parameter.span,
+                    },
+                );
             }
 
+            // Function bodies are an inner lexical scope, so locals may shadow parameters.
+            scopes.push_scope();
             for statement in &function.statements {
                 Self::typecheck_statement(
                     statement,
@@ -588,10 +660,12 @@ impl Typechecker for BasicTypechecker {
                     source,
                     &function_types,
                     &function_spans,
-                    &mut locals,
+                    &mut scopes,
                     &mut assertion_count,
                 );
             }
+            scopes.pop_scope();
+            scopes.pop_scope();
         }
 
         for test in &module.tests {
@@ -610,7 +684,8 @@ impl Typechecker for BasicTypechecker {
                 seen_test_names.insert(test.name.clone(), test.span);
             }
 
-            let mut locals = HashMap::new();
+            let mut scopes = ScopeStack::default();
+            scopes.push_scope();
             for statement in &test.statements {
                 Self::typecheck_statement(
                     statement,
@@ -618,10 +693,11 @@ impl Typechecker for BasicTypechecker {
                     source,
                     &function_types,
                     &function_spans,
-                    &mut locals,
+                    &mut scopes,
                     &mut assertion_count,
                 );
             }
+            scopes.pop_scope();
 
             let timing = timer.finish();
             timings.push(timing.clone());
@@ -796,6 +872,49 @@ mod tests {
     }
 
     #[test]
+    fn allows_local_to_shadow_parameter_in_function_body_scope() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "shadow".into(),
+                parameters: vec![FunctionParameter {
+                    name: "value".into(),
+                    ty: TypeRef::I64,
+                    span: Span::new(10, 20),
+                }],
+                return_type: TypeRef::I64,
+                statements: vec![
+                    Statement::Let(holo_ast::LetStatement {
+                        name: "value".into(),
+                        ty: Some(TypeRef::I64),
+                        value: Expr::number_literal("1i64", Span::new(35, 39)),
+                        span: Span::new(24, 40),
+                    }),
+                    Statement::Expr(holo_ast::ExprStatement {
+                        expression: Expr::identifier("value", Span::new(45, 50)),
+                        span: Span::new(45, 51),
+                    }),
+                ],
+                is_test: false,
+                span: Span::new(0, 53),
+            }],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(
+            &module,
+            "fn shadow(value: i64) -> i64 { let value: i64 = 1i64; value; }",
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .all(|diagnostic| !diagnostic.message.contains("duplicate local binding")),
+            "unexpected diagnostics: {:?}",
+            result.diagnostics
+        );
+    }
+
+    #[test]
     fn reports_unknown_function_call() {
         let module = Module {
             functions: vec![FunctionItem {
@@ -937,5 +1056,48 @@ mod tests {
             .any(|diagnostic| diagnostic.message.contains("only valid for integer types")));
         let rendered = holo_base::display_source_diagnostics(&result.diagnostics);
         assert!(rendered.contains("operands have type `f64`"), "{rendered}");
+    }
+
+    #[test]
+    fn reports_duplicate_parameter_with_both_spans() {
+        let module = Module {
+            functions: vec![FunctionItem {
+                name: "dup_params".into(),
+                parameters: vec![
+                    FunctionParameter {
+                        name: "value".into(),
+                        ty: TypeRef::I64,
+                        span: Span::new(14, 24),
+                    },
+                    FunctionParameter {
+                        name: "value".into(),
+                        ty: TypeRef::I64,
+                        span: Span::new(26, 36),
+                    },
+                ],
+                return_type: TypeRef::I64,
+                statements: vec![Statement::Expr(holo_ast::ExprStatement {
+                    expression: Expr::identifier("value", Span::new(40, 45)),
+                    span: Span::new(40, 46),
+                })],
+                is_test: false,
+                span: Span::new(0, 48),
+            }],
+            tests: Vec::new(),
+        };
+
+        let result = BasicTypechecker.typecheck_module(
+            &module,
+            "fn dup_params(value: i64, value: i64) -> i64 { value; }",
+        );
+        let diagnostic = result
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.message.contains("duplicate parameter name"))
+            .expect("expected duplicate parameter diagnostic");
+        assert_eq!(diagnostic.annotated_spans.len(), 2);
+        let rendered = holo_base::display_source_diagnostics(std::slice::from_ref(diagnostic));
+        assert!(rendered.contains("first declaration"), "{rendered}");
+        assert!(rendered.contains("duplicate declaration"), "{rendered}");
     }
 }
