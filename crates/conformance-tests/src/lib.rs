@@ -289,9 +289,12 @@ fn lint_holo_suite(suite: &HoloSuite) -> Vec<CaseLintIssue> {
         let has_succeeds = recognized_outcomes
             .iter()
             .any(|kind| kind.as_str() == "text");
-        let has_failure = recognized_outcomes
-            .iter()
-            .any(|kind| kind.as_str() != "text");
+        let has_failure = recognized_outcomes.iter().any(|kind| {
+            kind.as_str() == "fails-parse"
+                || kind.as_str() == "fails-typecheck"
+                || kind.as_str() == "fails-interpreter"
+        });
+
         if has_succeeds && has_failure {
             case_errors.push(
                 "conflicting outcome headings; choose either `### Succeeds` or one `### Fails ...` heading"
@@ -305,11 +308,7 @@ fn lint_holo_suite(suite: &HoloSuite) -> Vec<CaseLintIssue> {
             .filter(|block| block.info.as_str() == "text")
             .collect();
         if has_succeeds {
-            if !text_blocks.is_empty() {
-                case_errors.push(
-                    "`### Succeeds` cases must omit expected `text` output blocks".to_owned(),
-                );
-            }
+            // Succeeds with Output is allowed - output blocks are handled separately
         } else if has_failure {
             if text_blocks.len() != 1 {
                 case_errors.push(format!(
@@ -408,6 +407,10 @@ pub fn all_fixture_paths(fixture_root: &Path, suites: &[&str]) -> Result<Vec<Pat
 
 pub fn normalize_block_content(content: &str) -> SharedString {
     content.replace("\r\n", "\n").trim().into()
+}
+
+pub fn normalize_output_content(content: &str) -> SharedString {
+    content.replace("\r\n", "\n").into()
 }
 
 pub fn strip_ansi_sequences(input: &str) -> SharedString {
@@ -574,13 +577,28 @@ pub fn run_conformance_fixtures(
                     .blocks
                     .iter()
                     .find(|block| block.info.as_str() == "holo");
-                let expected_block = case
-                    .blocks
-                    .iter()
-                    .find(|block| block.info.as_str() == "text");
+                let text_block = case.blocks.iter().find(|block| {
+                    block.info.as_str() == "text"
+                        && !block
+                            .section
+                            .as_ref()
+                            .is_some_and(|s| s.eq_ignore_ascii_case("output"))
+                });
+                let output_block = case.blocks.iter().find(|block| {
+                    block.info.as_str() == "text"
+                        && block
+                            .section
+                            .as_ref()
+                            .is_some_and(|s| s.as_str().eq_ignore_ascii_case("output"))
+                });
 
-                let case_record = match (source_block, expected_block) {
-                    (Some(source_block), Some(expected_block)) => {
+                let has_output_section = case
+                    .sections
+                    .iter()
+                    .any(|s| s.eq_ignore_ascii_case("output"));
+
+                let case_record = match (source_block, text_block, output_block) {
+                    (Some(source_block), Some(expected_block), _) => {
                         let actual = run_conformance_case(&mut core, source_block.content.as_str());
                         let expected_kind =
                             expected_kind_from_section(expected_block.section.as_deref());
@@ -602,7 +620,27 @@ pub fn run_conformance_fixtures(
                             passed,
                         }
                     }
-                    (Some(source_block), None) if has_succeeds_section(case) => {
+                    (Some(source_block), None, Some(output_block)) if has_output_section => {
+                        let actual = run_conformance_case(&mut core, source_block.content.as_str());
+                        let expected_output =
+                            Some(normalize_output_content(output_block.content.as_str()));
+                        let passed = actual.kind.as_str() == "text"
+                            && actual.text.as_str() == "ok"
+                            && actual.output.as_ref() == expected_output.as_ref();
+
+                        CaseRecord {
+                            fixture_path: fixture_display.clone(),
+                            case_name: case.name.clone(),
+                            expected_kind: "output".into(),
+                            expected_text: "ok".into(),
+                            actual_kind: actual.kind.clone(),
+                            actual_text: actual.text.clone(),
+                            expected_output,
+                            actual_output: actual.output,
+                            passed,
+                        }
+                    }
+                    (Some(source_block), None, None) if has_succeeds_section(case) => {
                         let actual = run_conformance_case(&mut core, source_block.content.as_str());
                         let expected_kind: SharedString = "text".into();
                         let expected_text: SharedString = "ok".into();
@@ -620,7 +658,7 @@ pub fn run_conformance_fixtures(
                             passed,
                         }
                     }
-                    (None, _) => CaseRecord {
+                    (None, _, _) => CaseRecord {
                         fixture_path: fixture_display.clone(),
                         case_name: case.name.clone(),
                         expected_kind: "text".into(),
@@ -631,7 +669,7 @@ pub fn run_conformance_fixtures(
                         actual_output: None,
                         passed: false,
                     },
-                    (_, None) => CaseRecord {
+                    (_, None, _) => CaseRecord {
                         fixture_path: fixture_display.clone(),
                         case_name: case.name.clone(),
                         expected_kind: "text".into(),

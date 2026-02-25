@@ -260,7 +260,9 @@ fn print_no_newline() {
 
 ### Succeeds
 
-```output
+### Output
+
+```text
 42
 ```
 
@@ -276,8 +278,11 @@ fn println_with_newline() {
 
 ### Succeeds
 
-```output
+### Output
+
+```text
 123
+
 ```
 
 ## Case: print multiple values
@@ -294,6 +299,8 @@ fn print_multiple() {
 
 ### Succeeds
 
-```output
+### Output
+
+```text
 123
 ```
