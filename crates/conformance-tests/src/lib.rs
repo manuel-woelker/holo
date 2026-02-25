@@ -857,6 +857,75 @@ ok
                3 │     let value: i64 = 2i64;
                  │     ────────────────────── this binding name is already defined in this scope
 
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: accepts matching return type
+            ok
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: rejects unknown function call
+            ⚒️ Typecheck: unknown function `unknown_fn`
+
+            conformance-case.holo:1
+               1 │ fn use_unknown() -> i64 { unknown_fn(); }
+                 │                           ────────── this function is not defined
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: rejects call with wrong argument type
+            ⚒️ Typecheck: call argument type does not match parameter type
+
+            conformance-case.holo:2
+               2 │ fn wrong_arg() -> i64 { takes_i64(1.0f64); }
+                 │                                   ────── left operand has type `i64`
+                 │                                        └─ right operand has type `f64`
+                 │                                        └─ implicit numeric conversions are not allowed; use explicit literal suffixes
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: accepts equality comparison for i64
+            ok
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: accepts ordering comparison for i64
+            ok
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: accepts equality comparison for bool
+            ok
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: accepts equality comparison for f64
+            ok
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: accepts ordering comparison for f64
+            ok
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: rejects equality comparison with different types
+            ⚒️ Typecheck: equality operators require operands of the same type
+
+            conformance-case.holo:1
+               1 │ fn bad_eq() -> bool { 1i64 == 2.0f64; }
+                 │                       ───┬    ────── right operand has type `f64`
+                 │                          └─ left operand has type `i64`
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: rejects ordering comparison with float operands
+            ⚒️ Typecheck: ordering operators require numeric operands
+
+            conformance-case.holo:1
+               1 │ fn bad_order_bool() -> bool { true < false; }
+                 │                               ───┬   ───── right operand has type `bool`
+                 │                                  └─ left operand has type `bool`
+
+            # tests/conformance-tests/typechecker/test-typechecker.md
+            ## Case: rejects ordering comparison with different numeric types
+            ⚒️ Typecheck: ordering operators require operands of the same numeric type
+
+            conformance-case.holo:1
+               1 │ fn bad_order_mixed() -> bool { 1i64 < 2.0f64; }
+                 │                                ───┬   ────── right operand has type `f64`
+                 │                                   └─ left operand has type `i64`
+
             # tests/conformance-tests/interpreter/test-interpreter.md
             ## Case: evaluates arithmetic
             ok
@@ -888,6 +957,42 @@ ok
             conformance-case.holo:3
                3 │     assert(false);
                  │            ───── test failed here
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates recursive function
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates mutual recursion
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates deeply nested function calls
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates equality operators for i64
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates ordering operators for i64
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates equality for bool
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates equality for f64
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates ordering for f64
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: evaluates comparison in function context
+            ok
 
             # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: simple test passes

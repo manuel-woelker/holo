@@ -156,3 +156,94 @@ fn nested_calls() {
 ```
 
 ### Succeeds
+
+## Case: evaluates equality operators for i64
+
+```holo
+#[test]
+fn i64_equality() {
+    assert(1i64 == 1i64);
+    assert(!(1i64 == 2i64));
+    assert(1i64 != 2i64);
+    assert(!(1i64 != 1i64));
+}
+```
+
+### Succeeds
+
+## Case: evaluates ordering operators for i64
+
+```holo
+#[test]
+fn i64_ordering() {
+    assert(1i64 < 2i64);
+    assert(!(2i64 < 1i64));
+    assert(2i64 > 1i64);
+    assert(!(1i64 > 2i64));
+    assert(1i64 <= 1i64);
+    assert(1i64 <= 2i64);
+    assert(2i64 >= 1i64);
+    assert(2i64 >= 2i64);
+}
+```
+
+### Succeeds
+
+## Case: evaluates equality for bool
+
+```holo
+#[test]
+fn bool_equality() {
+    assert(true == true);
+    assert(false == false);
+    assert(!(true == false));
+    assert(!(false == true));
+    assert(true != false);
+    assert(false != true);
+}
+```
+
+### Succeeds
+
+## Case: evaluates equality for f64
+
+```holo
+#[test]
+fn f64_equality() {
+    assert(1.0f64 == 1.0f64);
+    assert(!(1.0f64 == 2.0f64));
+    assert(1.0f64 != 2.0f64);
+}
+```
+
+### Succeeds
+
+## Case: evaluates ordering for f64
+
+```holo
+#[test]
+fn f64_ordering() {
+    assert(1.0f64 < 2.0f64);
+    assert(2.0f64 > 1.0f64);
+    assert(1.0f64 <= 1.0f64);
+    assert(2.0f64 >= 2.0f64);
+}
+```
+
+### Succeeds
+
+## Case: evaluates comparison in function context
+
+```holo
+fn max(a: i64, b: i64) -> i64 {
+    if a >= b { a } else { b };
+}
+
+#[test]
+fn comparison_in_function() {
+    let m: i64 = max(5i64, 10i64);
+    assert(m == 10i64);
+}
+```
+
+### Succeeds

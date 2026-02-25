@@ -161,3 +161,99 @@ conformance-case.holo:2
      │                                        └─ right operand has type `f64`
      │                                        └─ implicit numeric conversions are not allowed; use explicit literal suffixes
 ```
+
+## Case: accepts equality comparison for i64
+
+```holo
+fn eq_i64() -> bool { 1i64 == 2i64; }
+fn neq_i64() -> bool { 1i64 != 2i64; }
+```
+
+### Succeeds
+
+## Case: accepts ordering comparison for i64
+
+```holo
+fn lt_i64() -> bool { 1i64 < 2i64; }
+fn gt_i64() -> bool { 2i64 > 1i64; }
+fn le_i64() -> bool { 1i64 <= 2i64; }
+fn ge_i64() -> bool { 2i64 >= 1i64; }
+```
+
+### Succeeds
+
+## Case: accepts equality comparison for bool
+
+```holo
+fn eq_bool() -> bool { true == false; }
+fn neq_bool() -> bool { true != false; }
+```
+
+### Succeeds
+
+## Case: accepts equality comparison for f64
+
+```holo
+fn eq_f64() -> bool { 1.0f64 == 2.0f64; }
+```
+
+### Succeeds
+
+## Case: accepts ordering comparison for f64
+
+```holo
+fn lt_f64() -> bool { 1.0f64 < 2.0f64; }
+```
+
+### Succeeds
+
+## Case: rejects equality comparison with different types
+
+```holo
+fn bad_eq() -> bool { 1i64 == 2.0f64; }
+```
+
+### Fails typecheck
+
+```text
+⚒️ Typecheck: equality operators require operands of the same type
+
+conformance-case.holo:1
+   1 │ fn bad_eq() -> bool { 1i64 == 2.0f64; }
+     │                       ───┬    ────── right operand has type `f64`
+     │                          └─ left operand has type `i64`
+```
+
+## Case: rejects ordering comparison with float operands
+
+```holo
+fn bad_order_bool() -> bool { true < false; }
+```
+
+### Fails typecheck
+
+```text
+⚒️ Typecheck: ordering operators require numeric operands
+
+conformance-case.holo:1
+   1 │ fn bad_order_bool() -> bool { true < false; }
+     │                               ───┬   ───── right operand has type `bool`
+     │                                  └─ left operand has type `bool`
+```
+
+## Case: rejects ordering comparison with different numeric types
+
+```holo
+fn bad_order_mixed() -> bool { 1i64 < 2.0f64; }
+```
+
+### Fails typecheck
+
+```text
+⚒️ Typecheck: ordering operators require operands of the same numeric type
+
+conformance-case.holo:1
+   1 │ fn bad_order_mixed() -> bool { 1i64 < 2.0f64; }
+     │                                ───┬   ────── right operand has type `f64`
+     │                                   └─ left operand has type `i64`
+```
