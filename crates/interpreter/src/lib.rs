@@ -341,6 +341,12 @@ impl BasicInterpreter {
                         Ok(Value::U32(left % right))
                     }
                 }
+                BinaryOperator::Equals => Ok(Value::Bool(left == right)),
+                BinaryOperator::NotEquals => Ok(Value::Bool(left != right)),
+                BinaryOperator::LessThan => Ok(Value::Bool(left < right)),
+                BinaryOperator::GreaterThan => Ok(Value::Bool(left > right)),
+                BinaryOperator::LessThanOrEqual => Ok(Value::Bool(left <= right)),
+                BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(left >= right)),
             },
             (Value::U64(left), Value::U64(right)) => match operator {
                 BinaryOperator::Add => Ok(Value::U64(left.wrapping_add(right))),
@@ -366,6 +372,12 @@ impl BasicInterpreter {
                         Ok(Value::U64(left % right))
                     }
                 }
+                BinaryOperator::Equals => Ok(Value::Bool(left == right)),
+                BinaryOperator::NotEquals => Ok(Value::Bool(left != right)),
+                BinaryOperator::LessThan => Ok(Value::Bool(left < right)),
+                BinaryOperator::GreaterThan => Ok(Value::Bool(left > right)),
+                BinaryOperator::LessThanOrEqual => Ok(Value::Bool(left <= right)),
+                BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(left >= right)),
             },
             (Value::I32(left), Value::I32(right)) => match operator {
                 BinaryOperator::Add => Ok(Value::I32(left.wrapping_add(right))),
@@ -391,6 +403,12 @@ impl BasicInterpreter {
                         Ok(Value::I32(left % right))
                     }
                 }
+                BinaryOperator::Equals => Ok(Value::Bool(left == right)),
+                BinaryOperator::NotEquals => Ok(Value::Bool(left != right)),
+                BinaryOperator::LessThan => Ok(Value::Bool(left < right)),
+                BinaryOperator::GreaterThan => Ok(Value::Bool(left > right)),
+                BinaryOperator::LessThanOrEqual => Ok(Value::Bool(left <= right)),
+                BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(left >= right)),
             },
             (Value::I64(left), Value::I64(right)) => match operator {
                 BinaryOperator::Add => Ok(Value::I64(left.wrapping_add(right))),
@@ -416,6 +434,12 @@ impl BasicInterpreter {
                         Ok(Value::I64(left % right))
                     }
                 }
+                BinaryOperator::Equals => Ok(Value::Bool(left == right)),
+                BinaryOperator::NotEquals => Ok(Value::Bool(left != right)),
+                BinaryOperator::LessThan => Ok(Value::Bool(left < right)),
+                BinaryOperator::GreaterThan => Ok(Value::Bool(left > right)),
+                BinaryOperator::LessThanOrEqual => Ok(Value::Bool(left <= right)),
+                BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(left >= right)),
             },
             (Value::F32(left), Value::F32(right)) => match operator {
                 BinaryOperator::Add => Ok(Value::F32(left + right)),
@@ -432,6 +456,12 @@ impl BasicInterpreter {
                     }
                 }
                 BinaryOperator::Modulo => Ok(Value::F32(left % right)),
+                BinaryOperator::Equals => Ok(Value::Bool(left == right)),
+                BinaryOperator::NotEquals => Ok(Value::Bool(left != right)),
+                BinaryOperator::LessThan => Ok(Value::Bool(left < right)),
+                BinaryOperator::GreaterThan => Ok(Value::Bool(left > right)),
+                BinaryOperator::LessThanOrEqual => Ok(Value::Bool(left <= right)),
+                BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(left >= right)),
             },
             (Value::F64(left), Value::F64(right)) => match operator {
                 BinaryOperator::Add => Ok(Value::F64(left + right)),
@@ -448,6 +478,20 @@ impl BasicInterpreter {
                     }
                 }
                 BinaryOperator::Modulo => Ok(Value::F64(left % right)),
+                BinaryOperator::Equals => Ok(Value::Bool(left == right)),
+                BinaryOperator::NotEquals => Ok(Value::Bool(left != right)),
+                BinaryOperator::LessThan => Ok(Value::Bool(left < right)),
+                BinaryOperator::GreaterThan => Ok(Value::Bool(left > right)),
+                BinaryOperator::LessThanOrEqual => Ok(Value::Bool(left <= right)),
+                BinaryOperator::GreaterThanOrEqual => Ok(Value::Bool(left >= right)),
+            },
+            (Value::Bool(left), Value::Bool(right)) => match operator {
+                BinaryOperator::Equals => Ok(Value::Bool(left == right)),
+                BinaryOperator::NotEquals => Ok(Value::Bool(left != right)),
+                _ => Err(RuntimeError {
+                    span,
+                    message: "boolean operands only support equality operators".into(),
+                }),
             },
             _ => Err(RuntimeError {
                 span,

@@ -183,6 +183,12 @@ pub enum BinaryOperator {
     Multiply,
     Divide,
     Modulo,
+    Equals,
+    NotEquals,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
 }
 
 /// Type annotation reference.

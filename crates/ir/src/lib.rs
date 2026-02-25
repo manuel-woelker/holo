@@ -179,6 +179,12 @@ pub enum BinaryOperator {
     Multiply,
     Divide,
     Modulo,
+    Equals,
+    NotEquals,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
 }
 
 impl Expr {
@@ -512,6 +518,12 @@ fn lower_binary_operator(operator: holo_ast::BinaryOperator) -> BinaryOperator {
         holo_ast::BinaryOperator::Multiply => BinaryOperator::Multiply,
         holo_ast::BinaryOperator::Divide => BinaryOperator::Divide,
         holo_ast::BinaryOperator::Modulo => BinaryOperator::Modulo,
+        holo_ast::BinaryOperator::Equals => BinaryOperator::Equals,
+        holo_ast::BinaryOperator::NotEquals => BinaryOperator::NotEquals,
+        holo_ast::BinaryOperator::LessThan => BinaryOperator::LessThan,
+        holo_ast::BinaryOperator::GreaterThan => BinaryOperator::GreaterThan,
+        holo_ast::BinaryOperator::LessThanOrEqual => BinaryOperator::LessThanOrEqual,
+        holo_ast::BinaryOperator::GreaterThanOrEqual => BinaryOperator::GreaterThanOrEqual,
     }
 }
 

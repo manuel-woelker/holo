@@ -32,40 +32,48 @@ Implement comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) for the holo p
 
 ### 2. AST [PENDING]
 
-### 2. AST [PENDING]
+### 2. AST [DONE]
 
 **File:** `crates/ast/src/lib.rs`
 
-- [ ] Add comparison operators to `BinaryOperator` enum:
-  - [ ] `Equals`
-  - [ ] `NotEquals`
-  - [ ] `LessThan`
-  - [ ] `GreaterThan`
-  - [ ] `LessThanOrEqual`
-  - [ ] `GreaterThanOrEqual`
+- [x] Add comparison operators to `BinaryOperator` enum:
+  - [x] `Equals`
+  - [x] `NotEquals`
+  - [x] `LessThan`
+  - [x] `GreaterThan`
+  - [x] `LessThanOrEqual`
+  - [x] `GreaterThanOrEqual`
 
-### 3. Parser [PENDING]
+### 3. Parser [DONE]
 
 **File:** `crates/parser/src/lib.rs`
 
-- [ ] Add new precedence levels between `parse_expression` and `parse_additive`:
-  - [ ] `parse_equality` for `==` and `!=`
-  - [ ] `parse_comparison` for `<`, `>`, `<=`, `>=`
-- [ ] Update precedence chain
+- [x] Add new precedence levels between `parse_expression` and `parse_additive`:
+  - [x] `parse_equality` for `==` and `!=`
+  - [x] `parse_comparison` for `<`, `>`, `<=`, `>=`
+- [x] Update precedence chain
 
-### 4. Typechecker [PENDING]
+### 4. Typechecker [DONE]
 
 **File:** `crates/typechecker/src/lib.rs`
 
-- [ ] Add handling for comparison operators in `typecheck_expression`
-- [ ] Type rules for equality and ordering operators
+- [x] Add handling for comparison operators in `typecheck_expression`
+- [x] Type rules for equality and ordering operators
 
-### 5. IR [PENDING]
+### 5. IR [DONE]
 
 **File:** `crates/ir/src/lib.rs`
 
-- [ ] Add comparison operators to IR's `BinaryOperator` enum
-- [ ] Update `lower_binary_operator` function
+- [x] Add comparison operators to IR's `BinaryOperator` enum
+- [x] Update `lower_binary_operator` function
+
+### 6. Interpreter [DONE]
+
+**File:** `crates/interpreter/src/lib.rs`
+
+- [x] Add comparison operators to IR's `BinaryOperator` enum (done in IR step)
+- [x] Add comparison implementations for all numeric types
+- [x] Implement equality for Bool type
 
 ### 6. Interpreter [PENDING]
 

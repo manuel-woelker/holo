@@ -478,6 +478,106 @@ impl BasicTypechecker {
                     return Type::Unknown;
                 }
 
+                let is_comparison = matches!(
+                    binary.operator,
+                    BinaryOperator::Equals
+                        | BinaryOperator::NotEquals
+                        | BinaryOperator::LessThan
+                        | BinaryOperator::GreaterThan
+                        | BinaryOperator::LessThanOrEqual
+                        | BinaryOperator::GreaterThanOrEqual
+                );
+                let is_equality = matches!(
+                    binary.operator,
+                    BinaryOperator::Equals | BinaryOperator::NotEquals
+                );
+
+                if is_comparison {
+                    if is_equality {
+                        if left_type != right_type {
+                            diagnostics.push(
+                                SourceDiagnostic::new(
+                                    DiagnosticKind::Typecheck,
+                                    "equality operators require operands of the same type",
+                                )
+                                .with_error_code("T1010")
+                                .with_hint("ensure both operands have the same type")
+                                .with_annotated_span(
+                                    binary.left.span,
+                                    format!(
+                                        "left operand has type `{}`",
+                                        Self::type_name(left_type)
+                                    ),
+                                )
+                                .with_annotated_span(
+                                    binary.right.span,
+                                    format!(
+                                        "right operand has type `{}`",
+                                        Self::type_name(right_type)
+                                    ),
+                                )
+                                .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                            );
+                            return Type::Unknown;
+                        }
+                    } else {
+                        if !Self::is_numeric_type(left_type) || !Self::is_numeric_type(right_type) {
+                            diagnostics.push(
+                                SourceDiagnostic::new(
+                                    DiagnosticKind::Typecheck,
+                                    "ordering operators require numeric operands",
+                                )
+                                .with_error_code("T1011")
+                                .with_hint("use numeric operand types for ordering operations")
+                                .with_annotated_span(
+                                    binary.left.span,
+                                    format!(
+                                        "left operand has type `{}`",
+                                        Self::type_name(left_type)
+                                    ),
+                                )
+                                .with_annotated_span(
+                                    binary.right.span,
+                                    format!(
+                                        "right operand has type `{}`",
+                                        Self::type_name(right_type)
+                                    ),
+                                )
+                                .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                            );
+                            return Type::Unknown;
+                        }
+
+                        if left_type != right_type {
+                            diagnostics.push(
+                                SourceDiagnostic::new(
+                                    DiagnosticKind::Typecheck,
+                                    "ordering operators require operands of the same numeric type",
+                                )
+                                .with_error_code("T1012")
+                                .with_hint("ensure both operands have the same numeric type")
+                                .with_annotated_span(
+                                    binary.left.span,
+                                    format!(
+                                        "left operand has type `{}`",
+                                        Self::type_name(left_type)
+                                    ),
+                                )
+                                .with_annotated_span(
+                                    binary.right.span,
+                                    format!(
+                                        "right operand has type `{}`",
+                                        Self::type_name(right_type)
+                                    ),
+                                )
+                                .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                            );
+                            return Type::Unknown;
+                        }
+                    }
+                    return Type::Bool;
+                }
+
                 if !Self::is_numeric_type(left_type) || !Self::is_numeric_type(right_type) {
                     diagnostics.push(
                         SourceDiagnostic::new(

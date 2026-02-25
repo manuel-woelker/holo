@@ -268,7 +268,51 @@ impl<'a> ParserState<'a> {
     }
 
     fn parse_expression(&mut self) -> Option<Expr> {
-        self.parse_additive()
+        self.parse_equality()
+    }
+
+    fn parse_equality(&mut self) -> Option<Expr> {
+        let mut left = self.parse_comparison()?;
+        loop {
+            let operator = if self.consume_if(TokenKind::DoubleEquals).is_some() {
+                Some(BinaryOperator::Equals)
+            } else if self.consume_if(TokenKind::BangEquals).is_some() {
+                Some(BinaryOperator::NotEquals)
+            } else {
+                None
+            };
+            let Some(operator) = operator else {
+                break;
+            };
+            let right = self.parse_comparison()?;
+            let span = Span::new(left.span.start, right.span.end);
+            left = Expr::binary(operator, left, right, span);
+        }
+        Some(left)
+    }
+
+    fn parse_comparison(&mut self) -> Option<Expr> {
+        let mut left = self.parse_additive()?;
+        loop {
+            let operator = if self.consume_if(TokenKind::LessThan).is_some() {
+                Some(BinaryOperator::LessThan)
+            } else if self.consume_if(TokenKind::GreaterThan).is_some() {
+                Some(BinaryOperator::GreaterThan)
+            } else if self.consume_if(TokenKind::LessThanEquals).is_some() {
+                Some(BinaryOperator::LessThanOrEqual)
+            } else if self.consume_if(TokenKind::GreaterThanEquals).is_some() {
+                Some(BinaryOperator::GreaterThanOrEqual)
+            } else {
+                None
+            };
+            let Some(operator) = operator else {
+                break;
+            };
+            let right = self.parse_additive()?;
+            let span = Span::new(left.span.start, right.span.end);
+            left = Expr::binary(operator, left, right, span);
+        }
+        Some(left)
     }
 
     fn parse_additive(&mut self) -> Option<Expr> {
@@ -622,6 +666,12 @@ fn token_kind_name(kind: TokenKind) -> &'static str {
         TokenKind::Fn => "`fn`",
         TokenKind::Identifier => "identifier",
         TokenKind::Number => "number literal",
+        TokenKind::DoubleEquals => "`==`",
+        TokenKind::BangEquals => "`!=`",
+        TokenKind::LessThan => "`<`",
+        TokenKind::GreaterThan => "`>`",
+        TokenKind::LessThanEquals => "`<=`",
+        TokenKind::GreaterThanEquals => "`>=`",
     }
 }
 
