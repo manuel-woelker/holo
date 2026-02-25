@@ -21,11 +21,19 @@ use tracing::info;
 /// use holo_interpreter::{NativeFunction, Type, Value, RuntimeError};
 /// use holo_base::SharedString;
 ///
-/// struct MyFunction;
+/// struct MyFunction {
+///     name: SharedString,
+/// }
+///
+/// impl MyFunction {
+///     fn new() -> Self {
+///         Self { name: "my_func".into() }
+///     }
+/// }
 ///
 /// impl NativeFunction for MyFunction {
 ///     fn name(&self) -> &SharedString {
-///         &"my_func".into()
+///         &self.name
 ///     }
 ///
 ///     fn param_types(&self) -> &[Type] {
