@@ -11,6 +11,37 @@ use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, T
 use tracing::info;
 
 /// Trait for native (host-provided) functions.
+///
+/// Implement this trait to create Rust functions that can be called from holo code.
+/// Native functions are available globally and are checked at compile-time.
+///
+/// # Example
+///
+/// ```rust
+/// use holo_interpreter::{NativeFunction, Type, Value, RuntimeError};
+/// use holo_base::SharedString;
+///
+/// struct MyFunction;
+///
+/// impl NativeFunction for MyFunction {
+///     fn name(&self) -> &SharedString {
+///         &"my_func".into()
+///     }
+///
+///     fn param_types(&self) -> &[Type] {
+///         &[Type::I64]
+///     }
+///
+///     fn return_type(&self) -> Type {
+///         Type::Unit
+///     }
+///
+///     fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+///         // Implementation here
+///         Ok(Value::Unit)
+///     }
+/// }
+/// ```
 pub trait NativeFunction: Send + Sync {
     /// Returns the function's name as it will be called from holo code.
     fn name(&self) -> &SharedString;
@@ -22,10 +53,37 @@ pub trait NativeFunction: Send + Sync {
     fn return_type(&self) -> Type;
 
     /// Invokes the function with the given arguments.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Vector of evaluated argument values in declaration order
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Value)` - The return value of the function
+    /// * `Err(RuntimeError)` - An error if the function call fails
     fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError>;
 }
 
 /// Global registry for native functions.
+///
+/// Holds all registered native functions and provides lookup by name.
+/// Functions registered here are available globally in holo code and
+/// are type-checked at compile-time.
+///
+/// # Example
+///
+/// ```rust
+/// use holo_interpreter::{NativeFunctionRegistry, native_functions};
+/// use std::sync::Arc;
+///
+/// // Create registry with built-in functions
+/// let registry = native_functions::create_builtin_registry();
+///
+/// // Or create empty registry and register custom functions
+/// let mut registry = NativeFunctionRegistry::default();
+/// // registry.register(MyCustomFunction::new());
+/// ```
 #[derive(Default)]
 pub struct NativeFunctionRegistry {
     functions: HashMap<SharedString, Arc<dyn NativeFunction>>,
@@ -46,17 +104,34 @@ impl NativeFunctionRegistry {
     }
 
     /// Registers a native function in the registry.
+    ///
+    /// # Arguments
+    ///
+    /// * `function` - The native function to register (must implement `NativeFunction`)
     pub fn register(&mut self, function: impl NativeFunction + 'static) {
         let name = function.name().clone();
         self.functions.insert(name, Arc::new(function));
     }
 
     /// Looks up a native function by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The function name to look up
+    ///
+    /// # Returns
+    ///
+    /// * `Some(Arc<dyn NativeFunction>)` - The registered function if found
+    /// * `None` - If no function with the given name is registered
     pub fn lookup(&self, name: &SharedString) -> Option<Arc<dyn NativeFunction>> {
         self.functions.get(name).cloned()
     }
 
     /// Checks if a native function with the given name exists.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The function name to check
     pub fn contains(&self, name: &SharedString) -> bool {
         self.functions.contains_key(name)
     }

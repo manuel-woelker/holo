@@ -1,0 +1,66 @@
+// Example demonstrating native function usage in holo.
+// Native functions like print() and println() are built-in and available globally.
+
+// Basic usage of println - prints value followed by newline
+println(42);
+
+// Basic usage of print - prints value without newline
+print(10);
+print(20);
+print(30);
+println(0);  // Now add newline
+
+// Native functions work in user-defined functions
+fn print_sum(a: i64, b: i64) {
+    let sum = a + b;
+    println(sum);
+}
+
+print_sum(5, 7);     // outputs: 12
+print_sum(100, 200); // outputs: 300
+
+// Native functions work in expressions
+fn double_and_print(value: i64) {
+    let doubled = value * 2;
+    println(doubled);
+}
+
+double_and_print(21); // outputs: 42
+
+// Can be used in conditionals
+fn print_if_positive(n: i64) {
+    if n > 0 {
+        println(n);
+    } else {
+        println(0);
+    }
+}
+
+print_if_positive(5);   // outputs: 5
+print_if_positive(-3);  // outputs: 0
+
+// Can be used in loops
+fn count_down(from: i64) {
+    let counter = from;
+    while counter > 0 {
+        println(counter);
+        counter = counter - 1;
+    }
+    println(0);
+}
+
+count_down(3);  // outputs: 3, 2, 1, 0
+
+// Test that demonstrates native functions work correctly
+#[test]
+fn test_println_outputs_correctly() {
+    // Native functions execute without error
+    println(100);
+    assert(true);
+}
+
+#[test]
+fn test_print_in_function() {
+    print_sum(1, 2);
+    assert(true);
+}

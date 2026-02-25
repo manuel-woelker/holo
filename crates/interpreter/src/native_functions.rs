@@ -1,10 +1,71 @@
 //! Built-in native functions for the holo language.
+//!
+//! This module provides native (host) functions that are available to all holo programs.
+//! These functions are implemented in Rust and can be called from holo code.
+//!
+//! # Available Functions
+//!
+//! - [`print()`](PrintFunction) - Prints an i64 value to stdout without a newline
+//! - [`println()`](PrintlnFunction) - Prints an i64 value to stdout with a newline
+//!
+//! # Usage
+//!
+//! The built-in functions are automatically registered when using [`create_builtin_registry()`].
+//! The [`CompilerCore`](crate::CompilerCore) uses this by default.
+//!
+//! ```holo
+//! // In holo code:
+//! println(42);  // prints "42" followed by newline
+//! print(10);    // prints "10" without newline
+//! ```
+//!
+//! # Creating Custom Native Functions
+//!
+//! To create your own native functions, implement the [`NativeFunction`](crate::NativeFunction) trait:
+//!
+//! ```rust
+//! use holo_interpreter::{NativeFunction, Type, Value, RuntimeError};
+//! use holo_base::SharedString;
+//!
+//! struct MyFunction {
+//!     name: SharedString,
+//! }
+//!
+//! impl MyFunction {
+//!     fn new() -> Self {
+//!         Self { name: "my_func".into() }
+//!     }
+//! }
+//!
+//! impl NativeFunction for MyFunction {
+//!     fn name(&self) -> &SharedString { &self.name }
+//!     fn param_types(&self) -> &[Type] { &[Type::I64] }
+//!     fn return_type(&self) -> Type { Type::Unit }
+//!
+//!     fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+//!         // Your implementation here
+//!         Ok(Value::Unit)
+//!     }
+//! }
+//! ```
 
 use crate::{NativeFunction, NativeFunctionRegistry, RuntimeError, Type, Value};
 use holo_base::SharedString;
 use std::sync::Arc;
 
 /// Native function that prints an i64 value to stdout.
+///
+/// # Signature
+///
+/// ```holo
+/// fn print(value: i64) -> ()
+/// ```
+///
+/// # Example
+///
+/// ```holo
+/// print(42);  // outputs "42" without newline
+/// ```
 pub struct PrintFunction {
     name: SharedString,
 }
@@ -45,6 +106,18 @@ impl NativeFunction for PrintFunction {
 }
 
 /// Native function that prints an i64 value followed by a newline.
+///
+/// # Signature
+///
+/// ```holo
+/// fn println(value: i64) -> ()
+/// ```
+///
+/// # Example
+///
+/// ```holo
+/// println(42);  // outputs "42" followed by newline
+/// ```
 pub struct PrintlnFunction {
     name: SharedString,
 }
@@ -85,6 +158,26 @@ impl NativeFunction for PrintlnFunction {
 }
 
 /// Creates a registry with all built-in native functions registered.
+///
+/// This function creates a new [`NativeFunctionRegistry`] and registers
+/// all built-in native functions:
+///
+/// - [`print`](PrintFunction) - Print i64 without newline
+/// - [`println`](PrintlnFunction) - Print i64 with newline
+///
+/// # Returns
+///
+/// An `Arc<NativeFunctionRegistry>` containing all built-in functions.
+///
+/// # Example
+///
+/// ```rust
+/// use holo_interpreter::native_functions;
+///
+/// let registry = native_functions::create_builtin_registry();
+/// assert!(registry.contains(&"print".into()));
+/// assert!(registry.contains(&"println".into()));
+/// ```
 pub fn create_builtin_registry() -> Arc<NativeFunctionRegistry> {
     let mut registry = NativeFunctionRegistry::default();
     registry.register(PrintFunction::new());

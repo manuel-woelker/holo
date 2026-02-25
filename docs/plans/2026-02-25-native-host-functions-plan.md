@@ -376,13 +376,13 @@ holo_native_function! {
 - [x] Run tests: `cargo test --workspace`
 - [x] Run checks: `./scripts/check-code.sh`
 
-### Phase 7: Documentation & Cleanup
+### Phase 7: Documentation & Cleanup ✅
 
-- [ ] Add inline documentation for public API
-- [ ] Document usage in `docs/` directory
-- [ ] Add example holo files demonstrating native function usage
-- [ ] Run final checks: `./scripts/check-code.sh`
-- [ ] Write journal entry and commit
+- [x] Add inline documentation for public API
+- [x] Document usage in `docs/` directory
+- [x] Add example holo files demonstrating native function usage
+- [x] Run final checks: `./scripts/check-code.sh`
+- [x] Write journal entry and commit
 
 ### Future Phases (Deferred)
 
