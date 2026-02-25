@@ -32,9 +32,31 @@ Use `holo_base::SharedString` instead of `String` for project-owned string data 
 
 ## Project Structure
 
+- `crates/` - Source code for all Rust crates
+  - `ast/` - Abstract Syntax Tree definitions
+  - `base/` - Shared foundational types and utilities
+  - `cli/` - Command-line interface
+  - `conformance-tests/` - End-to-end test framework
+  - `core/` - Core compiler pipeline orchestration
+  - `db/` - Database and state management
+  - `deck/` - Deck/daemon functionality
+  - `fs/` - File system utilities
+  - `interpreter/` - Tree-walking interpreter
+  - `ipc/` - Inter-process communication
+  - `ir/` - Intermediate Representation
+  - `lexer/` - Lexical analyzer
+  - `parser/` - Syntax parser
+  - `query/` - Query system
+  - `token/` - Token definitions
+  - `typechecker/` - Typechecking and semantic analysis
 - `docs/` - Project documentation
+  - `journal/` - Development journal entries
+  - `TESTING.md` - Testing guidelines
   - `TECHSTACK.md` - Technology choices and rationale
   - `DOCUMENTATION.md` - Documentation index
+- `examples/` - Example holo programs
+- `scripts/` - Development scripts (e.g., `check-code.sh`)
+- `tests/` - Conformance test markdown fixtures
 
 ## Development Journal
 
