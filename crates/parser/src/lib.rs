@@ -200,6 +200,7 @@ impl<'a> ParserState<'a> {
             "i64" => Some(TypeRef::I64),
             "f32" => Some(TypeRef::F32),
             "f64" => Some(TypeRef::F64),
+            "string" => Some(TypeRef::String),
             _ => {
                 self.report_current(
                     "unknown type name".into(),

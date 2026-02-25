@@ -180,6 +180,128 @@ impl NativeFunction for PrintlnFunction {
     }
 }
 
+/// Native function that prints a string value to stdout without a newline.
+///
+/// # Signature
+///
+/// ```holo
+/// fn print_string(value: string) -> ()
+/// ```
+///
+/// # Example
+///
+/// ```holo
+/// print_string("hello");  // outputs "hello" without newline
+/// ```
+pub struct PrintStringFunction {
+    name: SharedString,
+    output: Arc<dyn OutputStream>,
+}
+
+impl Default for PrintStringFunction {
+    fn default() -> Self {
+        Self {
+            name: "print_string".into(),
+            output: Arc::new(ProductionOutputStream::stdout()),
+        }
+    }
+}
+
+impl PrintStringFunction {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_output(output: Arc<dyn OutputStream>) -> Self {
+        Self {
+            name: "print_string".into(),
+            output,
+        }
+    }
+}
+
+impl NativeFunction for PrintStringFunction {
+    fn name(&self) -> &SharedString {
+        &self.name
+    }
+
+    fn param_types(&self) -> &[Type] {
+        &[Type::String]
+    }
+
+    fn return_type(&self) -> Type {
+        Type::Unit
+    }
+
+    fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        if let Some(Value::String(s)) = args.first() {
+            self.output.write(s.as_str());
+        }
+        Ok(Value::Unit)
+    }
+}
+
+/// Native function that prints a string value followed by a newline.
+///
+/// # Signature
+///
+/// ```holo
+/// fn println_string(value: string) -> ()
+/// ```
+///
+/// # Example
+///
+/// ```holo
+/// println_string("hello");  // outputs "hello" followed by newline
+/// ```
+pub struct PrintlnStringFunction {
+    name: SharedString,
+    output: Arc<dyn OutputStream>,
+}
+
+impl Default for PrintlnStringFunction {
+    fn default() -> Self {
+        Self {
+            name: "println_string".into(),
+            output: Arc::new(ProductionOutputStream::stdout()),
+        }
+    }
+}
+
+impl PrintlnStringFunction {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_output(output: Arc<dyn OutputStream>) -> Self {
+        Self {
+            name: "println_string".into(),
+            output,
+        }
+    }
+}
+
+impl NativeFunction for PrintlnStringFunction {
+    fn name(&self) -> &SharedString {
+        &self.name
+    }
+
+    fn param_types(&self) -> &[Type] {
+        &[Type::String]
+    }
+
+    fn return_type(&self) -> Type {
+        Type::Unit
+    }
+
+    fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        if let Some(Value::String(s)) = args.first() {
+            self.output.write_line(s.as_str());
+        }
+        Ok(Value::Unit)
+    }
+}
+
 /// Creates a registry with all built-in native functions registered.
 ///
 /// This function creates a new [`NativeFunctionRegistry`] and registers
@@ -187,6 +309,8 @@ impl NativeFunction for PrintlnFunction {
 ///
 /// - [`print`](PrintFunction) - Print i64 without newline
 /// - [`println`](PrintlnFunction) - Print i64 with newline
+/// - [`print_string`](PrintStringFunction) - Print string without newline
+/// - [`println_string`](PrintlnStringFunction) - Print string with newline
 ///
 /// # Returns
 ///
@@ -200,11 +324,14 @@ impl NativeFunction for PrintlnFunction {
 /// let registry = native_functions::create_builtin_registry();
 /// assert!(registry.contains(&"print".into()));
 /// assert!(registry.contains(&"println".into()));
+/// assert!(registry.contains(&"println_string".into()));
 /// ```
 pub fn create_builtin_registry() -> Arc<NativeFunctionRegistry> {
     let mut registry = NativeFunctionRegistry::default();
     registry.register(PrintFunction::new());
     registry.register(PrintlnFunction::new());
+    registry.register(PrintStringFunction::new());
+    registry.register(PrintlnStringFunction::new());
     Arc::new(registry)
 }
 
@@ -244,7 +371,9 @@ pub fn create_test_registry() -> (Arc<NativeFunctionRegistry>, Arc<Mutex<SharedS
     let mut registry = NativeFunctionRegistry::default();
     registry.set_output_buffer(buffer.clone());
     registry.register(PrintFunction::with_output(output.clone()));
-    registry.register(PrintlnFunction::with_output(output));
+    registry.register(PrintlnFunction::with_output(output.clone()));
+    registry.register(PrintStringFunction::with_output(output.clone()));
+    registry.register(PrintlnStringFunction::with_output(output));
 
     (Arc::new(registry), buffer)
 }

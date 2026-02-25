@@ -1082,6 +1082,18 @@ ok
             ## Case: print multiple values
             ok
 
+            # tests/conformance-tests/interpreter/test-strings.md
+            ## Case: string literal
+            ok
+
+            # tests/conformance-tests/interpreter/test-strings.md
+            ## Case: string in function
+            ok
+
+            # tests/conformance-tests/interpreter/test-strings.md
+            ## Case: string with println_string
+            ok
+
             # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: simple test passes
             ok
