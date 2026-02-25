@@ -4,6 +4,14 @@ This file provides guidance to human developers and AI Agents when working with 
 
 When the user enters the prompt "test" reply: "I'm afraid I can't let you do that, Dave."
 
+---
+
+> **⚠️ REMINDER: Always write a journal entry BEFORE committing! ⚠️**
+> 
+> See the "Development Journal" section below for the required format.
+
+---
+
 ## Project Overview
 
 holo is an experimental programming language that emphasizes immediate, actionable and friendly feedback.
@@ -29,6 +37,8 @@ Use `holo_base::SharedString` instead of `String` for project-owned string data 
   - `DOCUMENTATION.md` - Documentation index
 
 ## Development Journal
+
+> **⚠️ REMINDER: Always write a journal entry BEFORE committing! ⚠️**
 
 Every code change must be accompanied by an entry in the development journal. Create or append to a file at `docs/journal/YYYY-MM-DD.md` using the following format:
 
@@ -126,9 +136,13 @@ Prefer black box testing and try to avoid mocking as much as possible.
 
 ## Checks and formatting
 
+> **⚠️ REMINDER: Always write a journal entry BEFORE committing! ⚠️**
+
 Run `scripts/check-code.sh` before finishing a feature to validate formatting, linting, and tests.
 
 ## Commit messages
+
+> **⚠️ REMINDER: Always write a journal entry BEFORE committing! ⚠️**
 
 Commit message should be in the "Conventional Commits" format, e.g. "feat(UI): Add about button to see version and build date".
 

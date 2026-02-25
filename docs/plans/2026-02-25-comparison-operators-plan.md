@@ -75,13 +75,6 @@ Implement comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) for the holo p
 - [x] Add comparison implementations for all numeric types
 - [x] Implement equality for Bool type
 
-### 6. Interpreter [PENDING]
-
-**File:** `crates/interpreter/src/lib.rs`
-
-- [ ] Add comparison implementations for all numeric types
-- [ ] Implement equality for Bool type
-
 ## Testing
 
 ### Parser Tests
