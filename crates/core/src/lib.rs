@@ -6,6 +6,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use bitcode::{Decode, Encode};
 use holo_ast::Module as AstModule;
@@ -14,7 +15,9 @@ use holo_base::{
     SharedString, SourceDiagnostic, SourceExcerpt, Span, TaskTiming,
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
-use holo_interpreter::{BasicInterpreter, Interpreter, TestRunSummary, TestStatus};
+use holo_interpreter::{
+    BasicInterpreter, Interpreter, NativeFunctionRegistry, TestRunSummary, TestStatus,
+};
 use holo_ir::{lower_module, Module as IrModule, TestItem as IrTestItem};
 use holo_lexer::{BasicLexer, Lexer};
 use holo_parser::{BasicParser, Parser};
@@ -38,16 +41,34 @@ pub struct CoreCycleSummary {
 }
 
 /// Coordinates compiler stages and query cache updates.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CompilerCore {
     lexer: BasicLexer,
     parser: BasicParser,
     typechecker: BasicTypechecker,
     interpreter: BasicInterpreter,
+    native_functions: Arc<NativeFunctionRegistry>,
     query_store: InMemoryQueryStore,
     cycle_cache: HashMap<(FilePath, u64), CoreCycleSummary>,
     test_result_cache: HashMap<(FilePath, holo_base::SharedString, u64), CachedTestRun>,
     persisted_cache: Option<PersistedCache>,
+}
+
+impl Default for CompilerCore {
+    fn default() -> Self {
+        let native_functions = Arc::new(NativeFunctionRegistry::default());
+        Self {
+            lexer: BasicLexer::default(),
+            parser: BasicParser::default(),
+            typechecker: BasicTypechecker::new(native_functions.clone()),
+            interpreter: BasicInterpreter::new(native_functions.clone()),
+            native_functions,
+            query_store: InMemoryQueryStore::default(),
+            cycle_cache: HashMap::new(),
+            test_result_cache: HashMap::new(),
+            persisted_cache: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

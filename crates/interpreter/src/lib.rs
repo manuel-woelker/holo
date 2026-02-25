@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use holo_base::{SharedString, Span, TaskTimer, TaskTiming};
-use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, TestItem, Type};
+pub use holo_ir::Type;
+use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, TestItem};
 use tracing::info;
 
 /// Trait for native (host-provided) functions.
@@ -56,6 +57,11 @@ impl NativeFunctionRegistry {
     /// Checks if a native function with the given name exists.
     pub fn contains(&self, name: &SharedString) -> bool {
         self.functions.contains_key(name)
+    }
+
+    /// Returns an iterator over all registered native functions.
+    pub fn iter(&self) -> impl Iterator<Item = (&SharedString, &Arc<dyn NativeFunction>)> {
+        self.functions.iter()
     }
 }
 
@@ -335,7 +341,7 @@ impl BasicInterpreter {
                             scopes,
                             functions,
                             native_functions,
-                            Some(*param_ty),
+                            Some(param_ty.clone()),
                         )?;
                         evaluated_args.push(value);
                     }
@@ -370,7 +376,7 @@ impl BasicInterpreter {
                         scopes,
                         functions,
                         native_functions,
-                        Some(parameter.ty),
+                        Some(parameter.ty.clone()),
                     )?;
                     call_locals.insert(parameter.name.clone(), value);
                 }
@@ -684,7 +690,7 @@ impl BasicInterpreter {
                     scopes,
                     functions,
                     native_functions,
-                    let_statement.ty,
+                    let_statement.ty.clone(),
                 )?;
                 scopes.insert(let_statement.name.clone(), value);
                 Ok(None)

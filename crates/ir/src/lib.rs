@@ -158,7 +158,7 @@ pub struct BlockExpr {
 }
 
 /// IR type for execution/backend boundaries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Bool,
     U32,
@@ -169,6 +169,11 @@ pub enum Type {
     F64,
     Unit,
     Unknown,
+    /// Native function type with signature.
+    NativeFunction {
+        param_types: Vec<Type>,
+        return_type: Box<Type>,
+    },
 }
 
 /// Arithmetic operators.
@@ -222,8 +227,9 @@ impl Expr {
     }
 
     pub fn unary_minus(expression: Expr, span: Span) -> Self {
+        let ty = expression.ty.clone();
         Self {
-            ty: expression.ty,
+            ty,
             kind: ExprKind::UnaryMinus(Box::new(expression)),
             span,
         }
@@ -231,7 +237,7 @@ impl Expr {
 
     pub fn binary(operator: BinaryOperator, left: Expr, right: Expr, span: Span) -> Self {
         let ty = if left.ty == right.ty {
-            left.ty
+            left.ty.clone()
         } else {
             Type::Unknown
         };
@@ -271,7 +277,7 @@ impl Expr {
             .as_ref()
             .map(|branch| {
                 if then_branch.ty == branch.ty {
-                    then_branch.ty
+                    then_branch.ty.clone()
                 } else {
                     Type::Unknown
                 }
@@ -300,7 +306,10 @@ impl Expr {
     }
 
     pub fn block(statements: Vec<Statement>, result: Option<Expr>, span: Span) -> Self {
-        let ty = result.as_ref().map(|expr| expr.ty).unwrap_or(Type::Unit);
+        let ty = result
+            .as_ref()
+            .map(|expr| expr.ty.clone())
+            .unwrap_or(Type::Unit);
         Self {
             kind: ExprKind::Block(BlockExpr {
                 statements,
@@ -308,6 +317,14 @@ impl Expr {
             }),
             ty,
             span,
+        }
+    }
+
+    /// Creates a native function type from parameter and return types.
+    pub fn native_function_type(param_types: Vec<Type>, return_type: Type) -> Type {
+        Type::NativeFunction {
+            param_types,
+            return_type: Box::new(return_type),
         }
     }
 }
@@ -406,7 +423,7 @@ fn lower_statement(
         holo_ast::Statement::Let(let_statement) => {
             let value = lower_expression(&let_statement.value, function_types, scopes);
             let declared = let_statement.ty.map(type_from_ref);
-            let final_ty = declared.unwrap_or(value.ty);
+            let final_ty = declared.clone().unwrap_or(value.ty.clone());
             if let Some(scope) = scopes.last_mut() {
                 scope.insert(let_statement.name.clone(), final_ty);
             }
@@ -465,7 +482,7 @@ fn lower_expression(
                 .collect();
             let return_ty = match &call.callee.kind {
                 holo_ast::ExprKind::Identifier(name) => {
-                    function_types.get(name).copied().unwrap_or(Type::Unknown)
+                    function_types.get(name).cloned().unwrap_or(Type::Unknown)
                 }
                 _ => Type::Unknown,
             };
@@ -505,7 +522,7 @@ fn lower_expression(
 fn lookup_scope(scopes: &[HashMap<SharedString, Type>], name: &SharedString) -> Option<Type> {
     for scope in scopes.iter().rev() {
         if let Some(ty) = scope.get(name) {
-            return Some(*ty);
+            return Some(ty.clone());
         }
     }
     None

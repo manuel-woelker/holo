@@ -9,4 +9,5 @@ publish = false
 [dependencies]
 holo-ast = { path = "../ast" }
 holo-base = { path = "../base" }
+holo-interpreter = { path = "../interpreter" }
 tracing = "0.1"

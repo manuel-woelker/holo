@@ -337,18 +337,18 @@ holo_native_function! {
 - [x] Run tests: `cargo test --workspace`
 - [x] Run checks: `./scripts/check-code.sh`
 
-### Phase 3: Type System Integration
+### Phase 3: Type System Integration ✅
 
-- [ ] **3.1** Add `Type::NativeFunction` variant to IR
-  - [ ] `param_types: Vec<Type>`
-  - [ ] `return_type: Box<Type>`
-- [ ] **3.2** Add `native_function_type()` helper function
-- [ ] **3.3** Integrate native function lookup in typechecker
-  - [ ] Look up in both user functions AND native registry
-  - [ ] Use registered signature for type inference
-  - [ ] Emit type errors for mismatches
-- [ ] Run tests: `cargo test --workspace`
-- [ ] Run checks: `./scripts/check-code.sh`
+- [x] **3.1** Add `Type::NativeFunction` variant to IR
+  - [x] `param_types: Vec<Type>`
+  - [x] `return_type: Box<Type>`
+- [x] **3.2** Add `native_function_type()` helper function
+- [x] **3.3** Integrate native function lookup in typechecker
+  - [x] Look up in both user functions AND native registry
+  - [x] Use registered signature for type inference
+  - [x] Emit type errors for mismatches
+- [x] Run tests: `cargo test --workspace`
+- [x] Run checks: `./scripts/check-code.sh`
 
 ### Phase 4: Typechecker Integration
 

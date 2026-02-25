@@ -1,11 +1,13 @@
 //! Typechecking interfaces and the minimal boolean typechecker.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use holo_ast::{BinaryOperator, Expr, ExprKind, Module, Statement, TypeRef};
 use holo_base::{
     DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, Span, TaskTimer, TaskTiming,
 };
+use holo_interpreter::NativeFunctionRegistry;
 use tracing::info;
 
 /// Type representation for the minimal language.
@@ -60,8 +62,28 @@ pub trait Typechecker {
 }
 
 /// Minimal typechecker for boolean expressions and assert statements.
-#[derive(Debug, Default)]
-pub struct BasicTypechecker;
+#[derive(Debug)]
+pub struct BasicTypechecker {
+    native_functions: Arc<NativeFunctionRegistry>,
+}
+
+impl Default for BasicTypechecker {
+    fn default() -> Self {
+        Self::new(Arc::new(NativeFunctionRegistry::default()))
+    }
+}
+
+impl BasicTypechecker {
+    /// Creates a new typechecker with the given native function registry.
+    pub fn new(native_functions: Arc<NativeFunctionRegistry>) -> Self {
+        Self { native_functions }
+    }
+
+    /// Creates a new typechecker with an empty native function registry.
+    pub fn with_empty_registry() -> Self {
+        Self::new(Arc::new(NativeFunctionRegistry::default()))
+    }
+}
 
 /// Category of symbol stored in lexical scopes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +169,21 @@ impl BasicTypechecker {
             TypeRef::F32 => Type::F32,
             TypeRef::F64 => Type::F64,
             TypeRef::Unit => Type::Unit,
+        }
+    }
+
+    fn type_from_interpreter_type(ir_type: holo_interpreter::Type) -> Type {
+        match ir_type {
+            holo_interpreter::Type::Bool => Type::Bool,
+            holo_interpreter::Type::U32 => Type::U32,
+            holo_interpreter::Type::U64 => Type::U64,
+            holo_interpreter::Type::I32 => Type::I32,
+            holo_interpreter::Type::I64 => Type::I64,
+            holo_interpreter::Type::F32 => Type::F32,
+            holo_interpreter::Type::F64 => Type::F64,
+            holo_interpreter::Type::Unit => Type::Unit,
+            holo_interpreter::Type::Unknown => Type::Unknown,
+            holo_interpreter::Type::NativeFunction { .. } => Type::Unknown,
         }
     }
 
@@ -938,6 +975,22 @@ impl Typechecker for BasicTypechecker {
             function_spans.insert(function.name.clone(), function.span);
         }
 
+        // Add native functions to function_types for type checking
+        for (name, native_fn) in self.native_functions.iter() {
+            function_types.insert(
+                name.clone(),
+                FunctionType {
+                    parameter_types: native_fn
+                        .param_types()
+                        .iter()
+                        .cloned()
+                        .map(Self::type_from_interpreter_type)
+                        .collect(),
+                    return_type: Self::type_from_interpreter_type(native_fn.return_type()),
+                },
+            );
+        }
+
         for function in &module.functions {
             let mut parameter_names = HashSet::new();
             let mut scopes = ScopeStack::default();
@@ -1067,7 +1120,8 @@ mod tests {
             }],
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "#[test] fn sample() { ... }");
+        let result =
+            BasicTypechecker::default().typecheck_module(&module, "#[test] fn sample() { ... }");
         assert_eq!(result.summary.test_count, 1);
         assert_eq!(result.summary.assertion_count, 1);
         assert!(result.diagnostics.is_empty());
@@ -1097,7 +1151,8 @@ mod tests {
             ],
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "#[test] fn same_name() { ... }");
+        let result =
+            BasicTypechecker::default().typecheck_module(&module, "#[test] fn same_name() { ... }");
         assert_eq!(result.summary.test_count, 2);
         assert_eq!(result.summary.assertion_count, 2);
         assert_eq!(result.diagnostics.len(), 1);
@@ -1125,7 +1180,7 @@ mod tests {
             }],
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "assert(1 + 2);");
+        let result = BasicTypechecker::default().typecheck_module(&module, "assert(1 + 2);");
         assert!(!result.diagnostics.is_empty());
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
@@ -1151,7 +1206,8 @@ mod tests {
             }],
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "assert(1i64 + 2.0f64);");
+        let result =
+            BasicTypechecker::default().typecheck_module(&module, "assert(1i64 + 2.0f64);");
         let mismatch = result
             .diagnostics
             .iter()
@@ -1187,7 +1243,7 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "missing;");
+        let result = BasicTypechecker::default().typecheck_module(&module, "missing;");
         assert!(result
             .diagnostics
             .iter()
@@ -1223,7 +1279,7 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(
+        let result = BasicTypechecker::default().typecheck_module(
             &module,
             "fn shadow(value: i64) -> i64 { let value: i64 = 1i64; value; }",
         );
@@ -1258,7 +1314,7 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "unknown_fn();");
+        let result = BasicTypechecker::default().typecheck_module(&module, "unknown_fn();");
         assert!(result
             .diagnostics
             .iter()
@@ -1307,7 +1363,7 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "sum(1);");
+        let result = BasicTypechecker::default().typecheck_module(&module, "sum(1);");
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
             .contains("expects 2 argument(s) but got 1")));
@@ -1337,7 +1393,7 @@ mod tests {
             }],
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "assert(true + false);");
+        let result = BasicTypechecker::default().typecheck_module(&module, "assert(true + false);");
         assert!(result
             .diagnostics
             .iter()
@@ -1372,7 +1428,8 @@ mod tests {
             }],
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "assert(1.0f64 % 2.0f64);");
+        let result =
+            BasicTypechecker::default().typecheck_module(&module, "assert(1.0f64 % 2.0f64);");
         assert!(result
             .diagnostics
             .iter()
@@ -1409,7 +1466,7 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(
+        let result = BasicTypechecker::default().typecheck_module(
             &module,
             "fn dup_params(value: i64, value: i64) -> i64 { value; }",
         );
@@ -1454,7 +1511,8 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "if true { 1i64 } else { false };");
+        let result = BasicTypechecker::default()
+            .typecheck_module(&module, "if true { 1i64 } else { false };");
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
             .contains("if branches must evaluate to the same type")));
@@ -1481,7 +1539,7 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "while 1i64 { };");
+        let result = BasicTypechecker::default().typecheck_module(&module, "while 1i64 { };");
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
             .contains("while condition must evaluate to `bool`")));
@@ -1519,8 +1577,8 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result =
-            BasicTypechecker.typecheck_module(&module, "{ let inner: i64 = 1i64; inner }; inner;");
+        let result = BasicTypechecker::default()
+            .typecheck_module(&module, "{ let inner: i64 = 1i64; inner }; inner;");
         assert!(result
             .diagnostics
             .iter()
@@ -1546,7 +1604,7 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "let value: u32 = 1;");
+        let result = BasicTypechecker::default().typecheck_module(&module, "let value: u32 = 1;");
         assert!(
             result.diagnostics.iter().all(|diagnostic| !diagnostic
                 .message
@@ -1591,7 +1649,7 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result = BasicTypechecker.typecheck_module(&module, "takes_u32(1);");
+        let result = BasicTypechecker::default().typecheck_module(&module, "takes_u32(1);");
         assert!(result.diagnostics.iter().all(|diagnostic| !diagnostic
             .message
             .contains("call argument type does not match")));
@@ -1640,8 +1698,8 @@ mod tests {
             tests: Vec::new(),
         };
 
-        let result =
-            BasicTypechecker.typecheck_module(&module, "let value: i64 = 1i64; takes_u32(value);");
+        let result = BasicTypechecker::default()
+            .typecheck_module(&module, "let value: i64 = 1i64; takes_u32(value);");
         let diagnostic = result
             .diagnostics
             .iter()
