@@ -1002,6 +1002,22 @@ ok
                  │                                ───┬   ────── right operand has type `f64`
                  │                                   └─ left operand has type `i64`
 
+            # tests/conformance-tests/interpreter/test-comments.md
+            ## Case: line comment
+            ok
+
+            # tests/conformance-tests/interpreter/test-comments.md
+            ## Case: block comment
+            ok
+
+            # tests/conformance-tests/interpreter/test-comments.md
+            ## Case: nested block comments
+            ok
+
+            # tests/conformance-tests/interpreter/test-comments.md
+            ## Case: comments around code
+            ok
+
             # tests/conformance-tests/interpreter/test-interpreter.md
             ## Case: evaluates arithmetic
             ok

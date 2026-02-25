@@ -139,6 +139,49 @@ impl Lexer for BasicLexer {
                 continue;
             }
 
+            // Handle line comments (// ...)
+            if byte == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'/' {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+                continue;
+            }
+
+            // Handle block comments (/* ... */) with nesting
+            if byte == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'*' {
+                let start = index;
+                index += 2;
+                let mut depth = 1;
+                while index + 1 < bytes.len() && depth > 0 {
+                    if bytes[index] == b'/' && bytes[index + 1] == b'*' {
+                        depth += 1;
+                        index += 2;
+                    } else if bytes[index] == b'*'
+                        && index + 1 < bytes.len()
+                        && bytes[index + 1] == b'/'
+                    {
+                        depth -= 1;
+                        if depth > 0 {
+                            index += 2;
+                        }
+                    } else {
+                        index += 1;
+                    }
+                }
+                if depth != 0 {
+                    diagnostics.push(
+                        SourceDiagnostic::new(DiagnosticKind::Lexing, "unterminated block comment")
+                            .with_annotated_span(
+                                Span::new(start, index),
+                                "block comment never closes",
+                            )
+                            .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                }
+                continue;
+            }
+
             if byte.is_ascii_digit() {
                 let start = index;
                 index += 1;
