@@ -1,10 +1,55 @@
 //! Test interpreter for the minimal holo language.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use holo_base::{SharedString, Span, TaskTimer, TaskTiming};
-use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, TestItem};
+use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, TestItem, Type};
 use tracing::info;
+
+/// Trait for native (host-provided) functions.
+pub trait NativeFunction: Send + Sync {
+    /// Returns the function's name as it will be called from holo code.
+    fn name(&self) -> &SharedString;
+
+    /// Returns the parameter types in order.
+    fn param_types(&self) -> &[Type];
+
+    /// Returns the return type.
+    fn return_type(&self) -> Type;
+
+    /// Invokes the function with the given arguments.
+    fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError>;
+}
+
+/// Global registry for native functions.
+#[derive(Default)]
+pub struct NativeFunctionRegistry {
+    functions: HashMap<SharedString, Arc<dyn NativeFunction>>,
+}
+
+impl NativeFunctionRegistry {
+    /// Creates a new empty native function registry.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers a native function in the registry.
+    pub fn register(&mut self, function: impl NativeFunction + 'static) {
+        let name = function.name().clone();
+        self.functions.insert(name, Arc::new(function));
+    }
+
+    /// Looks up a native function by name.
+    pub fn lookup(&self, name: &SharedString) -> Option<Arc<dyn NativeFunction>> {
+        self.functions.get(name).cloned()
+    }
+
+    /// Checks if a native function with the given name exists.
+    pub fn contains(&self, name: &SharedString) -> bool {
+        self.functions.contains_key(name)
+    }
+}
 
 /// Final status for a single test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,8 +104,9 @@ pub trait Interpreter {
 #[derive(Debug, Default)]
 pub struct BasicInterpreter;
 
+/// Runtime value types supported by the interpreter.
 #[derive(Debug, Clone, PartialEq)]
-enum Value {
+pub enum Value {
     Bool(bool),
     U32(u32),
     U64(u64),
@@ -71,10 +117,11 @@ enum Value {
     Unit,
 }
 
+/// Runtime error with span information for error reporting.
 #[derive(Debug, Clone)]
-struct RuntimeError {
-    span: Span,
-    message: SharedString,
+pub struct RuntimeError {
+    pub span: Span,
+    pub message: SharedString,
 }
 
 #[derive(Debug, Default)]

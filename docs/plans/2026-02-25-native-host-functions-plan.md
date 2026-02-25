@@ -310,19 +310,19 @@ holo_native_function! {
 
 ## Implementation Checklist
 
-### Phase 1: Core Infrastructure
+### Phase 1: Core Infrastructure ✅
 
-- [ ] **1.1** Define `NativeFunction` trait in `crates/interpreter/src/lib.rs`
-  - [ ] `name()` method returning `&SharedString`
-  - [ ] `param_types()` method returning `&[Type]`
-  - [ ] `return_type()` method returning `Type`
-  - [ ] `call()` method with `Vec<Value>` -> `Result<Value, RuntimeError>`
-- [ ] **1.2** Extend `Value` enum (if needed for function handles)
-- [ ] **1.3** Create `NativeFunctionRegistry` struct
-  - [ ] `register()` method
-  - [ ] `lookup()` method
-  - [ ] `contains()` method
-- [ ] Run tests: `cargo test --workspace`
+- [x] **1.1** Define `NativeFunction` trait in `crates/interpreter/src/lib.rs`
+  - [x] `name()` method returning `&SharedString`
+  - [x] `param_types()` method returning `&[Type]`
+  - [x] `return_type()` method returning `Type`
+  - [x] `call()` method with `Vec<Value>` -> `Result<Value, RuntimeError>`
+- [x] **1.2** Extend `Value` enum (if needed for function handles)
+- [x] **1.3** Create `NativeFunctionRegistry` struct
+  - [x] `register()` method
+  - [x] `lookup()` method
+  - [x] `contains()` method
+- [x] Run tests: `cargo test --workspace`
 
 ### Phase 2: Interpreter Integration
 
