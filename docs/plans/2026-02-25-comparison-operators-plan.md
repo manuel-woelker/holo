@@ -17,74 +17,62 @@ Implement comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`) for the holo p
 
 ## Implementation Steps
 
-### 1. Lexer
+### 1. Lexer [DONE]
 
 **File:** `crates/lexer/src/lib.rs`
 
-- Add new `TokenKind` variants:
-  - `DoubleEquals` for `==`
-  - `BangEquals` for `!=`
-  - `LessThan` for `<`
-  - `GreaterThan` for `>`
-  - `LessThanEquals` for `<=`
-  - `GreaterThanEquals` for `>=`
-- Update lexer to recognize these multi-character tokens
+- [x] Add new `TokenKind` variants:
+  - [x] `DoubleEquals` for `==`
+  - [x] `BangEquals` for `!=`
+  - [x] `LessThan` for `<`
+  - [x] `GreaterThan` for `>`
+  - [x] `LessThanEquals` for `<=`
+  - [x] `GreaterThanEquals` for `>=`
+- [x] Update lexer to recognize these multi-character tokens
 
-### 2. AST
+### 2. AST [PENDING]
+
+### 2. AST [PENDING]
 
 **File:** `crates/ast/src/lib.rs`
 
-- Add comparison operators to `BinaryOperator` enum:
-  ```rust
-  pub enum BinaryOperator {
-      // ... existing arithmetic operators ...
-      Equals,
-      NotEquals,
-      LessThan,
-      GreaterThan,
-      LessThanOrEqual,
-      GreaterThanOrEqual,
-  }
-  ```
+- [ ] Add comparison operators to `BinaryOperator` enum:
+  - [ ] `Equals`
+  - [ ] `NotEquals`
+  - [ ] `LessThan`
+  - [ ] `GreaterThan`
+  - [ ] `LessThanOrEqual`
+  - [ ] `GreaterThanOrEqual`
 
-### 3. Parser
+### 3. Parser [PENDING]
 
 **File:** `crates/parser/src/lib.rs`
 
-- Add new precedence levels between `parse_expression` and `parse_additive`:
-  - `parse_equality` for `==` and `!=`
-  - `parse_comparison` for `<`, `>`, `<=`, `>=`
-- Update precedence chain:
-  ```
-  parse_expression → parse_equality → parse_comparison → parse_additive
-  ```
+- [ ] Add new precedence levels between `parse_expression` and `parse_additive`:
+  - [ ] `parse_equality` for `==` and `!=`
+  - [ ] `parse_comparison` for `<`, `>`, `<=`, `>=`
+- [ ] Update precedence chain
 
-### 4. Typechecker
+### 4. Typechecker [PENDING]
 
 **File:** `crates/typechecker/src/lib.rs`
 
-- Add handling for comparison operators in `typecheck_expression`
-- Type rules:
-  - **Equality** (`==`, `!=`): Both operands must have the same type
-  - **Ordering** (`<`, `>`, `<=`, `>=`): Both operands must be numeric types
-- Return type is always `Bool`
+- [ ] Add handling for comparison operators in `typecheck_expression`
+- [ ] Type rules for equality and ordering operators
 
-### 5. IR
+### 5. IR [PENDING]
 
 **File:** `crates/ir/src/lib.rs`
 
-- Add comparison operators to IR's `BinaryOperator` enum
-- Update `lower_binary_operator` function to map new operators
-- Set expression type to `Type::Bool` for comparison results
+- [ ] Add comparison operators to IR's `BinaryOperator` enum
+- [ ] Update `lower_binary_operator` function
 
-### 6. Interpreter
+### 6. Interpreter [PENDING]
 
 **File:** `crates/interpreter/src/lib.rs`
 
-- Add comparison implementations in `evaluate_binary_expression`
-- Implement for all numeric types:
-  - `U32`, `U64`, `I32`, `I64`, `F32`, `F64`
-- Implement equality for `Bool` type
+- [ ] Add comparison implementations for all numeric types
+- [ ] Implement equality for Bool type
 
 ## Testing
 

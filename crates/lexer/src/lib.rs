@@ -19,6 +19,12 @@ pub enum TokenKind {
     Slash,
     Percent,
     Equals,
+    DoubleEquals,
+    BangEquals,
+    LessThan,
+    GreaterThan,
+    LessThanEquals,
+    GreaterThanEquals,
     Comma,
     Colon,
     Arrow,
@@ -140,7 +146,6 @@ impl Lexer for BasicLexer {
             }
 
             let token = match byte {
-                b'!' => TokenKind::Bang,
                 b'+' => TokenKind::Plus,
                 b'-' => {
                     if index + 1 < bytes.len() && bytes[index + 1] == b'>' {
@@ -157,7 +162,54 @@ impl Lexer for BasicLexer {
                 b'*' => TokenKind::Star,
                 b'/' => TokenKind::Slash,
                 b'%' => TokenKind::Percent,
-                b'=' => TokenKind::Equals,
+                b'=' => {
+                    if index + 1 < bytes.len() && bytes[index + 1] == b'=' {
+                        tokens.push(Token {
+                            kind: TokenKind::DoubleEquals,
+                            span: Span::new(index, index + 2),
+                            lexeme: "==".into(),
+                        });
+                        index += 2;
+                        continue;
+                    }
+                    TokenKind::Equals
+                }
+                b'!' => {
+                    if index + 1 < bytes.len() && bytes[index + 1] == b'=' {
+                        tokens.push(Token {
+                            kind: TokenKind::BangEquals,
+                            span: Span::new(index, index + 2),
+                            lexeme: "!=".into(),
+                        });
+                        index += 2;
+                        continue;
+                    }
+                    TokenKind::Bang
+                }
+                b'<' => {
+                    if index + 1 < bytes.len() && bytes[index + 1] == b'=' {
+                        tokens.push(Token {
+                            kind: TokenKind::LessThanEquals,
+                            span: Span::new(index, index + 2),
+                            lexeme: "<=".into(),
+                        });
+                        index += 2;
+                        continue;
+                    }
+                    TokenKind::LessThan
+                }
+                b'>' => {
+                    if index + 1 < bytes.len() && bytes[index + 1] == b'=' {
+                        tokens.push(Token {
+                            kind: TokenKind::GreaterThanEquals,
+                            span: Span::new(index, index + 2),
+                            lexeme: ">=".into(),
+                        });
+                        index += 2;
+                        continue;
+                    }
+                    TokenKind::GreaterThan
+                }
                 b',' => TokenKind::Comma,
                 b':' => TokenKind::Colon,
                 b'(' => TokenKind::OpenParen,
