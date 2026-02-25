@@ -28,6 +28,14 @@ pub struct NativeFunctionRegistry {
     functions: HashMap<SharedString, Arc<dyn NativeFunction>>,
 }
 
+impl std::fmt::Debug for NativeFunctionRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeFunctionRegistry")
+            .field("functions", &self.functions.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
+
 impl NativeFunctionRegistry {
     /// Creates a new empty native function registry.
     pub fn new() -> Self {
@@ -101,8 +109,28 @@ pub trait Interpreter {
 }
 
 /// Basic interpreter for boolean expressions and assertions.
-#[derive(Debug, Default)]
-pub struct BasicInterpreter;
+#[derive(Debug)]
+pub struct BasicInterpreter {
+    native_functions: Arc<NativeFunctionRegistry>,
+}
+
+impl BasicInterpreter {
+    /// Creates a new interpreter with the given native function registry.
+    pub fn new(native_functions: Arc<NativeFunctionRegistry>) -> Self {
+        Self { native_functions }
+    }
+
+    /// Creates a new interpreter with an empty native function registry.
+    pub fn with_empty_registry() -> Self {
+        Self::new(Arc::new(NativeFunctionRegistry::default()))
+    }
+}
+
+impl Default for BasicInterpreter {
+    fn default() -> Self {
+        Self::with_empty_registry()
+    }
+}
 
 /// Runtime value types supported by the interpreter.
 #[derive(Debug, Clone, PartialEq)]
@@ -228,6 +256,7 @@ impl BasicInterpreter {
         expression: &Expr,
         scopes: &mut RuntimeScopes,
         functions: &HashMap<SharedString, FunctionItem>,
+        native_functions: &Arc<NativeFunctionRegistry>,
         expected_type: Option<holo_ir::TypeRef>,
     ) -> Result<Value, RuntimeError> {
         match &expression.kind {
@@ -242,7 +271,8 @@ impl BasicInterpreter {
                 message: format!("unknown identifier `{name}`").into(),
             }),
             ExprKind::Negation(inner) => {
-                let inner_value = Self::eval_expr(inner, scopes, functions, None)?;
+                let inner_value =
+                    Self::eval_expr(inner, scopes, functions, native_functions, None)?;
                 match inner_value {
                     Value::Bool(value) => Ok(Value::Bool(!value)),
                     _ => Err(RuntimeError {
@@ -252,7 +282,8 @@ impl BasicInterpreter {
                 }
             }
             ExprKind::UnaryMinus(inner) => {
-                let inner_value = Self::eval_expr(inner, scopes, functions, None)?;
+                let inner_value =
+                    Self::eval_expr(inner, scopes, functions, native_functions, None)?;
                 match inner_value {
                     Value::I32(value) => Ok(Value::I32(-value)),
                     Value::I64(value) => Ok(Value::I64(-value)),
@@ -265,8 +296,10 @@ impl BasicInterpreter {
                 }
             }
             ExprKind::Binary(binary) => {
-                let left = Self::eval_expr(&binary.left, scopes, functions, None)?;
-                let right = Self::eval_expr(&binary.right, scopes, functions, None)?;
+                let left =
+                    Self::eval_expr(&binary.left, scopes, functions, native_functions, None)?;
+                let right =
+                    Self::eval_expr(&binary.right, scopes, functions, native_functions, None)?;
                 Self::eval_binary(expression.span, binary.operator, left, right)
             }
             ExprKind::Call(call) => {
@@ -276,6 +309,42 @@ impl BasicInterpreter {
                         message: "call target is not a function name".into(),
                     });
                 };
+
+                // First check native functions
+                if let Some(native) = native_functions.lookup(callee_name) {
+                    // Validate argument count
+                    if call.arguments.len() != native.param_types().len() {
+                        return Err(RuntimeError {
+                            span: expression.span,
+                            message: format!(
+                                "function `{callee_name}` expects {} argument(s) but got {}",
+                                native.param_types().len(),
+                                call.arguments.len()
+                            )
+                            .into(),
+                        });
+                    }
+
+                    // Evaluate arguments with expected types
+                    let mut evaluated_args = Vec::with_capacity(call.arguments.len());
+                    for (argument, param_ty) in
+                        call.arguments.iter().zip(native.param_types().iter())
+                    {
+                        let value = Self::eval_expr(
+                            argument,
+                            scopes,
+                            functions,
+                            native_functions,
+                            Some(*param_ty),
+                        )?;
+                        evaluated_args.push(value);
+                    }
+
+                    // Call native function
+                    return native.call(evaluated_args);
+                }
+
+                // Fall back to user-defined functions
                 let Some(function) = functions.get(callee_name) else {
                     return Err(RuntimeError {
                         span: call.callee.span,
@@ -296,13 +365,25 @@ impl BasicInterpreter {
 
                 let mut call_locals = HashMap::new();
                 for (argument, parameter) in call.arguments.iter().zip(function.parameters.iter()) {
-                    let value = Self::eval_expr(argument, scopes, functions, Some(parameter.ty))?;
+                    let value = Self::eval_expr(
+                        argument,
+                        scopes,
+                        functions,
+                        native_functions,
+                        Some(parameter.ty),
+                    )?;
                     call_locals.insert(parameter.name.clone(), value);
                 }
-                Self::run_function(function, call_locals, functions)
+                Self::run_function(function, call_locals, functions, native_functions)
             }
             ExprKind::If(if_expression) => {
-                let condition = Self::eval_expr(&if_expression.condition, scopes, functions, None)?;
+                let condition = Self::eval_expr(
+                    &if_expression.condition,
+                    scopes,
+                    functions,
+                    native_functions,
+                    None,
+                )?;
                 let is_true = match condition {
                     Value::Bool(value) => value,
                     _ => {
@@ -314,17 +395,34 @@ impl BasicInterpreter {
                 };
 
                 if is_true {
-                    Self::eval_expr(&if_expression.then_branch, scopes, functions, expected_type)
+                    Self::eval_expr(
+                        &if_expression.then_branch,
+                        scopes,
+                        functions,
+                        native_functions,
+                        expected_type,
+                    )
                 } else if let Some(else_branch) = &if_expression.else_branch {
-                    Self::eval_expr(else_branch, scopes, functions, expected_type)
+                    Self::eval_expr(
+                        else_branch,
+                        scopes,
+                        functions,
+                        native_functions,
+                        expected_type,
+                    )
                 } else {
                     Ok(Value::Unit)
                 }
             }
             ExprKind::While(while_expression) => {
                 loop {
-                    let condition =
-                        Self::eval_expr(&while_expression.condition, scopes, functions, None)?;
+                    let condition = Self::eval_expr(
+                        &while_expression.condition,
+                        scopes,
+                        functions,
+                        native_functions,
+                        None,
+                    )?;
                     let is_true = match condition {
                         Value::Bool(value) => value,
                         _ => {
@@ -337,17 +435,23 @@ impl BasicInterpreter {
                     if !is_true {
                         break;
                     }
-                    let _ = Self::eval_expr(&while_expression.body, scopes, functions, None)?;
+                    let _ = Self::eval_expr(
+                        &while_expression.body,
+                        scopes,
+                        functions,
+                        native_functions,
+                        None,
+                    )?;
                 }
                 Ok(Value::Unit)
             }
             ExprKind::Block(block_expression) => {
                 scopes.push_scope();
                 for statement in &block_expression.statements {
-                    let _ = Self::run_statement(statement, scopes, functions)?;
+                    let _ = Self::run_statement(statement, scopes, functions, native_functions)?;
                 }
                 let value = if let Some(result) = &block_expression.result {
-                    Self::eval_expr(result, scopes, functions, expected_type)?
+                    Self::eval_expr(result, scopes, functions, native_functions, expected_type)?
                 } else {
                     Value::Unit
                 };
@@ -551,10 +655,17 @@ impl BasicInterpreter {
         statement: &Statement,
         scopes: &mut RuntimeScopes,
         functions: &HashMap<SharedString, FunctionItem>,
+        native_functions: &Arc<NativeFunctionRegistry>,
     ) -> Result<Option<Value>, RuntimeError> {
         match statement {
             Statement::Assert(assertion) => {
-                let value = Self::eval_expr(&assertion.expression, scopes, functions, None)?;
+                let value = Self::eval_expr(
+                    &assertion.expression,
+                    scopes,
+                    functions,
+                    native_functions,
+                    None,
+                )?;
                 match value {
                     Value::Bool(true) => Ok(None),
                     Value::Bool(false) => Err(RuntimeError {
@@ -568,13 +679,24 @@ impl BasicInterpreter {
                 }
             }
             Statement::Let(let_statement) => {
-                let value =
-                    Self::eval_expr(&let_statement.value, scopes, functions, let_statement.ty)?;
+                let value = Self::eval_expr(
+                    &let_statement.value,
+                    scopes,
+                    functions,
+                    native_functions,
+                    let_statement.ty,
+                )?;
                 scopes.insert(let_statement.name.clone(), value);
                 Ok(None)
             }
             Statement::Expr(expr_statement) => {
-                let value = Self::eval_expr(&expr_statement.expression, scopes, functions, None)?;
+                let value = Self::eval_expr(
+                    &expr_statement.expression,
+                    scopes,
+                    functions,
+                    native_functions,
+                    None,
+                )?;
                 Ok(Some(value))
             }
         }
@@ -584,6 +706,7 @@ impl BasicInterpreter {
         function: &FunctionItem,
         initial_scope: HashMap<SharedString, Value>,
         functions: &HashMap<SharedString, FunctionItem>,
+        native_functions: &Arc<NativeFunctionRegistry>,
     ) -> Result<Value, RuntimeError> {
         let mut scopes = RuntimeScopes::default();
         scopes.push_scope();
@@ -592,7 +715,9 @@ impl BasicInterpreter {
         }
         let mut last_value = Value::Unit;
         for statement in &function.statements {
-            if let Some(value) = Self::run_statement(statement, &mut scopes, functions)? {
+            if let Some(value) =
+                Self::run_statement(statement, &mut scopes, functions, native_functions)?
+            {
                 last_value = value;
             }
         }
@@ -611,7 +736,9 @@ impl BasicInterpreter {
         let mut failure_span = None;
         let mut failure_reason = None;
         for statement in &test.statements {
-            if let Err(error) = Self::run_statement(statement, &mut scopes, functions) {
+            if let Err(error) =
+                Self::run_statement(statement, &mut scopes, functions, &self.native_functions)
+            {
                 status = TestStatus::Failed;
                 failure_span = Some(error.span);
                 failure_reason = Some(error.message);
@@ -728,7 +855,8 @@ mod tests {
             }],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.executed, 1);
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.results[0].status, TestStatus::Failed);
@@ -756,7 +884,8 @@ mod tests {
             },
         ];
 
-        let summary = BasicInterpreter.run_collected_tests(&tests);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_collected_tests(&tests);
         assert_eq!(summary.executed, 2);
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.failed, 1);
@@ -829,7 +958,8 @@ mod tests {
             }],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.executed, 1);
         assert_eq!(summary.passed, 0);
         assert_eq!(summary.failed, 1);
@@ -854,7 +984,8 @@ mod tests {
             }],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.executed, 1);
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.results[0].failure_span, Some(Span::new(0, 11)));
@@ -942,7 +1073,8 @@ mod tests {
                 }],
             };
 
-            let summary = BasicInterpreter.run_tests(&module);
+            let interpreter = BasicInterpreter::default();
+            let summary = interpreter.run_tests(&module);
             assert_eq!(summary.executed, 1, "{name}");
             assert_eq!(summary.passed, 1, "{name}");
             assert_eq!(summary.failed, 0, "{name}");
@@ -984,7 +1116,8 @@ mod tests {
             }],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.failed, 0);
     }
 
@@ -1018,7 +1151,8 @@ mod tests {
             }],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.failed, 0);
     }
 
@@ -1051,7 +1185,8 @@ mod tests {
             }],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.failed, 1);
         assert!(summary.results[0]
             .failure_reason
@@ -1090,7 +1225,8 @@ mod tests {
             }],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.failed, 0);
     }
 
@@ -1137,7 +1273,8 @@ mod tests {
             }],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.failed, 0);
     }
 
@@ -1162,7 +1299,8 @@ mod tests {
             },
         ];
 
-        let summary = BasicInterpreter.run_collected_tests(&tests);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_collected_tests(&tests);
         assert_eq!(summary.executed, 2);
         assert_eq!(summary.results[0].name.as_str(), "a_case");
         assert_eq!(summary.results[1].name.as_str(), "z_case");
@@ -1200,7 +1338,8 @@ mod tests {
             ],
         };
 
-        let summary = BasicInterpreter.run_tests(&module);
+        let interpreter = BasicInterpreter::default();
+        let summary = interpreter.run_tests(&module);
         assert_eq!(summary.executed, 2);
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.failed, 1);

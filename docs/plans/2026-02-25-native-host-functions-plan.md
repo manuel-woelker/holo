@@ -324,18 +324,18 @@ holo_native_function! {
   - [x] `contains()` method
 - [x] Run tests: `cargo test --workspace`
 
-### Phase 2: Interpreter Integration
+### Phase 2: Interpreter Integration ✅
 
-- [ ] **2.1** Add `native_functions: Arc<NativeFunctionRegistry>` to `BasicInterpreter`
-- [ ] **2.2** Update `BasicInterpreter::new()` to accept registry
-- [ ] **2.3** Modify `ExprKind::Call` handler in `eval_expr`
-  - [ ] Check native functions first
-  - [ ] Validate argument count
-  - [ ] Evaluate arguments with type coercion
-  - [ ] Call native function and return result
-  - [ ] Fall back to user-defined functions
-- [ ] Run tests: `cargo test --workspace`
-- [ ] Run checks: `./scripts/check-code.sh`
+- [x] **2.1** Add `native_functions: Arc<NativeFunctionRegistry>` to `BasicInterpreter`
+- [x] **2.2** Update `BasicInterpreter::new()` to accept registry
+- [x] **2.3** Modify `ExprKind::Call` handler in `eval_expr`
+  - [x] Check native functions first
+  - [x] Validate argument count
+  - [x] Evaluate arguments with type coercion
+  - [x] Call native function and return result
+  - [x] Fall back to user-defined functions
+- [x] Run tests: `cargo test --workspace`
+- [x] Run checks: `./scripts/check-code.sh`
 
 ### Phase 3: Type System Integration
 
