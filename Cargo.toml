@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ast",
+    "crates/base",
+    "crates/cli",
+    "crates/conformance-tests",
+    "crates/core",
+    "crates/deck",
+    "crates/db",
+    "crates/fs",
+    "crates/ir",
+    "crates/interpreter",
+    "crates/ipc",
+    "crates/lexer",
+    "crates/parser",
+    "crates/query",
+    "crates/typechecker",
+]
+default-members = ["crates/cli"]

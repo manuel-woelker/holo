@@ -6,7 +6,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use bitcode::{Decode, Encode};
 use holo_ast::Module as AstModule;
@@ -16,7 +15,7 @@ use holo_base::{
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{
-    native_functions, BasicInterpreter, Interpreter, NativeFunctionRegistry, TestRunSummary,
+    native_functions, BasicInterpreter, Interpreter, TestRunSummary,
     TestStatus,
 };
 use holo_ir::{lower_module, Module as IrModule, TestItem as IrTestItem};
@@ -48,7 +47,6 @@ pub struct CompilerCore {
     parser: BasicParser,
     typechecker: BasicTypechecker,
     interpreter: BasicInterpreter,
-    native_functions: Arc<NativeFunctionRegistry>,
     query_store: InMemoryQueryStore,
     cycle_cache: HashMap<(FilePath, u64), CoreCycleSummary>,
     test_result_cache: HashMap<(FilePath, holo_base::SharedString, u64), CachedTestRun>,
@@ -59,11 +57,10 @@ impl Default for CompilerCore {
     fn default() -> Self {
         let native_functions = native_functions::create_builtin_registry();
         Self {
-            lexer: BasicLexer::default(),
-            parser: BasicParser::default(),
+            lexer: BasicLexer,
+            parser: BasicParser,
             typechecker: BasicTypechecker::new(native_functions.clone()),
             interpreter: BasicInterpreter::new(native_functions.clone()),
-            native_functions,
             query_store: InMemoryQueryStore::default(),
             cycle_cache: HashMap::new(),
             test_result_cache: HashMap::new(),
@@ -95,11 +92,10 @@ impl CompilerCore {
         let (registry, _buffer) = native_functions::create_test_registry();
 
         Self {
-            lexer: BasicLexer::default(),
-            parser: BasicParser::default(),
+            lexer: BasicLexer,
+            parser: BasicParser,
             typechecker: BasicTypechecker::new(registry.clone()),
             interpreter: BasicInterpreter::new(registry.clone()),
-            native_functions: registry,
             query_store: InMemoryQueryStore::default(),
             cycle_cache: HashMap::new(),
             test_result_cache: HashMap::new(),

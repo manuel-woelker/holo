@@ -306,7 +306,7 @@ impl<'a> ParserState<'a> {
                 let expr_source = &contents[start..end];
                 // Lex and parse the expression
                 use holo_lexer::Lexer as _;
-                let lexer = holo_lexer::BasicLexer::default();
+                let lexer = holo_lexer::BasicLexer;
                 let result = lexer.lex(expr_source);
                 let tokens: Vec<_> = result
                     .tokens

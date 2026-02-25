@@ -1110,6 +1110,35 @@ ok
             ## Case: string with println_string
             ok
 
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: simple template string
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: multiple interpolations
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: nested template strings
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: typecheck error inside interpolation
+            ⚒️ Typecheck: arithmetic operators require numeric operands
+
+            conformance-case.holo:1
+               1 │ fn bad_type() {
+                 │ ─ left operand has type `i64`
+                 │ └─ right operand has type `string`
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: unterminated template string
+            ⚒️ Parsing: expected `;` after let statement
+
+            conformance-case.holo:3
+               3 │ }
+                 │ ┬─ expected `;`, found end of input
+
             # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: simple test passes
             ok

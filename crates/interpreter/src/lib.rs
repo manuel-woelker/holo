@@ -93,19 +93,12 @@ pub trait NativeFunction: Send + Sync {
 /// let mut registry = NativeFunctionRegistry::default();
 /// // registry.register(MyCustomFunction::new());
 /// ```
+#[derive(Default)]
 pub struct NativeFunctionRegistry {
     functions: HashMap<SharedString, Arc<dyn NativeFunction>>,
     output_buffer: Option<Arc<Mutex<SharedString>>>,
 }
 
-impl Default for NativeFunctionRegistry {
-    fn default() -> Self {
-        Self {
-            functions: HashMap::new(),
-            output_buffer: None,
-        }
-    }
-}
 
 impl std::fmt::Debug for NativeFunctionRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
