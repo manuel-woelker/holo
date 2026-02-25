@@ -415,6 +415,10 @@ impl<'a> ParserState<'a> {
                     let literal = self.advance().expect("peek guaranteed token");
                     return Some(Expr::number_literal(literal.lexeme.clone(), literal.span));
                 }
+                TokenKind::StringLiteral => {
+                    let literal = self.advance().expect("peek guaranteed token");
+                    return Some(Expr::string_literal(literal.lexeme.clone(), literal.span));
+                }
                 TokenKind::Identifier => {
                     let name = self.advance().expect("peek guaranteed token");
                     return Some(Expr::identifier(name.lexeme.clone(), name.span));
@@ -666,6 +670,7 @@ fn token_kind_name(kind: TokenKind) -> &'static str {
         TokenKind::Fn => "`fn`",
         TokenKind::Identifier => "identifier",
         TokenKind::Number => "number literal",
+        TokenKind::StringLiteral => "string literal",
         TokenKind::DoubleEquals => "`==`",
         TokenKind::BangEquals => "`!=`",
         TokenKind::LessThan => "`<`",

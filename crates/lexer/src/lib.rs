@@ -39,6 +39,7 @@ pub enum TokenKind {
     Fn,
     Identifier,
     Number,
+    StringLiteral,
 }
 
 /// Source token with kind and byte span.
@@ -110,6 +111,28 @@ impl Lexer for BasicLexer {
 
                 tokens.push(Token {
                     kind,
+                    span: Span::new(start, index),
+                    lexeme: lexeme.into(),
+                });
+                continue;
+            }
+
+            if byte == b'"' {
+                let start = index;
+                index += 1;
+                while index < bytes.len() && bytes[index] != b'"' {
+                    if bytes[index] == b'\\' && index + 1 < bytes.len() {
+                        index += 2;
+                    } else {
+                        index += 1;
+                    }
+                }
+                if index < bytes.len() {
+                    index += 1;
+                }
+                let lexeme = &source[start..index];
+                tokens.push(Token {
+                    kind: TokenKind::StringLiteral,
                     span: Span::new(start, index),
                     lexeme: lexeme.into(),
                 });

@@ -110,6 +110,7 @@ pub struct Expr {
 pub enum ExprKind {
     BoolLiteral(bool),
     NumberLiteral(SharedString),
+    StringLiteral(SharedString),
     Identifier(SharedString),
     Negation(Box<Expr>),
     UnaryMinus(Box<Expr>),
@@ -167,6 +168,7 @@ pub enum Type {
     I64,
     F32,
     F64,
+    String,
     Unit,
     Unknown,
     /// Native function type with signature.
@@ -206,6 +208,15 @@ impl Expr {
         Self {
             ty: infer_number_literal_type(value.as_str()),
             kind: ExprKind::NumberLiteral(value),
+            span,
+        }
+    }
+
+    pub fn string_literal(value: impl Into<SharedString>, span: Span) -> Self {
+        let value = value.into();
+        Self {
+            ty: Type::String,
+            kind: ExprKind::StringLiteral(value),
             span,
         }
     }
@@ -451,6 +462,9 @@ fn lower_expression(
         holo_ast::ExprKind::NumberLiteral(value) => {
             Expr::number_literal(value.clone(), expression.span)
         }
+        holo_ast::ExprKind::StringLiteral(value) => {
+            Expr::string_literal(value.clone(), expression.span)
+        }
         holo_ast::ExprKind::Identifier(name) => {
             let ty = lookup_scope(scopes, name).unwrap_or(Type::Unknown);
             Expr {
@@ -553,6 +567,7 @@ fn type_from_ref(type_ref: holo_ast::TypeRef) -> Type {
         holo_ast::TypeRef::I64 => Type::I64,
         holo_ast::TypeRef::F32 => Type::F32,
         holo_ast::TypeRef::F64 => Type::F64,
+        holo_ast::TypeRef::String => Type::String,
         holo_ast::TypeRef::Unit => Type::Unit,
     }
 }

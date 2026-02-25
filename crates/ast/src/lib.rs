@@ -108,6 +108,8 @@ pub enum ExprKind {
     BoolLiteral(bool),
     /// Numeric literal expression.
     NumberLiteral(SharedString),
+    /// String literal expression.
+    StringLiteral(SharedString),
     /// Identifier reference.
     Identifier(SharedString),
     /// Unary boolean negation (`!expr`).
@@ -201,6 +203,7 @@ pub enum TypeRef {
     I64,
     F32,
     F64,
+    String,
     Unit,
 }
 
@@ -225,6 +228,14 @@ impl Expr {
     pub fn number_literal(value: impl Into<SharedString>, span: Span) -> Self {
         Self {
             kind: ExprKind::NumberLiteral(value.into()),
+            span,
+        }
+    }
+
+    /// Creates a string literal expression from source text.
+    pub fn string_literal(value: impl Into<SharedString>, span: Span) -> Self {
+        Self {
+            kind: ExprKind::StringLiteral(value.into()),
             span,
         }
     }

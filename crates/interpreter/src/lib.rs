@@ -288,6 +288,7 @@ pub enum Value {
     I64(i64),
     F32(f32),
     F64(f64),
+    String(SharedString),
     Unit,
 }
 
@@ -412,6 +413,10 @@ impl BasicInterpreter {
                     span: expression.span,
                     message: "invalid number literal".into(),
                 }),
+            ExprKind::StringLiteral(literal) => {
+                let value = literal.trim_matches('"');
+                Ok(Value::String(value.into()))
+            }
             ExprKind::Identifier(name) => scopes.lookup(name).ok_or(RuntimeError {
                 span: expression.span,
                 message: format!("unknown identifier `{name}`").into(),

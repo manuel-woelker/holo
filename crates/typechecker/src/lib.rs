@@ -20,6 +20,7 @@ pub enum Type {
     I64,
     F32,
     F64,
+    String,
     Unit,
     Unknown,
 }
@@ -154,6 +155,7 @@ impl BasicTypechecker {
             Type::I64 => "i64",
             Type::F32 => "f32",
             Type::F64 => "f64",
+            Type::String => "string",
             Type::Unit => "()",
             Type::Unknown => "<unknown>",
         }
@@ -168,6 +170,7 @@ impl BasicTypechecker {
             TypeRef::I64 => Type::I64,
             TypeRef::F32 => Type::F32,
             TypeRef::F64 => Type::F64,
+            TypeRef::String => Type::String,
             TypeRef::Unit => Type::Unit,
         }
     }
@@ -181,6 +184,7 @@ impl BasicTypechecker {
             holo_interpreter::Type::I64 => Type::I64,
             holo_interpreter::Type::F32 => Type::F32,
             holo_interpreter::Type::F64 => Type::F64,
+            holo_interpreter::Type::String => Type::String,
             holo_interpreter::Type::Unit => Type::Unit,
             holo_interpreter::Type::Unknown => Type::Unknown,
             holo_interpreter::Type::NativeFunction { .. } => Type::Unknown,
@@ -422,6 +426,7 @@ impl BasicTypechecker {
             ExprKind::NumberLiteral(literal) => {
                 Self::infer_number_literal_type(literal, expected_type)
             }
+            ExprKind::StringLiteral(_) => Type::String,
             ExprKind::Identifier(name) => {
                 if let Some(symbol) = scopes.lookup(name) {
                     return symbol.ty;
