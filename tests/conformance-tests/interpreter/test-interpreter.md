@@ -247,3 +247,53 @@ fn comparison_in_function() {
 ```
 
 ### Succeeds
+
+## Case: print outputs without newline
+
+```holo
+#[test]
+fn print_no_newline() {
+    print(42i64);
+    assert(true);
+}
+```
+
+### Succeeds
+
+```output
+42
+```
+
+## Case: println outputs with newline
+
+```holo
+#[test]
+fn println_with_newline() {
+    println(123i64);
+    assert(true);
+}
+```
+
+### Succeeds
+
+```output
+123
+```
+
+## Case: print multiple values
+
+```holo
+#[test]
+fn print_multiple() {
+    print(1i64);
+    print(2i64);
+    print(3i64);
+    assert(true);
+}
+```
+
+### Succeeds
+
+```output
+123
+```

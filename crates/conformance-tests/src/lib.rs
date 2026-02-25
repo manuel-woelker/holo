@@ -57,6 +57,22 @@ impl HoloBlock {
 pub struct CaseOutcome {
     pub kind: SharedString,
     pub text: SharedString,
+    pub output: Option<SharedString>,
+}
+
+impl CaseOutcome {
+    pub fn success(text: impl Into<SharedString>) -> Self {
+        Self {
+            kind: "text".into(),
+            text: text.into(),
+            output: None,
+        }
+    }
+
+    pub fn with_output(mut self, output: impl Into<SharedString>) -> Self {
+        self.output = Some(output.into());
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +83,8 @@ pub struct CaseRecord {
     pub expected_text: SharedString,
     pub actual_kind: SharedString,
     pub actual_text: SharedString,
+    pub expected_output: Option<SharedString>,
+    pub actual_output: Option<SharedString>,
     pub passed: bool,
 }
 
@@ -218,6 +236,7 @@ fn expected_kind_from_section(section: Option<&str>) -> SharedString {
         "fails parsing" | "fails parse" => "fails-parse".into(),
         "fails typecheck" | "fails typechecking" => "fails-typecheck".into(),
         "fails interpreter" | "fails execution" | "fails runtime" => "fails-interpreter".into(),
+        "output" => "output".into(),
         _ => "text".into(),
     }
 }
@@ -237,6 +256,7 @@ fn outcome_kind_from_heading(heading: &str) -> Option<SharedString> {
         "fails interpreter" | "fails execution" | "fails runtime" => {
             Some("fails-interpreter".into())
         }
+        "output" => Some("output".into()),
         _ => None,
     }
 }
@@ -413,10 +433,14 @@ pub fn normalize_rendered_output(content: &str) -> SharedString {
 }
 
 pub fn run_conformance_case(core: &mut CompilerCore, source: &str) -> CaseOutcome {
+    core.clear_captured_output();
+
     let file_path = "conformance-case.holo";
     let summary = core
         .process_source(&file_path.into(), source)
         .expect("conformance case should process");
+
+    let captured_output = core.get_captured_output();
 
     if let Some(diagnostic) = summary.diagnostics.iter().find(|diagnostic| {
         matches!(
@@ -429,6 +453,7 @@ pub fn run_conformance_case(core: &mut CompilerCore, source: &str) -> CaseOutcom
             text: normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(
                 diagnostic,
             ))),
+            output: captured_output,
         };
     }
 
@@ -442,6 +467,7 @@ pub fn run_conformance_case(core: &mut CompilerCore, source: &str) -> CaseOutcom
             text: normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(
                 diagnostic,
             ))),
+            output: captured_output,
         };
     }
 
@@ -473,12 +499,14 @@ pub fn run_conformance_case(core: &mut CompilerCore, source: &str) -> CaseOutcom
             text: normalize_rendered_output(&display_source_diagnostics(std::slice::from_ref(
                 &diagnostic,
             ))),
+            output: captured_output,
         };
     }
 
     CaseOutcome {
         kind: "text".into(),
         text: "ok".into(),
+        output: captured_output,
     }
 }
 
@@ -487,7 +515,7 @@ pub fn run_conformance_fixtures(
     suites: &[&str],
 ) -> Result<ConformanceRunSummary> {
     let workspace_root = workspace_root();
-    let mut core = CompilerCore::default();
+    let mut core = CompilerCore::with_output_capture();
 
     let mut summary = ConformanceRunSummary {
         total: 0,
@@ -530,6 +558,8 @@ pub fn run_conformance_fixtures(
                         expected_text: "well-formed conformance case".into(),
                         actual_kind: "lint-error".into(),
                         actual_text: issue.message,
+                        expected_output: None,
+                        actual_output: None,
                         passed: false,
                     });
                 }
@@ -567,6 +597,8 @@ pub fn run_conformance_fixtures(
                             expected_text,
                             actual_kind: actual.kind,
                             actual_text: actual.text,
+                            expected_output: None,
+                            actual_output: actual.output,
                             passed,
                         }
                     }
@@ -583,6 +615,8 @@ pub fn run_conformance_fixtures(
                             expected_text,
                             actual_kind: actual.kind,
                             actual_text: actual.text,
+                            expected_output: None,
+                            actual_output: actual.output,
                             passed,
                         }
                     }
@@ -593,6 +627,8 @@ pub fn run_conformance_fixtures(
                         expected_text: "case should contain one `holo` block".into(),
                         actual_kind: "missing-source-block".into(),
                         actual_text: "no `holo` block found".into(),
+                        expected_output: None,
+                        actual_output: None,
                         passed: false,
                     },
                     (_, None) => CaseRecord {
@@ -603,6 +639,8 @@ pub fn run_conformance_fixtures(
                             .into(),
                         actual_kind: "missing-expected-block".into(),
                         actual_text: "no expected block found".into(),
+                        expected_output: None,
+                        actual_output: None,
                         passed: false,
                     },
                 };
@@ -992,6 +1030,18 @@ ok
 
             # tests/conformance-tests/interpreter/test-interpreter.md
             ## Case: evaluates comparison in function context
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: print outputs without newline
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: println outputs with newline
+            ok
+
+            # tests/conformance-tests/interpreter/test-interpreter.md
+            ## Case: print multiple values
             ok
 
             # tests/conformance-tests/end_to_end/test-end-to-end.md

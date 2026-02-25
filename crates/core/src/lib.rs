@@ -72,6 +72,42 @@ impl Default for CompilerCore {
     }
 }
 
+impl CompilerCore {
+    /// Gets the captured output from native function print calls.
+    ///
+    /// Returns None if no output buffer is set.
+    pub fn get_captured_output(&self) -> Option<holo_base::SharedString> {
+        self.interpreter.get_captured_output()
+    }
+
+    /// Clears the captured output buffer.
+    pub fn clear_captured_output(&self) {
+        self.interpreter.clear_captured_output();
+    }
+
+    /// Creates a core configured for testing with output capture enabled.
+    ///
+    /// This creates a native function registry that captures print/println output
+    /// to a buffer that can be retrieved via [`get_captured_output`](Self::get_captured_output).
+    pub fn with_output_capture() -> Self {
+        use holo_interpreter::native_functions;
+
+        let (registry, _buffer) = native_functions::create_test_registry();
+
+        Self {
+            lexer: BasicLexer::default(),
+            parser: BasicParser::default(),
+            typechecker: BasicTypechecker::new(registry.clone()),
+            interpreter: BasicInterpreter::new(registry.clone()),
+            native_functions: registry,
+            query_store: InMemoryQueryStore::default(),
+            cycle_cache: HashMap::new(),
+            test_result_cache: HashMap::new(),
+            persisted_cache: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CachedTestRun {
     result: holo_interpreter::TestResult,

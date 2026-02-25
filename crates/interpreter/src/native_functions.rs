@@ -242,6 +242,7 @@ pub fn create_test_registry() -> (Arc<NativeFunctionRegistry>, Arc<Mutex<SharedS
     ));
 
     let mut registry = NativeFunctionRegistry::default();
+    registry.set_output_buffer(buffer.clone());
     registry.register(PrintFunction::with_output(output.clone()));
     registry.register(PrintlnFunction::with_output(output));
 

@@ -4,7 +4,7 @@ pub mod native_functions;
 pub mod output_stream;
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use holo_base::{SharedString, Span, TaskTimer, TaskTiming};
 pub use holo_ir::Type;
@@ -93,9 +93,18 @@ pub trait NativeFunction: Send + Sync {
 /// let mut registry = NativeFunctionRegistry::default();
 /// // registry.register(MyCustomFunction::new());
 /// ```
-#[derive(Default)]
 pub struct NativeFunctionRegistry {
     functions: HashMap<SharedString, Arc<dyn NativeFunction>>,
+    output_buffer: Option<Arc<Mutex<SharedString>>>,
+}
+
+impl Default for NativeFunctionRegistry {
+    fn default() -> Self {
+        Self {
+            functions: HashMap::new(),
+            output_buffer: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for NativeFunctionRegistry {
@@ -109,7 +118,10 @@ impl std::fmt::Debug for NativeFunctionRegistry {
 impl NativeFunctionRegistry {
     /// Creates a new empty native function registry.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            functions: HashMap::new(),
+            output_buffer: None,
+        }
     }
 
     /// Registers a native function in the registry.
@@ -148,6 +160,36 @@ impl NativeFunctionRegistry {
     /// Returns an iterator over all registered native functions.
     pub fn iter(&self) -> impl Iterator<Item = (&SharedString, &Arc<dyn NativeFunction>)> {
         self.functions.iter()
+    }
+
+    /// Sets the output buffer for capturing print output.
+    ///
+    /// When set, print functions will write to this buffer instead of stdout.
+    pub fn set_output_buffer(&mut self, buffer: Arc<Mutex<SharedString>>) {
+        self.output_buffer = Some(buffer);
+    }
+
+    /// Returns a reference to the output buffer if set.
+    pub fn output_buffer(&self) -> Option<&Arc<Mutex<SharedString>>> {
+        self.output_buffer.as_ref()
+    }
+
+    /// Gets the captured output from the buffer.
+    ///
+    /// Returns None if no output buffer is set.
+    pub fn get_captured_output(&self) -> Option<SharedString> {
+        self.output_buffer
+            .as_ref()
+            .map(|buf| buf.lock().unwrap().clone())
+    }
+
+    /// Clears the output buffer.
+    ///
+    /// Does nothing if no output buffer is set.
+    pub fn clear_output_buffer(&self) {
+        if let Some(buf) = &self.output_buffer {
+            buf.lock().unwrap().clear();
+        }
     }
 }
 
@@ -215,6 +257,18 @@ impl BasicInterpreter {
     /// Creates a new interpreter with an empty native function registry.
     pub fn with_empty_registry() -> Self {
         Self::new(Arc::new(NativeFunctionRegistry::default()))
+    }
+
+    /// Gets the captured output from the native function registry.
+    ///
+    /// Returns None if no output buffer is set.
+    pub fn get_captured_output(&self) -> Option<SharedString> {
+        self.native_functions.get_captured_output()
+    }
+
+    /// Clears the output buffer in the native function registry.
+    pub fn clear_captured_output(&self) {
+        self.native_functions.clear_output_buffer();
     }
 }
 
