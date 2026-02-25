@@ -369,6 +369,7 @@ impl BasicTypechecker {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn typecheck_expression(
         expression: &Expr,
         diagnostics: &mut Vec<SourceDiagnostic>,

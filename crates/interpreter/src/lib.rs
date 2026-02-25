@@ -108,7 +108,7 @@ impl RuntimeScopes {
 }
 
 impl BasicInterpreter {
-    fn ordered_tests<'a>(tests: &'a [TestItem]) -> Vec<&'a TestItem> {
+    fn ordered_tests(tests: &[TestItem]) -> Vec<&TestItem> {
         let mut ordered = tests.iter().collect::<Vec<_>>();
         ordered.sort_by(|left, right| {
             left.name

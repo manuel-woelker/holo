@@ -393,11 +393,12 @@ impl CompilerCore {
             tests,
             diagnostics,
             timings: {
-                let mut timings = Vec::new();
-                timings.push(parse_timing);
-                timings.push(typecheck_timing);
-                timings.push(lower_ir_timing);
-                timings.push(run_tests_timing);
+                let mut timings = vec![
+                    parse_timing,
+                    typecheck_timing,
+                    lower_ir_timing,
+                    run_tests_timing,
+                ];
                 timings.extend(typecheck_timings);
                 timings.extend(test_timings);
                 timings
