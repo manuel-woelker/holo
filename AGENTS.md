@@ -32,6 +32,8 @@ Use `holo_base::SharedString` instead of `String` for project-owned string data 
 
 Every code change must be accompanied by an entry in the development journal. Create or append to a file at `docs/journal/YYYY-MM-DD.md` using the following format:
 
+> **Reminder:** Write a journal entry BEFORE committing. This is required for every code change.
+
 ```markdown
 ### HH:MM - [Synopsis of the change] [Name of agent/model and version]
 
@@ -131,6 +133,8 @@ Run `scripts/check-code.sh` before finishing a feature to validate formatting, l
 Commit message should be in the "Conventional Commits" format, e.g. "feat(UI): Add about button to see version and build date".
 
 Below the first line include detail information about the changes made.
+
+**Important: Always write a journal entry before committing.** See the Development Journal section for the required format. A commit without a corresponding journal entry is incomplete.
 
 Never push code or ask to push code.
 
