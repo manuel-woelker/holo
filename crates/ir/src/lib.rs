@@ -111,6 +111,7 @@ pub enum ExprKind {
     BoolLiteral(bool),
     NumberLiteral(SharedString),
     StringLiteral(SharedString),
+    TemplateString(Vec<IrTemplatePart>),
     Identifier(SharedString),
     Negation(Box<Expr>),
     UnaryMinus(Box<Expr>),
@@ -119,6 +120,15 @@ pub enum ExprKind {
     If(IfExpr),
     While(WhileExpr),
     Block(BlockExpr),
+}
+
+/// A part of a template string in IR - either literal text or an expression to interpolate.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum IrTemplatePart {
+    /// Literal text content.
+    Literal(SharedString),
+    /// Expression to interpolate.
+    Expression(Box<Expr>),
 }
 
 /// Typed binary expression payload.
@@ -217,6 +227,14 @@ impl Expr {
         Self {
             ty: Type::String,
             kind: ExprKind::StringLiteral(value),
+            span,
+        }
+    }
+
+    pub fn template_string(parts: Vec<IrTemplatePart>, span: Span) -> Self {
+        Self {
+            ty: Type::String,
+            kind: ExprKind::TemplateString(parts),
             span,
         }
     }
@@ -464,6 +482,18 @@ fn lower_expression(
         }
         holo_ast::ExprKind::StringLiteral(value) => {
             Expr::string_literal(value.clone(), expression.span)
+        }
+        holo_ast::ExprKind::TemplateString(parts) => {
+            let ir_parts: Vec<IrTemplatePart> = parts
+                .iter()
+                .map(|part| match part {
+                    holo_ast::TemplatePart::Literal(s) => IrTemplatePart::Literal(s.clone()),
+                    holo_ast::TemplatePart::Expression(e) => IrTemplatePart::Expression(Box::new(
+                        lower_expression(e, function_types, scopes),
+                    )),
+                })
+                .collect();
+            Expr::template_string(ir_parts, expression.span)
         }
         holo_ast::ExprKind::Identifier(name) => {
             let ty = lookup_scope(scopes, name).unwrap_or(Type::Unknown);

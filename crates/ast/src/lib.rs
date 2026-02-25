@@ -110,6 +110,8 @@ pub enum ExprKind {
     NumberLiteral(SharedString),
     /// String literal expression.
     StringLiteral(SharedString),
+    /// Template string expression with interpolation.
+    TemplateString(Vec<TemplatePart>),
     /// Identifier reference.
     Identifier(SharedString),
     /// Unary boolean negation (`!expr`).
@@ -126,6 +128,15 @@ pub enum ExprKind {
     While(WhileExpr),
     /// Block expression.
     Block(BlockExpr),
+}
+
+/// A part of a template string - either literal text or an expression to interpolate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TemplatePart {
+    /// Literal text content.
+    Literal(SharedString),
+    /// Expression to interpolate.
+    Expression(Expr),
 }
 
 /// Binary expression payload.
@@ -236,6 +247,14 @@ impl Expr {
     pub fn string_literal(value: impl Into<SharedString>, span: Span) -> Self {
         Self {
             kind: ExprKind::StringLiteral(value.into()),
+            span,
+        }
+    }
+
+    /// Creates a template string expression.
+    pub fn template_string(parts: Vec<TemplatePart>, span: Span) -> Self {
+        Self {
+            kind: ExprKind::TemplateString(parts),
             span,
         }
     }

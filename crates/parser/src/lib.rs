@@ -2,7 +2,7 @@
 
 use holo_ast::{
     AssertStatement, BinaryOperator, Expr, ExprStatement, FunctionItem, FunctionParameter,
-    LetStatement, Module, Statement, TestItem, TypeRef,
+    LetStatement, Module, Statement, TemplatePart, TestItem, TypeRef,
 };
 use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, Span};
 use holo_lexer::{Token, TokenKind};
@@ -272,6 +272,82 @@ impl<'a> ParserState<'a> {
         self.parse_equality()
     }
 
+    fn parse_template_string_contents(
+        &mut self,
+        contents: &str,
+        _full_span: Span,
+    ) -> Option<Vec<TemplatePart>> {
+        let mut parts = Vec::new();
+        let mut current_literal = String::new();
+        let bytes = contents.as_bytes();
+        let mut i = 1; // Skip opening backtick
+
+        while i < bytes.len() {
+            if bytes[i] == b'{' {
+                // Save current literal
+                if !current_literal.is_empty() {
+                    parts.push(TemplatePart::Literal(current_literal.clone().into()));
+                    current_literal.clear();
+                }
+                // Find matching closing brace
+                let mut depth = 1;
+                let start = i + 1;
+                i += 1;
+                while i < bytes.len() && depth > 0 {
+                    if bytes[i] == b'{' {
+                        depth += 1;
+                    } else if bytes[i] == b'}' {
+                        depth -= 1;
+                    }
+                    i += 1;
+                }
+                let end = i - 1;
+                // Extract expression source
+                let expr_source = &contents[start..end];
+                // Lex and parse the expression
+                use holo_lexer::Lexer as _;
+                let lexer = holo_lexer::BasicLexer::default();
+                let result = lexer.lex(expr_source);
+                let tokens: Vec<_> = result
+                    .tokens
+                    .into_iter()
+                    .map(|t| Token {
+                        kind: t.kind,
+                        span: Span::new(0, 0),
+                        lexeme: t.lexeme,
+                    })
+                    .collect();
+                let mut parser = ParserState::new(&tokens, "");
+                if let Some(expr) = parser.parse_expression() {
+                    parts.push(TemplatePart::Expression(expr));
+                }
+            } else if bytes[i] == b'\\'
+                && i + 1 < bytes.len()
+                && (bytes[i + 1] == b'{' || bytes[i + 1] == b'}')
+            {
+                current_literal.push(bytes[i + 1] as char);
+                i += 2;
+            } else if bytes[i] != b'`' {
+                current_literal.push(bytes[i] as char);
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+
+        // Add remaining literal
+        if !current_literal.is_empty() {
+            parts.push(TemplatePart::Literal(current_literal.into()));
+        }
+
+        // If no parts, add empty string
+        if parts.is_empty() {
+            parts.push(TemplatePart::Literal("".into()));
+        }
+
+        Some(parts)
+    }
+
     fn parse_equality(&mut self) -> Option<Expr> {
         let mut left = self.parse_comparison()?;
         loop {
@@ -419,6 +495,12 @@ impl<'a> ParserState<'a> {
                 TokenKind::StringLiteral => {
                     let literal = self.advance().expect("peek guaranteed token");
                     return Some(Expr::string_literal(literal.lexeme.clone(), literal.span));
+                }
+                TokenKind::TemplateString => {
+                    let token = self.advance().expect("peek guaranteed token");
+                    let parts =
+                        self.parse_template_string_contents(token.lexeme.as_str(), token.span)?;
+                    return Some(Expr::template_string(parts, token.span));
                 }
                 TokenKind::Identifier => {
                     let name = self.advance().expect("peek guaranteed token");
@@ -672,6 +754,7 @@ fn token_kind_name(kind: TokenKind) -> &'static str {
         TokenKind::Identifier => "identifier",
         TokenKind::Number => "number literal",
         TokenKind::StringLiteral => "string literal",
+        TokenKind::TemplateString => "template string",
         TokenKind::DoubleEquals => "`==`",
         TokenKind::BangEquals => "`!=`",
         TokenKind::LessThan => "`<`",

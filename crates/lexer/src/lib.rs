@@ -40,6 +40,7 @@ pub enum TokenKind {
     Identifier,
     Number,
     StringLiteral,
+    TemplateString,
 }
 
 /// Source token with kind and byte span.
@@ -133,6 +134,49 @@ impl Lexer for BasicLexer {
                 let lexeme = &source[start..index];
                 tokens.push(Token {
                     kind: TokenKind::StringLiteral,
+                    span: Span::new(start, index),
+                    lexeme: lexeme.into(),
+                });
+                continue;
+            }
+
+            // Handle template strings (`...` with {} interpolation)
+            if byte == b'`' {
+                let start = index;
+                index += 1;
+                let mut depth = 0;
+                while index < bytes.len() {
+                    if bytes[index] == b'{' {
+                        depth += 1;
+                        index += 1;
+                    } else if bytes[index] == b'}' && depth > 0 {
+                        depth -= 1;
+                        index += 1;
+                    } else if bytes[index] == b'`' && depth == 0 {
+                        index += 1;
+                        break;
+                    } else if bytes[index] == b'\\' && index + 1 < bytes.len() {
+                        index += 2;
+                    } else {
+                        index += 1;
+                    }
+                }
+                if depth != 0 {
+                    diagnostics.push(
+                        SourceDiagnostic::new(
+                            DiagnosticKind::Lexing,
+                            "unterminated template string",
+                        )
+                        .with_annotated_span(
+                            Span::new(start, index),
+                            "template string never closes",
+                        )
+                        .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                    );
+                }
+                let lexeme = &source[start..index];
+                tokens.push(Token {
+                    kind: TokenKind::TemplateString,
                     span: Span::new(start, index),
                     lexeme: lexeme.into(),
                 });

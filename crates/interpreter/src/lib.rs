@@ -399,6 +399,20 @@ impl BasicInterpreter {
         literal.parse().ok().map(Value::I64)
     }
 
+    fn value_to_string(value: &Value) -> String {
+        match value {
+            Value::Bool(b) => b.to_string(),
+            Value::U32(n) => n.to_string(),
+            Value::U64(n) => n.to_string(),
+            Value::I32(n) => n.to_string(),
+            Value::I64(n) => n.to_string(),
+            Value::F32(n) => n.to_string(),
+            Value::F64(n) => n.to_string(),
+            Value::String(s) => s.to_string(),
+            Value::Unit => "()".to_string(),
+        }
+    }
+
     fn eval_expr(
         expression: &Expr,
         scopes: &mut RuntimeScopes,
@@ -416,6 +430,20 @@ impl BasicInterpreter {
             ExprKind::StringLiteral(literal) => {
                 let value = literal.trim_matches('"');
                 Ok(Value::String(value.into()))
+            }
+            ExprKind::TemplateString(parts) => {
+                let mut result = String::new();
+                for part in parts {
+                    match part {
+                        holo_ir::IrTemplatePart::Literal(s) => result.push_str(s.as_str()),
+                        holo_ir::IrTemplatePart::Expression(expr) => {
+                            let value =
+                                Self::eval_expr(expr, scopes, functions, native_functions, None)?;
+                            result.push_str(&Self::value_to_string(&value));
+                        }
+                    }
+                }
+                Ok(Value::String(result.into()))
             }
             ExprKind::Identifier(name) => scopes.lookup(name).ok_or(RuntimeError {
                 span: expression.span,

@@ -427,6 +427,23 @@ impl BasicTypechecker {
                 Self::infer_number_literal_type(literal, expected_type)
             }
             ExprKind::StringLiteral(_) => Type::String,
+            ExprKind::TemplateString(parts) => {
+                for part in parts {
+                    if let holo_ast::TemplatePart::Expression(expr) = part {
+                        Self::typecheck_expression(
+                            expr,
+                            diagnostics,
+                            source,
+                            function_types,
+                            function_spans,
+                            scopes,
+                            assertion_count,
+                            None,
+                        );
+                    }
+                }
+                Type::String
+            }
             ExprKind::Identifier(name) => {
                 if let Some(symbol) = scopes.lookup(name) {
                     return symbol.ty;
