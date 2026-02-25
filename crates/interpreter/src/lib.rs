@@ -1,5 +1,7 @@
 //! Test interpreter for the minimal holo language.
 
+pub mod native_functions;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

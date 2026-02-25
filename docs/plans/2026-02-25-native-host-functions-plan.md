@@ -367,14 +367,14 @@ holo_native_function! {
 - [ ] Run tests: `cargo test --workspace`
 - [ ] Run checks: `./scripts/check-code.sh`
 
-### Phase 6: Example Native Functions
+### Phase 6: Example Native Functions ✅
 
-- [ ] Create example `print()` function
-- [ ] Create example `println()` function
-- [ ] Test native functions from holo code
-- [ ] Add integration tests
-- [ ] Run tests: `cargo test --workspace`
-- [ ] Run checks: `./scripts/check-code.sh`
+- [x] Create example `print()` function
+- [x] Create example `println()` function
+- [x] Test native functions from holo code
+- [x] Add integration tests
+- [x] Run tests: `cargo test --workspace`
+- [x] Run checks: `./scripts/check-code.sh`
 
 ### Phase 7: Documentation & Cleanup
 

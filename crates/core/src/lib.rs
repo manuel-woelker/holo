@@ -16,7 +16,8 @@ use holo_base::{
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{
-    BasicInterpreter, Interpreter, NativeFunctionRegistry, TestRunSummary, TestStatus,
+    native_functions, BasicInterpreter, Interpreter, NativeFunctionRegistry, TestRunSummary,
+    TestStatus,
 };
 use holo_ir::{lower_module, Module as IrModule, TestItem as IrTestItem};
 use holo_lexer::{BasicLexer, Lexer};
@@ -56,7 +57,7 @@ pub struct CompilerCore {
 
 impl Default for CompilerCore {
     fn default() -> Self {
-        let native_functions = Arc::new(NativeFunctionRegistry::default());
+        let native_functions = native_functions::create_builtin_registry();
         Self {
             lexer: BasicLexer::default(),
             parser: BasicParser::default(),
