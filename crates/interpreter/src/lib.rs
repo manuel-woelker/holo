@@ -1,6 +1,7 @@
 //! Test interpreter for the minimal holo language.
 
 pub mod native_functions;
+pub mod output_stream;
 
 use std::collections::HashMap;
 use std::sync::Arc;

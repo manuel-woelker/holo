@@ -49,9 +49,10 @@
 //! }
 //! ```
 
+use crate::output_stream::{OutputStream, ProductionOutputStream};
 use crate::{NativeFunction, NativeFunctionRegistry, RuntimeError, Type, Value};
 use holo_base::SharedString;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Native function that prints an i64 value to stdout.
 ///
@@ -68,19 +69,30 @@ use std::sync::Arc;
 /// ```
 pub struct PrintFunction {
     name: SharedString,
+    output: Arc<dyn OutputStream>,
 }
 
 impl Default for PrintFunction {
     fn default() -> Self {
         Self {
             name: "print".into(),
+            output: Arc::new(ProductionOutputStream::stdout()),
         }
     }
 }
 
 impl PrintFunction {
+    /// Creates a new print function with the default stdout output stream.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new print function with a custom output stream.
+    pub fn with_output(output: Arc<dyn OutputStream>) -> Self {
+        Self {
+            name: "print".into(),
+            output,
+        }
     }
 }
 
@@ -99,7 +111,7 @@ impl NativeFunction for PrintFunction {
 
     fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError> {
         if let Some(Value::I64(n)) = args.first() {
-            print!("{}", n);
+            self.output.write(&n.to_string());
         }
         Ok(Value::Unit)
     }
@@ -120,19 +132,30 @@ impl NativeFunction for PrintFunction {
 /// ```
 pub struct PrintlnFunction {
     name: SharedString,
+    output: Arc<dyn OutputStream>,
 }
 
 impl Default for PrintlnFunction {
     fn default() -> Self {
         Self {
             name: "println".into(),
+            output: Arc::new(ProductionOutputStream::stdout()),
         }
     }
 }
 
 impl PrintlnFunction {
+    /// Creates a new println function with the default stdout output stream.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new println function with a custom output stream.
+    pub fn with_output(output: Arc<dyn OutputStream>) -> Self {
+        Self {
+            name: "println".into(),
+            output,
+        }
     }
 }
 
@@ -151,7 +174,7 @@ impl NativeFunction for PrintlnFunction {
 
     fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError> {
         if let Some(Value::I64(n)) = args.first() {
-            println!("{}", n);
+            self.output.write_line(&n.to_string());
         }
         Ok(Value::Unit)
     }
@@ -185,9 +208,52 @@ pub fn create_builtin_registry() -> Arc<NativeFunctionRegistry> {
     Arc::new(registry)
 }
 
+/// Creates a registry with test output streams for capturing print output.
+///
+/// This function creates print functions that write to a shared buffer,
+/// useful for testing and conformance tests where print output needs to be
+/// captured for comparison.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - The registry with test-configured print functions
+/// - An Arc to the shared buffer for reading captured output
+///
+/// # Example
+///
+/// ```rust
+/// use holo_interpreter::{native_functions, Value};
+/// use std::sync::{Arc, Mutex};
+/// use holo_base::SharedString;
+///
+/// let (registry, buffer) = native_functions::create_test_registry();
+/// // Get the print function and call it
+/// let print_fn = registry.lookup(&"print".into()).unwrap();
+/// print_fn.call(vec![Value::I64(42)]).ok();
+/// // Check the captured output
+/// let output = buffer.lock().unwrap();
+/// assert_eq!(output.as_str(), "42");
+/// ```
+pub fn create_test_registry() -> (Arc<NativeFunctionRegistry>, Arc<Mutex<SharedString>>) {
+    let buffer = Arc::new(Mutex::new(SharedString::new()));
+    let output = Arc::new(crate::output_stream::TestOutputStream::with_buffer(
+        buffer.clone(),
+    ));
+
+    let mut registry = NativeFunctionRegistry::default();
+    registry.register(PrintFunction::with_output(output.clone()));
+    registry.register(PrintlnFunction::with_output(output));
+
+    (Arc::new(registry), buffer)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::output_stream::TestOutputStream;
+    use holo_base::SharedString;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn print_function_has_correct_signature() {
@@ -207,18 +273,24 @@ mod tests {
 
     #[test]
     fn print_function_call_with_i64() {
-        let print = PrintFunction::new();
+        let buffer = Arc::new(Mutex::new(SharedString::new()));
+        let output = Arc::new(TestOutputStream::with_buffer(buffer.clone()));
+        let print = PrintFunction::with_output(output);
         let result = print.call(vec![Value::I64(42)]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Unit);
+        assert_eq!(buffer.lock().unwrap().as_str(), "42");
     }
 
     #[test]
     fn println_function_call_with_i64() {
-        let println = PrintlnFunction::new();
+        let buffer = Arc::new(Mutex::new(SharedString::new()));
+        let output = Arc::new(TestOutputStream::with_buffer(buffer.clone()));
+        let println = PrintlnFunction::with_output(output);
         let result = println.call(vec![Value::I64(42)]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Unit);
+        assert_eq!(buffer.lock().unwrap().as_str(), "42\n");
     }
 
     #[test]
