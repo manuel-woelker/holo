@@ -321,11 +321,25 @@ impl<'a> ParserState<'a> {
                 if let Some(expr) = parser.parse_expression() {
                     parts.push(TemplatePart::Expression(expr));
                 }
-            } else if bytes[i] == b'\\'
-                && i + 1 < bytes.len()
-                && (bytes[i + 1] == b'{' || bytes[i + 1] == b'}')
-            {
-                current_literal.push(bytes[i + 1] as char);
+            } else if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                let escaped = bytes[i + 1];
+                let replacement = match escaped {
+                    b'n' => '\n',
+                    b'r' => '\r',
+                    b't' => '\t',
+                    b'\\' => '\\',
+                    b'`' => '`',
+                    b'0' => '\0',
+                    b'b' => '\x08',
+                    b'f' => '\x0c',
+                    b'v' => '\x0b',
+                    b'$' => '$',
+                    _ => {
+                        current_literal.push('\\');
+                        bytes[i + 1] as char
+                    }
+                };
+                current_literal.push(replacement);
                 i += 2;
             } else if bytes[i] != b'`' {
                 current_literal.push(bytes[i] as char);

@@ -1139,6 +1139,46 @@ ok
                3 │ }
                  │ ┬─ expected `;`, found end of input
 
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: escape sequence newline
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: escape sequence tab
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: escape sequence backslash
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: escape sequence dollar sign
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: unicode characters
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: emojis
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: mixed escapes and interpolation
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: escaped braces
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: escaped backtick
+            ok
+
+            # tests/conformance-tests/end_to_end/template_strings.md
+            ## Case: multiple escapes in sequence
+            ok
+
             # tests/conformance-tests/end_to_end/test-end-to-end.md
             ## Case: simple test passes
             ok
