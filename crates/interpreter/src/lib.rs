@@ -99,7 +99,6 @@ pub struct NativeFunctionRegistry {
     output_buffer: Option<Arc<Mutex<SharedString>>>,
 }
 
-
 impl std::fmt::Debug for NativeFunctionRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeFunctionRegistry")

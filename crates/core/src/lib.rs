@@ -15,8 +15,7 @@ use holo_base::{
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{
-    native_functions, BasicInterpreter, Interpreter, TestRunSummary,
-    TestStatus,
+    native_functions, BasicInterpreter, Interpreter, TestRunSummary, TestStatus,
 };
 use holo_ir::{lower_module, Module as IrModule, TestItem as IrTestItem};
 use holo_lexer::{BasicLexer, Lexer};
