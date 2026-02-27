@@ -1,4 +1,4 @@
-use holo_base::{SharedString, SourceFile, Span};
+use holo_base::{SourceFile, Span};
 
 /// Token categories required by the initial parser milestone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -52,8 +52,8 @@ pub struct Token {
 
 impl Token {
     /// Returns the raw lexeme for this token from the given source file.
-    pub fn lexeme(&self, source: &SourceFile) -> SharedString {
-        source.source_at(self.span).into()
+    pub fn lexeme<'a>(&self, source: &'a SourceFile) -> &'a str {
+        source.source_at(self.span)
     }
 }
 
