@@ -31,7 +31,11 @@ impl<'a> Cycle<'a> {
         let parser = BasicParser;
 
         for file_path in dirty_files {
-            let Ok(content) = std::fs::read_to_string(file_path.as_str()) else {
+            let Ok(content) = self
+                .engine
+                .filesystem
+                .read_to_string(std::path::Path::new(file_path.as_str()))
+            else {
                 continue;
             };
 
