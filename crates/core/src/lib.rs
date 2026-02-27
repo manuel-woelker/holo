@@ -825,6 +825,7 @@ enum PersistedDiagnosticKind {
     Lexing,
     Parsing,
     Typecheck,
+    Io,
     Test,
 }
 
@@ -958,6 +959,7 @@ impl PersistedDiagnostic {
                 DiagnosticKind::Lexing => PersistedDiagnosticKind::Lexing,
                 DiagnosticKind::Parsing => PersistedDiagnosticKind::Parsing,
                 DiagnosticKind::Typecheck => PersistedDiagnosticKind::Typecheck,
+                DiagnosticKind::Io => PersistedDiagnosticKind::Io,
                 DiagnosticKind::Test => PersistedDiagnosticKind::Test,
             },
             message: diagnostic.message.to_string(),
@@ -989,6 +991,7 @@ impl PersistedDiagnostic {
                 PersistedDiagnosticKind::Lexing => DiagnosticKind::Lexing,
                 PersistedDiagnosticKind::Parsing => DiagnosticKind::Parsing,
                 PersistedDiagnosticKind::Typecheck => DiagnosticKind::Typecheck,
+                PersistedDiagnosticKind::Io => DiagnosticKind::Io,
                 PersistedDiagnosticKind::Test => DiagnosticKind::Test,
             },
             self.message,

@@ -10,6 +10,8 @@ pub enum DiagnosticKind {
     Parsing,
     /// Produced while checking semantic/type constraints.
     Typecheck,
+    /// Produced while reading from the file system.
+    Io,
     /// Produced while running tests.
     Test,
 }
@@ -270,7 +272,7 @@ pub fn display_source_diagnostics(diagnostics: &[SourceDiagnostic]) -> SharedStr
 impl DiagnosticKind {
     fn marker(self) -> &'static str {
         match self {
-            Self::Lexing | Self::Parsing | Self::Typecheck => "⚒️",
+            Self::Lexing | Self::Parsing | Self::Typecheck | Self::Io => "⚒️",
             Self::Test => "🧪",
         }
     }
@@ -280,6 +282,7 @@ impl DiagnosticKind {
             Self::Lexing => "lexing error",
             Self::Parsing => "parsing error",
             Self::Typecheck => "typecheck error",
+            Self::Io => "io error",
             Self::Test => "test failure",
         }
     }
@@ -289,6 +292,7 @@ impl DiagnosticKind {
             Self::Lexing => (ANSI_YELLOW, "Lexing"),
             Self::Parsing => (ANSI_RED, "Parsing"),
             Self::Typecheck => (ANSI_MAGENTA, "Typecheck"),
+            Self::Io => (ANSI_RED, "IO"),
             Self::Test => (ANSI_RED, "Test"),
         }
     }

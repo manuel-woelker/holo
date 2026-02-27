@@ -1,4 +1,4 @@
-use holo_base::FilePath;
+use holo_base::{FilePath, SharedString};
 
 /// Events that can occur during a compilation cycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8,7 +8,9 @@ pub enum CycleEvent {
     /// A file was skipped because its content hash hasn't changed.
     FileParseSkipped(FilePath),
     /// A file failed to be read.
-    FileReadError(FilePath),
+    FileReadError(FilePath, SharedString),
+    /// A general error occurred during the cycle.
+    Error(SharedString),
 }
 
 /// A trait for observing events during a compilation cycle.
@@ -25,7 +27,8 @@ impl CycleObserver for StdoutObserver {
         match event {
             CycleEvent::FileParsed(path) => println!("Parsed: {}", path),
             CycleEvent::FileParseSkipped(path) => println!("Skipped: {}", path),
-            CycleEvent::FileReadError(path) => println!("Read Error: {}", path),
+            CycleEvent::FileReadError(path, err) => println!("Read Error: {} ({})", path, err),
+            CycleEvent::Error(err) => println!("Error: {}", err),
         }
     }
 }
