@@ -10,6 +10,9 @@ if [[ ! -f "$MANIFEST_PATH" ]]; then
   exit 1
 fi
 
+echo "Running cargo build..."
+cargo build --manifest-path "$MANIFEST_PATH" --workspace --all-targets --all-features
+
 echo "Running cargo fmt..."
 cargo fmt --manifest-path "$MANIFEST_PATH" --all
 
