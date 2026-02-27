@@ -44,6 +44,11 @@ impl TestObserver {
     pub fn events(&self) -> Vec<CycleEvent> {
         self.events.lock().unwrap().clone()
     }
+
+    /// Clears the collected events.
+    pub fn clear_events(&self) {
+        self.events.lock().unwrap().clear();
+    }
 }
 
 impl CycleObserver for TestObserver {
