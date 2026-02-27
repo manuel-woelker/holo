@@ -1,3 +1,8 @@
+//! Conformance test framework for holo language semantics.
+//!
+//! Provides markdown-based test fixtures that define expected compiler behavior.
+//! Test suites include: parser, typechecker, interpreter, and end-to-end tests.
+
 use holo_base::{
     display_source_diagnostics, holo_message_error, DiagnosticKind, FilePath, Result, SharedString,
     SourceDiagnostic, SourceExcerpt,

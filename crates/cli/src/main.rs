@@ -1,3 +1,13 @@
+//! Command-line interface for the holo programming language.
+//!
+//! Provides multiple execution modes:
+//! - `build` - Single compile/test cycle
+//! - `daemon` - Long-running file watcher with incremental compilation
+//! - `deck` - Terminal UI dashboard showing project status
+//! - `version` - Display project version
+//!
+//! The CLI orchestrates the daemon and connects to it via IPC for interactive sessions.
+
 use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs;
