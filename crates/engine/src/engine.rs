@@ -1,3 +1,5 @@
+use crate::cycle::Cycle;
+
 /// The core incremental compilation engine.
 ///
 /// This engine manages the project state and coordinates the 5-stage
@@ -26,6 +28,7 @@ impl Engine {
     /// Each cycle progresses through the 5 stages of compilation, omitting
     /// work for components that haven't changed since the last pulse.
     pub fn run_cycle(&mut self) {
-        // Implementation will follow in subsequent steps.
+        let mut cycle = Cycle::new(self);
+        cycle.run();
     }
 }

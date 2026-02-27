@@ -3,6 +3,7 @@
 //! This crate implements the 5-stage incremental compilation pipeline
 //! as defined in the project design documents.
 
+pub mod cycle;
 pub mod engine;
 
 pub use engine::Engine;
