@@ -4,9 +4,9 @@ pub mod native_functions;
 pub mod output_stream;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use holo_base::{SharedString, Span, TaskTimer, TaskTiming};
+use holo_base::{Mutex, SharedString, Span, TaskTimer, TaskTiming};
 pub use holo_ir::Type;
 use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, TestItem};
 use tracing::info;
@@ -170,9 +170,7 @@ impl NativeFunctionRegistry {
     ///
     /// Returns None if no output buffer is set.
     pub fn get_captured_output(&self) -> Option<SharedString> {
-        self.output_buffer
-            .as_ref()
-            .map(|buf| buf.lock().unwrap().clone())
+        self.output_buffer.as_ref().map(|buf| buf.lock().clone())
     }
 
     /// Clears the output buffer.
@@ -180,7 +178,7 @@ impl NativeFunctionRegistry {
     /// Does nothing if no output buffer is set.
     pub fn clear_output_buffer(&self) {
         if let Some(buf) = &self.output_buffer {
-            buf.lock().unwrap().clear();
+            buf.lock().clear();
         }
     }
 }

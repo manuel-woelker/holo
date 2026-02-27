@@ -15,12 +15,12 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use holo_ast::Statement;
-use holo_base::{holo_message_error, FilePath, Result, SharedString, TaskTiming};
+use holo_base::{holo_message_error, FilePath, Mutex, Result, SharedString, TaskTiming};
 use holo_core::daemon::{CoreDaemon, DaemonStatusUpdate};
 use holo_core::CompilerCore;
 use holo_deck::{
@@ -119,9 +119,8 @@ fn run_daemon_mode(root_dir: &Path) -> Result<()> {
         println!("{}", startup_update.to_report());
     } else {
         info!("no .holo files found during daemon startup");
-        if let Ok(mut guard) = state.lock() {
-            guard.daemon_state = "Green".into();
-        }
+        let mut guard = state.lock();
+        guard.daemon_state = "Green".into();
         broadcast_to_subscribers(&subscribers, DaemonEvent::Lifecycle("Green".into()));
         set_dependency_graph_and_broadcast(
             &state,
@@ -238,11 +237,7 @@ fn handle_ipc_connection(
 
     match request {
         Request::GetIssues => {
-            let issues = state
-                .lock()
-                .map_err(|_| holo_message_error!("daemon state lock poisoned"))?
-                .issues
-                .clone();
+            let issues = state.lock().issues.clone();
             connection.send(&WireMessage::Response {
                 request_id,
                 response: Response::IssuesSnapshot(issues),
@@ -256,16 +251,11 @@ fn handle_ipc_connection(
 
             let (tx, rx) = mpsc::channel::<DaemonEvent>();
             {
-                subscribers
-                    .lock()
-                    .map_err(|_| holo_message_error!("subscriber lock poisoned"))?
-                    .push(tx);
+                subscribers.lock().push(tx);
             }
 
             let (current_issues, current_state, current_logs, current_graph, current_performance) = {
-                let guard = state
-                    .lock()
-                    .map_err(|_| holo_message_error!("daemon state lock poisoned"))?;
+                let guard = state.lock();
                 (
                     guard.issues.clone(),
                     guard.daemon_state.clone(),
@@ -300,11 +290,7 @@ fn handle_ipc_connection(
             Ok(())
         }
         Request::GetStatus => {
-            let issue_count = state
-                .lock()
-                .map_err(|_| holo_message_error!("daemon state lock poisoned"))?
-                .issues
-                .len();
+            let issue_count = state.lock().issues.len();
             connection.send(&WireMessage::Response {
                 request_id,
                 response: Response::StatusReport(format!("issues: {issue_count}").into()),
@@ -325,11 +311,10 @@ fn apply_update_to_state_and_subscribers(
     let issues = derive_issues(update);
     let daemon_state: SharedString = daemon_state_label_for_update(update).into();
     let ordered_cycle_timings = format_cycle_timings(&update.cycle_timings);
-    if let Ok(mut guard) = state.lock() {
-        guard.issues = issues.clone();
-        guard.daemon_state = daemon_state.clone();
-        guard.performance_timings = ordered_cycle_timings.clone();
-    }
+    let mut guard = state.lock();
+    guard.issues = issues.clone();
+    guard.daemon_state = daemon_state.clone();
+    guard.performance_timings = ordered_cycle_timings.clone();
 
     broadcast_to_subscribers(subscribers, DaemonEvent::IssuesUpdated(issues));
     broadcast_to_subscribers(subscribers, DaemonEvent::Lifecycle(daemon_state));
@@ -357,10 +342,7 @@ fn broadcast_to_subscribers(
     subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
     event: DaemonEvent,
 ) {
-    let mut guard = match subscribers.lock() {
-        Ok(guard) => guard,
-        Err(_) => return,
-    };
+    let mut guard = subscribers.lock();
     guard.retain(|sender| sender.send(event.clone()).is_ok());
 }
 
@@ -369,13 +351,13 @@ fn append_log_and_broadcast(
     subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
     entry: SharedString,
 ) {
-    if let Ok(mut guard) = state.lock() {
-        guard.logs.push(entry.clone());
-        if guard.logs.len() > 500 {
-            let remove_count = guard.logs.len() - 500;
-            guard.logs.drain(0..remove_count);
-        }
+    let mut guard = state.lock();
+    guard.logs.push(entry.clone());
+    if guard.logs.len() > 500 {
+        let remove_count = guard.logs.len() - 500;
+        guard.logs.drain(0..remove_count);
     }
+    drop(guard);
     broadcast_to_subscribers(subscribers, DaemonEvent::CycleReport(entry));
 }
 
@@ -384,9 +366,9 @@ fn set_dependency_graph_and_broadcast(
     subscribers: &Arc<Mutex<Vec<mpsc::Sender<DaemonEvent>>>>,
     graph: SharedString,
 ) {
-    if let Ok(mut guard) = state.lock() {
-        guard.dependency_graph = graph.clone();
-    }
+    let mut guard = state.lock();
+    guard.dependency_graph = graph.clone();
+    drop(guard);
     broadcast_to_subscribers(subscribers, DaemonEvent::DependencyGraph(graph));
 }
 

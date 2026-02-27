@@ -51,8 +51,8 @@
 
 use crate::output_stream::{OutputStream, ProductionOutputStream};
 use crate::{NativeFunction, NativeFunctionRegistry, RuntimeError, Type, Value};
-use holo_base::SharedString;
-use std::sync::{Arc, Mutex};
+use holo_base::{Mutex, SharedString};
+use std::sync::Arc;
 
 /// Native function that prints an i64 value to stdout.
 ///
@@ -351,7 +351,8 @@ pub fn create_builtin_registry() -> Arc<NativeFunctionRegistry> {
 ///
 /// ```rust
 /// use holo_interpreter::{native_functions, Value};
-/// use std::sync::{Arc, Mutex};
+/// use holo_base::Mutex;
+/// use std::sync::Arc;
 /// use holo_base::SharedString;
 ///
 /// let (registry, buffer) = native_functions::create_test_registry();
@@ -359,7 +360,7 @@ pub fn create_builtin_registry() -> Arc<NativeFunctionRegistry> {
 /// let print_fn = registry.lookup(&"print".into()).unwrap();
 /// print_fn.call(vec![Value::I64(42)]).ok();
 /// // Check the captured output
-/// let output = buffer.lock().unwrap();
+/// let output = buffer.lock();
 /// assert_eq!(output.as_str(), "42");
 /// ```
 pub fn create_test_registry() -> (Arc<NativeFunctionRegistry>, Arc<Mutex<SharedString>>) {
@@ -382,8 +383,8 @@ pub fn create_test_registry() -> (Arc<NativeFunctionRegistry>, Arc<Mutex<SharedS
 mod tests {
     use super::*;
     use crate::output_stream::TestOutputStream;
-    use holo_base::SharedString;
-    use std::sync::{Arc, Mutex};
+    use holo_base::{Mutex, SharedString};
+    use std::sync::Arc;
 
     #[test]
     fn print_function_has_correct_signature() {
@@ -409,7 +410,7 @@ mod tests {
         let result = print.call(vec![Value::I64(42)]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Unit);
-        assert_eq!(buffer.lock().unwrap().as_str(), "42");
+        assert_eq!(buffer.lock().as_str(), "42");
     }
 
     #[test]
@@ -420,7 +421,7 @@ mod tests {
         let result = println.call(vec![Value::I64(42)]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Value::Unit);
-        assert_eq!(buffer.lock().unwrap().as_str(), "42\n");
+        assert_eq!(buffer.lock().as_str(), "42\n");
     }
 
     #[test]

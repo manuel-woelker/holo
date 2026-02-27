@@ -5,9 +5,9 @@
 //! - Production: stdout or stderr
 //! - Testing: an in-memory buffer for comparison
 
-use holo_base::SharedString;
+use holo_base::{Mutex, SharedString};
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Trait for outputting text from native print functions.
 ///
@@ -94,12 +94,12 @@ impl TestOutputStream {
     /// This clones the internal buffer, so it's safe to call while
     /// the output stream may still be in use.
     pub fn buffer(&self) -> SharedString {
-        self.buffer.lock().unwrap().clone()
+        self.buffer.lock().clone()
     }
 
     /// Clears the buffer.
     pub fn clear(&self) {
-        self.buffer.lock().unwrap().clear();
+        self.buffer.lock().clear();
     }
 }
 
@@ -111,7 +111,7 @@ impl Default for TestOutputStream {
 
 impl OutputStream for TestOutputStream {
     fn write(&self, value: &str) {
-        let mut buffer = self.buffer.lock().unwrap();
+        let mut buffer = self.buffer.lock();
         buffer.push_str(value);
     }
 }
