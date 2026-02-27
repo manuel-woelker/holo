@@ -475,7 +475,10 @@ dependencies = [
 name = "holo-engine"
 version = "0.1.0"
 dependencies = [
+ "holo-ast",
  "holo-base",
+ "holo-lexer",
+ "holo-parser",
 ]
 
 [[package]]
