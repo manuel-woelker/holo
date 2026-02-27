@@ -31,7 +31,7 @@ impl Default for Engine {
         Self {
             file_states: HashMap::new(),
             dirty_files: HashSet::new(),
-            filesystem: Arc::new(StdFileSystem),
+            filesystem: Arc::new(StdFileSystem::new_at_cwd()),
         }
     }
 }
