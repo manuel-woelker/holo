@@ -1,10 +1,7 @@
-use holo_base::SourceFile;
+use crate::engine::{Engine, FileState};
+use holo_base::{hash_string, SourceFile};
 use holo_lexer::{BasicLexer, Lexer};
 use holo_parser::{BasicParser, Parser};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
-use crate::engine::{Engine, FileState};
 
 /// Represents the state and logic of a single compilation cycle.
 pub struct Cycle<'a> {
@@ -35,9 +32,7 @@ impl<'a> Cycle<'a> {
                 continue;
             };
 
-            let mut hasher = DefaultHasher::new();
-            content.hash(&mut hasher);
-            let content_hash = hasher.finish();
+            let content_hash = hash_string(&content);
 
             // Omission logic: Skip if content hash hasn't changed
             if let Some(state) = self.engine.file_states.get(&file_path) {
@@ -48,7 +43,7 @@ impl<'a> Cycle<'a> {
 
             // Perform tokenization
             let lexed = lexer.lex(&content);
-            
+
             // Perform parsing
             let source_file = SourceFile::new(&content, file_path.clone());
             let parsed = parser.parse_module(&lexed.tokens, &source_file);

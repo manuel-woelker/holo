@@ -10,6 +10,7 @@ build = "build.rs"
 [dependencies]
 ecow = { version = "0.2", features = ["serde"] }
 parking_lot = "0.12"
+rapidhash = "4.4.1"
 relative-path = { version = "1.9", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 tracing = "0.1"
