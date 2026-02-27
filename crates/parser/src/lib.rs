@@ -4,13 +4,13 @@ use holo_ast::{
     AssertStatement, BinaryOperator, Expr, ExprStatement, FunctionItem, FunctionParameter,
     LetStatement, Module, Statement, TemplatePart, TestItem, TypeRef,
 };
-use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, Span};
+use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, SourceFile, Span};
 use holo_lexer::{Token, TokenKind};
 
 /// Parser abstraction used by the coordinating compiler core.
 pub trait Parser {
     /// Parses a full token stream into a module AST.
-    fn parse_module(&self, tokens: &[Token], source: &str) -> ParseResult;
+    fn parse_module(&self, tokens: &[Token], source: &SourceFile) -> ParseResult;
 }
 
 /// Result payload produced by parsing.
@@ -27,7 +27,7 @@ pub struct ParseResult {
 pub struct BasicParser;
 
 impl Parser for BasicParser {
-    fn parse_module(&self, tokens: &[Token], source: &str) -> ParseResult {
+    fn parse_module(&self, tokens: &[Token], source: &SourceFile) -> ParseResult {
         let mut parser = ParserState::new(tokens, source);
         parser.parse_module()
     }
@@ -36,19 +36,23 @@ impl Parser for BasicParser {
 #[derive(Debug)]
 struct ParserState<'a> {
     tokens: &'a [Token],
-    source: &'a str,
+    source: &'a SourceFile,
     index: usize,
     diagnostics: Vec<SourceDiagnostic>,
 }
 
 impl<'a> ParserState<'a> {
-    fn new(tokens: &'a [Token], source: &'a str) -> Self {
+    fn new(tokens: &'a [Token], source: &'a SourceFile) -> Self {
         Self {
             tokens,
             source,
             index: 0,
             diagnostics: Vec::new(),
         }
+    }
+
+    fn lexeme(&self, token: &Token) -> &str {
+        self.source.source_at(token.span)
     }
 
     fn parse_module(&mut self) -> ParseResult {
@@ -101,15 +105,15 @@ impl<'a> ParserState<'a> {
         )?;
         let attribute =
             self.expect(TokenKind::Identifier, "expected attribute name in `#[...]`")?;
-        if attribute.lexeme != "test" {
+        if self.lexeme(&attribute) != "test" {
             self.report_current(
                 format!(
                     "expected `#[test]` attribute, found `#[{}]`",
-                    attribute.lexeme
+                    self.lexeme(&attribute)
                 )
                 .into(),
                 attribute.span,
-                format!("unsupported test attribute `{}`", attribute.lexeme).into(),
+                format!("unsupported test attribute `{}`", self.lexeme(&attribute)).into(),
                 Some("use `#[test]` for executable test functions".into()),
             );
             self.recover_to_next_item();
@@ -152,7 +156,7 @@ impl<'a> ParserState<'a> {
         let close_brace = self.expect(TokenKind::CloseBrace, "expected `}` after function body")?;
 
         Some(FunctionItem {
-            name: name.lexeme.clone(),
+            name: self.lexeme(&name).into(),
             parameters,
             return_type,
             statements,
@@ -172,7 +176,7 @@ impl<'a> ParserState<'a> {
             self.expect(TokenKind::Colon, "expected `:` after parameter name")?;
             let ty = self.parse_type_ref()?;
             parameters.push(FunctionParameter {
-                name: name.lexeme.clone(),
+                name: self.lexeme(&name).into(),
                 ty,
                 span: Span::new(name.span.start, self.previous_span_end()),
             });
@@ -192,7 +196,7 @@ impl<'a> ParserState<'a> {
         }
 
         let token = self.expect(TokenKind::Identifier, "expected type name")?;
-        match token.lexeme.as_str() {
+        match self.lexeme(token) {
             "bool" => Some(TypeRef::Bool),
             "u32" => Some(TypeRef::U32),
             "u64" => Some(TypeRef::U64),
@@ -205,7 +209,7 @@ impl<'a> ParserState<'a> {
                 self.report_current(
                     "unknown type name".into(),
                     token.span,
-                    format!("unsupported type `{}`", token.lexeme).into(),
+                    format!("unsupported type `{}`", self.lexeme(token)).into(),
                     None,
                 );
                 None
@@ -236,7 +240,7 @@ impl<'a> ParserState<'a> {
         let semicolon = self.expect(TokenKind::Semicolon, "expected `;` after let statement")?;
 
         Some(LetStatement {
-            name: name.lexeme.clone(),
+            name: self.lexeme(&name).into(),
             ty,
             value,
             span: Span::new(let_keyword.span.start, semicolon.span.end),
@@ -314,10 +318,10 @@ impl<'a> ParserState<'a> {
                     .map(|t| Token {
                         kind: t.kind,
                         span: Span::new(0, 0),
-                        lexeme: t.lexeme,
                     })
                     .collect();
-                let mut parser = ParserState::new(&tokens, "");
+                let expr_source_file = SourceFile::new(expr_source, "");
+                let mut parser = ParserState::new(&tokens, &expr_source_file);
                 if let Some(expr) = parser.parse_expression() {
                     parts.push(TemplatePart::Expression(expr));
                 }
@@ -504,21 +508,22 @@ impl<'a> ParserState<'a> {
                 }
                 TokenKind::Number => {
                     let literal = self.advance().expect("peek guaranteed token");
-                    return Some(Expr::number_literal(literal.lexeme.clone(), literal.span));
+                    return Some(Expr::number_literal(self.lexeme(literal), literal.span));
                 }
                 TokenKind::StringLiteral => {
                     let literal = self.advance().expect("peek guaranteed token");
-                    return Some(Expr::string_literal(literal.lexeme.clone(), literal.span));
+                    return Some(Expr::string_literal(self.lexeme(literal), literal.span));
                 }
                 TokenKind::TemplateString => {
                     let token = self.advance().expect("peek guaranteed token");
-                    let parts =
-                        self.parse_template_string_contents(token.lexeme.as_str(), token.span)?;
-                    return Some(Expr::template_string(parts, token.span));
+                    let lexeme = self.lexeme(token).to_string();
+                    let span = token.span;
+                    let parts = self.parse_template_string_contents(&lexeme, span)?;
+                    return Some(Expr::template_string(parts, span));
                 }
                 TokenKind::Identifier => {
                     let name = self.advance().expect("peek guaranteed token");
-                    return Some(Expr::identifier(name.lexeme.clone(), name.span));
+                    return Some(Expr::identifier(self.lexeme(name), name.span));
                 }
                 TokenKind::OpenParen => {
                     let open = self.advance().expect("peek guaranteed token");
@@ -542,7 +547,7 @@ impl<'a> ParserState<'a> {
         self.report_current(
             "expected expression".into(),
             token.span,
-            format!("found `{}` instead", token.lexeme).into(),
+            format!("found `{}` instead", self.lexeme(token)).into(),
             None,
         );
         self.advance();
@@ -617,7 +622,7 @@ impl<'a> ParserState<'a> {
             self.report_current(
                 "expected `;` after expression in block".into(),
                 token.span,
-                format!("found `{}` instead", token.lexeme).into(),
+                format!("found `{}` instead", self.lexeme(token)).into(),
                 Some("add `;` or make this the trailing block expression".into()),
             );
             self.recover_statement();
@@ -684,7 +689,7 @@ impl<'a> ParserState<'a> {
                 format!(
                     "expected {}, found `{}`",
                     token_kind_name(kind),
-                    token.lexeme
+                    self.lexeme(token)
                 )
                 .into(),
                 None,
@@ -705,7 +710,7 @@ impl<'a> ParserState<'a> {
         let mut diagnostic = SourceDiagnostic::new(DiagnosticKind::Parsing, message)
             .with_error_code("P1000")
             .with_annotated_span(span, annotation)
-            .with_source_excerpt(SourceExcerpt::new(self.source, 1, 0));
+            .with_source_excerpt(SourceExcerpt::new(&self.source.source, 1, 0));
         if let Some(hint) = hint {
             diagnostic = diagnostic.with_hint(hint);
         }
@@ -782,12 +787,14 @@ fn token_kind_name(kind: TokenKind) -> &'static str {
 mod tests {
     use super::{BasicParser, Parser};
     use holo_ast::{expression::BinaryExpr, BinaryOperator, ExprKind, Statement, TypeRef};
+    use holo_base::SourceFile;
     use holo_lexer::{BasicLexer, Lexer};
 
     #[test]
     fn parses_empty_token_stream_to_empty_module() {
         let parser = BasicParser;
-        let result = parser.parse_module(&[], "");
+        let source_file = SourceFile::new("", "test.holo");
+        let result = parser.parse_module(&[], &source_file);
         let module = result.module;
         assert!(result.diagnostics.is_empty());
         assert!(module.functions.is_empty());
@@ -799,7 +806,8 @@ mod tests {
         let source = "#[test] fn sample() { assert(!false); }";
         let lexed = BasicLexer.lex(source);
         assert!(lexed.diagnostics.is_empty());
-        let parsed = BasicParser.parse_module(&lexed.tokens, source);
+        let source_file = SourceFile::new(source, "test.holo");
+        let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty());
         let module = parsed.module;
 
@@ -818,7 +826,8 @@ mod tests {
     fn parses_function_signature_and_let_statement() {
         let source = "fn add(a: i64, b: i64) -> i64 { let result: i64 = a + b; result; }";
         let lexed = BasicLexer.lex(source);
-        let parsed = BasicParser.parse_module(&lexed.tokens, source);
+        let source_file = SourceFile::new(source, "test.holo");
+        let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         let module = parsed.module;
         assert_eq!(module.functions.len(), 1);
@@ -834,7 +843,8 @@ mod tests {
     fn parses_arithmetic_precedence() {
         let source = "fn calc() -> i64 { assert(1 + 2 * 3); }";
         let lexed = BasicLexer.lex(source);
-        let parsed = BasicParser.parse_module(&lexed.tokens, source);
+        let source_file = SourceFile::new(source, "test.holo");
+        let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         let function = &parsed.module.functions[0];
         let Statement::Assert(assertion) = &function.statements[0] else {
@@ -861,7 +871,8 @@ mod tests {
     fn rejects_non_test_attribute() {
         let source = "#[bench] fn sample() { assert(true); }";
         let lexed = BasicLexer.lex(source);
-        let result = BasicParser.parse_module(&lexed.tokens, source);
+        let source_file = SourceFile::new(source, "test.holo");
+        let result = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(
             result
                 .diagnostics
@@ -878,7 +889,8 @@ mod tests {
     fn continues_after_statement_error() {
         let source = "#[test] fn sample() { assert(); assert(true); }";
         let lexed = BasicLexer.lex(source);
-        let result = BasicParser.parse_module(&lexed.tokens, source);
+        let source_file = SourceFile::new(source, "test.holo");
+        let result = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(!result.diagnostics.is_empty());
         assert_eq!(result.module.tests.len(), 1);
         assert_eq!(result.module.tests[0].statements.len(), 1);
@@ -896,7 +908,8 @@ mod tests {
         for source in cases {
             let lexed = BasicLexer.lex(source);
             assert!(lexed.diagnostics.is_empty(), "{source}");
-            let parsed = BasicParser.parse_module(&lexed.tokens, source);
+            let source_file = SourceFile::new(source, "test.holo");
+            let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
             assert!(
                 parsed.diagnostics.is_empty(),
                 "{source}: {:?}",
@@ -910,7 +923,8 @@ mod tests {
     fn recovers_to_next_top_level_definition_after_broken_function() {
         let source = "fn broken(a i64) -> i64 { a + ; } #[test] fn ok() { assert(true); }";
         let lexed = BasicLexer.lex(source);
-        let result = BasicParser.parse_module(&lexed.tokens, source);
+        let source_file = SourceFile::new(source, "test.holo");
+        let result = BasicParser.parse_module(&lexed.tokens, &source_file);
 
         assert!(!result.diagnostics.is_empty());
         assert_eq!(result.module.tests.len(), 1);
@@ -921,7 +935,8 @@ mod tests {
     fn parses_if_else_and_block_result_expression() {
         let source = "fn pick() -> i64 { if true { let a: i64 = 1i64; a } else { 2i64 }; }";
         let lexed = BasicLexer.lex(source);
-        let parsed = BasicParser.parse_module(&lexed.tokens, source);
+        let source_file = SourceFile::new(source, "test.holo");
+        let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         let function = &parsed.module.functions[0];
         let Statement::Expr(expr_statement) = &function.statements[0] else {
@@ -938,7 +953,8 @@ mod tests {
     fn parses_while_expression_statement() {
         let source = "fn loop_test() -> () { while false { assert(true); }; }";
         let lexed = BasicLexer.lex(source);
-        let parsed = BasicParser.parse_module(&lexed.tokens, source);
+        let source_file = SourceFile::new(source, "test.holo");
+        let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         let function = &parsed.module.functions[0];
         let Statement::Expr(expr_statement) = &function.statements[0] else {

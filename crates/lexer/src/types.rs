@@ -1,4 +1,4 @@
-use holo_base::{SharedString, Span};
+use holo_base::{SharedString, SourceFile, Span};
 
 /// Token categories required by the initial parser milestone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -48,8 +48,13 @@ pub struct Token {
     pub kind: TokenKind,
     /// Byte range in original source.
     pub span: Span,
-    /// Raw lexeme for identifiers and debugging output.
-    pub lexeme: SharedString,
+}
+
+impl Token {
+    /// Returns the raw lexeme for this token from the given source file.
+    pub fn lexeme(&self, source: &SourceFile) -> SharedString {
+        source.source_at(self.span).into()
+    }
 }
 
 /// Lexing abstraction used by higher-level compiler orchestration.

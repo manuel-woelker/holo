@@ -20,7 +20,9 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use holo_ast::Statement;
-use holo_base::{holo_message_error, FilePath, Mutex, Result, SharedString, TaskTiming};
+use holo_base::{
+    holo_message_error, FilePath, Mutex, Result, SharedString, SourceFile, TaskTiming,
+};
 use holo_core::daemon::{CoreDaemon, DaemonStatusUpdate};
 use holo_core::CompilerCore;
 use holo_deck::{
@@ -715,7 +717,8 @@ fn extract_test_dependencies_from_source(
             "failed to extract graph dependencies for {file_path}: {rendered}"
         ));
     }
-    let parsed = parser.parse_module(&lexed.tokens, source);
+    let source_file = SourceFile::new(source, file_path.clone());
+    let parsed = parser.parse_module(&lexed.tokens, &source_file);
     if !parsed.diagnostics.is_empty() {
         let rendered = parsed.diagnostics[0].render_annotated();
         return Err(holo_message_error!(

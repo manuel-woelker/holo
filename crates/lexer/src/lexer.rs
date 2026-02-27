@@ -41,7 +41,6 @@ impl Lexer for BasicLexer {
                 tokens.push(Token {
                     kind,
                     span: Span::new(start, index),
-                    lexeme: lexeme.into(),
                 });
                 continue;
             }
@@ -59,11 +58,9 @@ impl Lexer for BasicLexer {
                 if index < bytes.len() {
                     index += 1;
                 }
-                let lexeme = &source[start..index];
                 tokens.push(Token {
                     kind: TokenKind::StringLiteral,
                     span: Span::new(start, index),
-                    lexeme: lexeme.into(),
                 });
                 continue;
             }
@@ -102,11 +99,9 @@ impl Lexer for BasicLexer {
                         .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
                     );
                 }
-                let lexeme = &source[start..index];
                 tokens.push(Token {
                     kind: TokenKind::TemplateString,
                     span: Span::new(start, index),
-                    lexeme: lexeme.into(),
                 });
                 continue;
             }
@@ -174,11 +169,9 @@ impl Lexer for BasicLexer {
                     index += 1;
                 }
 
-                let lexeme = &source[start..index];
                 tokens.push(Token {
                     kind: TokenKind::Number,
                     span: Span::new(start, index),
-                    lexeme: lexeme.into(),
                 });
                 continue;
             }
@@ -190,7 +183,6 @@ impl Lexer for BasicLexer {
                         tokens.push(Token {
                             kind: TokenKind::Arrow,
                             span: Span::new(index, index + 2),
-                            lexeme: "->".into(),
                         });
                         index += 2;
                         continue;
@@ -205,7 +197,6 @@ impl Lexer for BasicLexer {
                         tokens.push(Token {
                             kind: TokenKind::DoubleEquals,
                             span: Span::new(index, index + 2),
-                            lexeme: "==".into(),
                         });
                         index += 2;
                         continue;
@@ -217,7 +208,6 @@ impl Lexer for BasicLexer {
                         tokens.push(Token {
                             kind: TokenKind::BangEquals,
                             span: Span::new(index, index + 2),
-                            lexeme: "!=".into(),
                         });
                         index += 2;
                         continue;
@@ -229,7 +219,6 @@ impl Lexer for BasicLexer {
                         tokens.push(Token {
                             kind: TokenKind::LessThanEquals,
                             span: Span::new(index, index + 2),
-                            lexeme: "<=".into(),
                         });
                         index += 2;
                         continue;
@@ -241,7 +230,6 @@ impl Lexer for BasicLexer {
                         tokens.push(Token {
                             kind: TokenKind::GreaterThanEquals,
                             span: Span::new(index, index + 2),
-                            lexeme: ">=".into(),
                         });
                         index += 2;
                         continue;
@@ -279,7 +267,6 @@ impl Lexer for BasicLexer {
             tokens.push(Token {
                 kind: token,
                 span: Span::new(index, index + 1),
-                lexeme: (byte as char).to_string().into(),
             });
             index += 1;
         }

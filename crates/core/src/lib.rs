@@ -11,7 +11,7 @@ use bitcode::{Decode, Encode};
 use holo_ast::Module as AstModule;
 use holo_base::{
     holo_message_error, project_revision, time_task, DiagnosticKind, FilePath, Result,
-    SharedString, SourceDiagnostic, SourceExcerpt, Span, TaskTiming,
+    SharedString, SourceDiagnostic, SourceExcerpt, SourceFile, Span, TaskTiming,
 };
 use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
 use holo_interpreter::{
@@ -217,8 +217,9 @@ impl CompilerCore {
         );
 
         info!("parsing tokens");
+        let source_file = SourceFile::new(filtered_source.as_str(), file_path.clone());
         let (parsed, parse_timing) = time_task(format!("parse `{}`", file_path), || {
-            self.parser.parse_module(&tokens, &filtered_source)
+            self.parser.parse_module(&tokens, &source_file)
         });
         let mut module: AstModule = parsed.module;
         module.functions.splice(0..0, import_resolution.functions);
@@ -634,7 +635,8 @@ impl<'a> ImportResolver<'a> {
         }
         self.diagnostics.extend(lex_diagnostics);
 
-        let parsed = self.parser.parse_module(&lexed.tokens, &filtered_source);
+        let source_file = SourceFile::new(filtered_source, target_file.clone());
+        let parsed = self.parser.parse_module(&lexed.tokens, &source_file);
         let mut parse_diagnostics = parsed.diagnostics;
         for diagnostic in &mut parse_diagnostics {
             for excerpt in &mut diagnostic.source_excerpts {
