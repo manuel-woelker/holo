@@ -510,6 +510,7 @@ name = "holo-lexer"
 version = "0.1.0"
 dependencies = [
  "holo-base",
+ "holo-token",
 ]
 
 [[package]]
@@ -523,6 +524,13 @@ dependencies = [
 
 [[package]]
 name = "holo-query"
+version = "0.1.0"
+dependencies = [
+ "holo-base",
+]
+
+[[package]]
+name = "holo-token"
 version = "0.1.0"
 dependencies = [
  "holo-base",
