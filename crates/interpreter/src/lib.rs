@@ -1005,8 +1005,8 @@ mod tests {
     use super::{BasicInterpreter, Interpreter, TestStatus};
     use holo_base::Span;
     use holo_ir::{
-        AssertStatement, BinaryOperator, Expr, ExprStatement, FunctionItem, FunctionParameter,
-        Module, Statement, TestItem, TypeRef,
+        types::ExprStatement, AssertStatement, BinaryOperator, Expr, FunctionItem,
+        FunctionParameter, Module, Statement, TestItem, TypeRef,
     };
 
     #[test]

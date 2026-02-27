@@ -781,7 +781,7 @@ fn token_kind_name(kind: TokenKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{BasicParser, Parser};
-    use holo_ast::{BinaryExpr, BinaryOperator, ExprKind, Statement, TypeRef};
+    use holo_ast::{expression::BinaryExpr, BinaryOperator, ExprKind, Statement, TypeRef};
     use holo_lexer::{BasicLexer, Lexer};
 
     #[test]
