@@ -1,4 +1,5 @@
 use crate::engine::{Engine, FileState};
+use crate::observer::CycleEvent;
 use holo_base::{hash_string, SourceFile};
 use holo_lexer::{BasicLexer, Lexer};
 use holo_parser::{BasicParser, Parser};
@@ -29,6 +30,9 @@ impl<'a> Cycle<'a> {
 
         for file_path in dirty_files {
             let Ok(content) = self.engine.filesystem.read_to_string(&file_path) else {
+                self.engine
+                    .observer
+                    .on_event(CycleEvent::FileReadError(file_path));
                 continue;
             };
 
@@ -37,6 +41,9 @@ impl<'a> Cycle<'a> {
             // Omission logic: Skip if content hash hasn't changed
             if let Some(state) = self.engine.file_states.get(&file_path) {
                 if state.content_hash == content_hash {
+                    self.engine
+                        .observer
+                        .on_event(CycleEvent::FileParseSkipped(file_path));
                     continue;
                 }
             }
@@ -53,13 +60,17 @@ impl<'a> Cycle<'a> {
             diagnostics.extend(parsed.diagnostics);
 
             self.engine.file_states.insert(
-                file_path,
+                file_path.clone(),
                 FileState {
                     content_hash,
                     ast: Some(parsed.module),
                     diagnostics,
                 },
             );
+
+            self.engine
+                .observer
+                .on_event(CycleEvent::FileParsed(file_path));
         }
     }
 }

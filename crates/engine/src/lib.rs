@@ -5,6 +5,7 @@
 
 pub mod cycle;
 pub mod engine;
+pub mod observer;
 
 pub use engine::Engine;
 

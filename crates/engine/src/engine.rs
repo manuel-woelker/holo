@@ -1,4 +1,5 @@
 use crate::cycle::Cycle;
+use crate::observer::{CycleObserver, StdoutObserver};
 use holo_ast::Module;
 use holo_base::{FilePath, SourceDiagnostic};
 use holo_fs::{FileSystem, StdFileSystem};
@@ -13,6 +14,7 @@ pub struct Engine {
     pub(crate) file_states: HashMap<FilePath, FileState>,
     pub(crate) dirty_files: HashSet<FilePath>,
     pub(crate) filesystem: Arc<dyn FileSystem>,
+    pub(crate) observer: Arc<dyn CycleObserver>,
 }
 
 /// Represents the cached state of a single source file.
@@ -32,6 +34,7 @@ impl Default for Engine {
             file_states: HashMap::new(),
             dirty_files: HashSet::new(),
             filesystem: Arc::new(StdFileSystem::new_at_cwd()),
+            observer: Arc::new(StdoutObserver),
         }
     }
 }
@@ -45,6 +48,12 @@ impl Engine {
     /// Configures the engine to use a specific filesystem.
     pub fn with_filesystem(mut self, filesystem: Arc<dyn FileSystem>) -> Self {
         self.filesystem = filesystem;
+        self
+    }
+
+    /// Configures the engine to use a specific cycle observer.
+    pub fn with_observer(mut self, observer: Arc<dyn CycleObserver>) -> Self {
+        self.observer = observer;
         self
     }
 
