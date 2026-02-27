@@ -1,7 +1,7 @@
 /// The core incremental compilation engine.
 ///
 /// This engine manages the project state and coordinates the 5-stage
-/// incremental compilation pipeline using a query-driven approach.
+/// incremental compilation pipeline using a forward incremental approach.
 pub struct Engine {}
 
 impl Default for Engine {

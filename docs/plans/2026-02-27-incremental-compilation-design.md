@@ -4,7 +4,7 @@ This document outlines the design for incremental compilation in the Holo compil
 
 ## Compilation Pipeline Stages
 
-The incremental compilation process is divided into five stages. Each stage is modeled as a query-driven operation that can be skipped if its inputs are identical to a previous successful run.
+The incremental compilation process is divided into five stages. Each stage is modeled as a forward incremental step that can be skipped if its inputs are identical to a previous successful run.
 
 ---
 
