@@ -3,6 +3,7 @@
 pub mod error;
 pub mod logging;
 pub mod source_diagnostic;
+pub mod source_file;
 pub mod span;
 pub mod timing;
 
@@ -11,6 +12,7 @@ pub use parking_lot::Mutex;
 pub use source_diagnostic::{
     display_source_diagnostics, AnnotatedSpan, DiagnosticKind, SourceDiagnostic, SourceExcerpt,
 };
+pub use source_file::SourceFile;
 pub use span::Span;
 pub use timing::{time_task, TaskTimer, TaskTiming};
 pub type FilePath = relative_path::RelativePathBuf;
