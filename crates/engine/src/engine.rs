@@ -11,27 +11,28 @@ use std::sync::Arc;
 /// This engine manages the project state and coordinates the 5-stage
 /// incremental compilation pipeline using a forward incremental approach.
 pub struct Engine {
-    pub(crate) file_states: HashMap<FilePath, FileState>,
+    /// Stage 1: Results of parsing source files into ASTs.
+    pub(crate) ast_cache: HashMap<FilePath, AstState>,
     pub(crate) dirty_files: HashSet<FilePath>,
     pub(crate) filesystem: Arc<dyn FileSystem>,
     pub(crate) observer: Arc<dyn CycleObserver>,
 }
 
-/// Represents the cached state of a single source file.
+/// Represents the cached result of parsing a single source file (Stage 1).
 #[derive(Debug, Default, Clone)]
-pub struct FileState {
-    /// Hash of the file content when last processed.
+pub struct AstState {
+    /// Hash of the file content when last parsed.
     pub content_hash: u64,
     /// The successfully parsed AST module, if any.
     pub ast: Option<Module>,
-    /// Diagnostics produced for this file in its current state.
+    /// Parsing diagnostics (lexing and parsing errors).
     pub diagnostics: Vec<SourceDiagnostic>,
 }
 
 impl Default for Engine {
     fn default() -> Self {
         Self {
-            file_states: HashMap::new(),
+            ast_cache: HashMap::new(),
             dirty_files: HashSet::new(),
             filesystem: Arc::new(StdFileSystem::new_at_cwd()),
             observer: Arc::new(StdoutObserver),

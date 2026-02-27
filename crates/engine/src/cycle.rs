@@ -1,4 +1,4 @@
-use crate::engine::{Engine, FileState};
+use crate::engine::{AstState, Engine};
 use crate::observer::CycleEvent;
 use holo_base::{hash_string, DiagnosticKind, SourceDiagnostic, SourceFile};
 use holo_lexer::{BasicLexer, Lexer};
@@ -39,9 +39,9 @@ impl<'a> Cycle<'a> {
                     ));
 
                     // Emit diagnostic for file read error
-                    self.engine.file_states.insert(
+                    self.engine.ast_cache.insert(
                         file_path.clone(),
-                        FileState {
+                        AstState {
                             content_hash: 0,
                             ast: None,
                             diagnostics: vec![SourceDiagnostic::new(
@@ -57,7 +57,7 @@ impl<'a> Cycle<'a> {
             let content_hash = hash_string(&content);
 
             // Omission logic: Skip if content hash hasn't changed
-            if let Some(state) = self.engine.file_states.get(&file_path) {
+            if let Some(state) = self.engine.ast_cache.get(&file_path) {
                 if state.content_hash == content_hash {
                     self.engine
                         .observer
@@ -77,9 +77,9 @@ impl<'a> Cycle<'a> {
             let mut diagnostics = lexed.diagnostics;
             diagnostics.extend(parsed.diagnostics);
 
-            self.engine.file_states.insert(
+            self.engine.ast_cache.insert(
                 file_path.clone(),
-                FileState {
+                AstState {
                     content_hash,
                     ast: Some(parsed.module),
                     diagnostics,
@@ -119,7 +119,7 @@ mod tests {
 
         let events = observer.events();
         assert!(events.contains(&CycleEvent::FileParsed(path.clone())));
-        assert_eq!(engine.file_states.get(&path).unwrap().diagnostics.len(), 0);
+        assert_eq!(engine.ast_cache.get(&path).unwrap().diagnostics.len(), 0);
 
         // 2. Second cycle: Content is identical, should be skipped
         observer.clear_events();
@@ -129,7 +129,7 @@ mod tests {
         let events = observer.events();
         assert!(events.contains(&CycleEvent::FileParseSkipped(path.clone())));
         // Ensure diagnostic count is still zero (state maintained)
-        assert_eq!(engine.file_states.get(&path).unwrap().diagnostics.len(), 0);
+        assert_eq!(engine.ast_cache.get(&path).unwrap().diagnostics.len(), 0);
 
         // 3. Third cycle: Content changed, should be re-parsed
         observer.clear_events();
@@ -176,9 +176,9 @@ mod tests {
         assert!(error_event.is_some());
 
         let state = engine
-            .file_states
+            .ast_cache
             .get(&path)
-            .expect("FileState should exist even on error");
+            .expect("AstState should exist even on error");
         assert_eq!(state.diagnostics.len(), 1);
         assert_eq!(state.diagnostics[0].kind, DiagnosticKind::Io);
         assert!(state.diagnostics[0].message.contains("failed to read file"));
