@@ -8,4 +8,3 @@ publish = false
 
 [dependencies]
 holo-base = { path = "../base" }
-holo-query = { path = "../query" }
