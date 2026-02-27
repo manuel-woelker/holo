@@ -1,6 +1,6 @@
 use holo_base::SourceFile;
-use holo_lexer::Lexer;
-use holo_parser::Parser;
+use holo_lexer::{BasicLexer, Lexer};
+use holo_parser::{BasicParser, Parser};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -27,6 +27,9 @@ impl<'a> Cycle<'a> {
     fn stage_1_parse(&mut self) {
         let dirty_files = std::mem::take(&mut self.engine.dirty_files);
 
+        let lexer = BasicLexer;
+        let parser = BasicParser;
+
         for file_path in dirty_files {
             let Ok(content) = std::fs::read_to_string(file_path.as_str()) else {
                 continue;
@@ -44,11 +47,11 @@ impl<'a> Cycle<'a> {
             }
 
             // Perform tokenization
-            let lexed = self.engine.lexer.lex(&content);
+            let lexed = lexer.lex(&content);
             
             // Perform parsing
             let source_file = SourceFile::new(&content, file_path.clone());
-            let parsed = self.engine.parser.parse_module(&lexed.tokens, &source_file);
+            let parsed = parser.parse_module(&lexed.tokens, &source_file);
 
             // Update file state
             let mut diagnostics = lexed.diagnostics;

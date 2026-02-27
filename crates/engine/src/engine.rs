@@ -2,19 +2,15 @@ use crate::cycle::Cycle;
 
 use holo_ast::Module;
 use holo_base::{FilePath, SourceDiagnostic};
-use holo_lexer::BasicLexer;
-use holo_parser::BasicParser;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// The core incremental compilation engine.
 ///
 /// This engine manages the project state and coordinates the 5-stage
 /// incremental compilation pipeline using a forward incremental approach.
 pub struct Engine {
-    pub(crate) lexer: BasicLexer,
-    pub(crate) parser: BasicParser,
     pub(crate) file_states: HashMap<FilePath, FileState>,
-    pub(crate) dirty_files: Vec<FilePath>,
+    pub(crate) dirty_files: HashSet<FilePath>,
 }
 
 /// Represents the cached state of a single source file.
@@ -31,10 +27,8 @@ pub struct FileState {
 impl Default for Engine {
     fn default() -> Self {
         Self {
-            lexer: BasicLexer,
-            parser: BasicParser,
             file_states: HashMap::new(),
-            dirty_files: Vec::new(),
+            dirty_files: HashSet::new(),
         }
     }
 }
@@ -61,8 +55,6 @@ impl Engine {
 
     /// Marks a file as dirty and needing re-processing in the next cycle.
     pub fn record_change(&mut self, file_path: FilePath) {
-        if !self.dirty_files.contains(&file_path) {
-            self.dirty_files.push(file_path);
-        }
+        self.dirty_files.insert(file_path);
     }
 }
