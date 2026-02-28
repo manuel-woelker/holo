@@ -14,6 +14,7 @@ relative-path = { version = "1.9", features = ["serde"] }
 rkyv = { version = "0.8", features = ["smol_str-0_3"] }
 serde = { version = "1", features = ["derive"] }
 smol_str = { version = "0.3", features = ["serde"] }
+speedy = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 

@@ -144,9 +144,32 @@ impl PartialEq<SharedString> for &str {
     }
 }
 
+impl<'a, C> speedy::Readable<'a, C> for SharedString
+where
+    C: speedy::Context,
+{
+    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let string = String::read_from(reader)?;
+        Ok(SharedString(SmolStr::from(string)))
+    }
+}
+
+impl<C> speedy::Writable<C> for SharedString
+where
+    C: speedy::Context,
+{
+    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
+    where
+        W: speedy::Writer<C> + ?Sized,
+    {
+        self.as_str().write_to(writer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use speedy::{Readable, Writable};
 
     #[test]
     fn test_shared_string_creation() {
@@ -196,5 +219,41 @@ mod tests {
     fn test_shared_string_display() {
         let s = SharedString::new("hello");
         assert_eq!(format!("{}", s), "hello");
+    }
+
+    #[test]
+    fn test_shared_string_speedy_serialization() {
+        let original = SharedString::new("hello world");
+
+        // Test writing
+        let buffer = original.write_to_vec().unwrap();
+        assert!(!buffer.is_empty());
+
+        // Test reading
+        let deserialized = SharedString::read_from_buffer(&buffer).unwrap();
+        assert_eq!(original, deserialized);
+        assert_eq!(deserialized.as_str(), "hello world");
+    }
+
+    #[test]
+    fn test_shared_string_speedy_empty_string() {
+        let original = SharedString::empty();
+
+        let buffer = original.write_to_vec().unwrap();
+        let deserialized = SharedString::read_from_buffer(&buffer).unwrap();
+
+        assert_eq!(original, deserialized);
+        assert!(deserialized.is_empty());
+    }
+
+    #[test]
+    fn test_shared_string_speedy_unicode() {
+        let original = SharedString::new("Hello 🌍 世界");
+
+        let buffer = original.write_to_vec().unwrap();
+        let deserialized = SharedString::read_from_buffer(&buffer).unwrap();
+
+        assert_eq!(original, deserialized);
+        assert_eq!(deserialized.as_str(), "Hello 🌍 世界");
     }
 }
