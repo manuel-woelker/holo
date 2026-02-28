@@ -5,8 +5,6 @@ use holo_base::{SharedString, Span};
 pub struct Module {
     /// Function items declared in this source file.
     pub functions: Vec<FunctionItem>,
-    /// Test items declared in this source file.
-    pub tests: Vec<TestItem>,
 }
 
 /// A typed function item.
@@ -34,17 +32,6 @@ pub struct FunctionParameter {
     /// Parameter type.
     pub ty: Type,
     /// Byte span for the whole parameter.
-    pub span: Span,
-}
-
-/// A typed test item.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TestItem {
-    /// Test function name.
-    pub name: SharedString,
-    /// Ordered statements in the test body.
-    pub statements: Vec<Statement>,
-    /// Byte span for the whole test item.
     pub span: Span,
 }
 

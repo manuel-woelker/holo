@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use holo_base::{Mutex, SharedString, Span, TaskTimer, TaskTiming};
 pub use holo_ir::Type;
-use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement, TestItem};
+use holo_ir::{BinaryOperator, Expr, ExprKind, FunctionItem, Module, Statement};
 use tracing::info;
 
 /// Trait for native (host-provided) functions.
@@ -220,15 +220,17 @@ pub struct TestRunSummary {
 
 /// Interpreter abstraction used by the core crate.
 pub trait Interpreter {
-    /// Executes one collected test item.
-    fn run_test(&self, test: &TestItem) -> TestResult;
-    /// Executes one test item using functions from a typed module.
-    fn run_test_in_module(&self, module: &Module, test: &TestItem) -> TestResult;
+    /// Executes one test function.
+    fn run_test(&self, test: &FunctionItem) -> TestResult;
+    /// Executes one test function using functions from a typed module.
+    fn run_test_in_module(&self, module: &Module, test: &FunctionItem) -> TestResult;
     /// Executes a collected test set and returns run summary details.
-    fn run_collected_tests(&self, tests: &[TestItem]) -> TestRunSummary;
+    fn run_collected_tests(&self, tests: &[&FunctionItem]) -> TestRunSummary;
     /// Executes tests in a module and returns run summary details.
     fn run_tests(&self, module: &Module) -> TestRunSummary {
-        self.run_collected_tests(&module.tests)
+        let test_functions: Vec<&FunctionItem> =
+            module.functions.iter().filter(|f| f.is_test).collect();
+        self.run_collected_tests(&test_functions)
     }
 }
 
@@ -320,8 +322,8 @@ impl RuntimeScopes {
 }
 
 impl BasicInterpreter {
-    fn ordered_tests(tests: &[TestItem]) -> Vec<&TestItem> {
-        let mut ordered = tests.iter().collect::<Vec<_>>();
+    fn ordered_tests<'a>(tests: &'a [&'a FunctionItem]) -> Vec<&'a FunctionItem> {
+        let mut ordered = tests.iter().copied().collect::<Vec<_>>();
         ordered.sort_by(|left, right| {
             left.name
                 .as_str()
@@ -896,7 +898,7 @@ impl BasicInterpreter {
 
     fn run_test_with_functions(
         &self,
-        test: &TestItem,
+        test: &FunctionItem,
         functions: &HashMap<SharedString, FunctionItem>,
     ) -> TestResult {
         let mut scopes = RuntimeScopes::default();
@@ -934,12 +936,12 @@ impl BasicInterpreter {
 }
 
 impl Interpreter for BasicInterpreter {
-    fn run_test(&self, test: &TestItem) -> TestResult {
+    fn run_test(&self, test: &FunctionItem) -> TestResult {
         let functions = HashMap::new();
         self.run_test_with_functions(test, &functions)
     }
 
-    fn run_collected_tests(&self, tests: &[TestItem]) -> TestRunSummary {
+    fn run_collected_tests(&self, tests: &[&FunctionItem]) -> TestRunSummary {
         let mut summary = TestRunSummary::default();
 
         for test in Self::ordered_tests(tests) {
@@ -969,7 +971,9 @@ impl Interpreter for BasicInterpreter {
         let mut summary = TestRunSummary::default();
         let functions = Self::function_map_from_module(module);
 
-        for test in Self::ordered_tests(&module.tests) {
+        let test_functions: Vec<&FunctionItem> =
+            module.functions.iter().filter(|f| f.is_test).collect();
+        for test in Self::ordered_tests(&test_functions) {
             let timer = TaskTimer::start(format!("run test `{}`", test.name));
             let result = self.run_test_with_functions(test, &functions);
             let timing = timer.finish();
@@ -992,7 +996,7 @@ impl Interpreter for BasicInterpreter {
         summary
     }
 
-    fn run_test_in_module(&self, module: &Module, test: &TestItem) -> TestResult {
+    fn run_test_in_module(&self, module: &Module, test: &FunctionItem) -> TestResult {
         let functions = Self::function_map_from_module(module);
         self.run_test_with_functions(test, &functions)
     }
@@ -1004,15 +1008,16 @@ mod tests {
     use holo_base::Span;
     use holo_ir::{
         types::ExprStatement, AssertStatement, BinaryOperator, Expr, FunctionItem,
-        FunctionParameter, Module, Statement, TestItem, TypeRef,
+        FunctionParameter, Module, Statement, Type, TypeRef,
     };
 
     #[test]
     fn marks_false_assertion_as_failed_test() {
         let module = Module {
-            functions: Vec::new(),
-            tests: vec![TestItem {
+            functions: vec![FunctionItem {
                 name: "fails".into(),
+                parameters: Vec::new(),
+                return_type: Type::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::negation(
                         Expr::bool_literal(true, Span::new(17, 21)),
@@ -1020,6 +1025,7 @@ mod tests {
                     ),
                     span: Span::new(9, 22),
                 })],
+                is_test: true,
                 span: Span::new(0, 24),
             }],
         };
@@ -1035,26 +1041,33 @@ mod tests {
     #[test]
     fn runs_collected_tests_slice() {
         let tests = vec![
-            TestItem {
+            FunctionItem {
                 name: "pass".into(),
+                parameters: Vec::new(),
+                return_type: Type::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::bool_literal(true, Span::new(17, 21)),
                     span: Span::new(9, 22),
                 })],
+                is_test: true,
                 span: Span::new(0, 24),
             },
-            TestItem {
+            FunctionItem {
                 name: "fail".into(),
+                parameters: Vec::new(),
+                return_type: Type::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::bool_literal(false, Span::new(17, 22)),
                     span: Span::new(9, 23),
                 })],
+                is_test: true,
                 span: Span::new(25, 49),
             },
         ];
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_collected_tests(&tests);
+        let test_refs: Vec<&FunctionItem> = tests.iter().collect();
+        let summary = interpreter.run_collected_tests(&test_refs);
         assert_eq!(summary.executed, 2);
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.failed, 1);
@@ -1075,56 +1088,61 @@ mod tests {
     #[test]
     fn evaluates_numeric_arithmetic_in_test_assertion() {
         let module = Module {
-            functions: vec![FunctionItem {
-                name: "sum".into(),
-                parameters: vec![
-                    FunctionParameter {
-                        name: "a".into(),
-                        ty: TypeRef::I64,
-                        span: Span::new(0, 1),
-                    },
-                    FunctionParameter {
-                        name: "b".into(),
-                        ty: TypeRef::I64,
-                        span: Span::new(3, 4),
-                    },
-                ],
-                return_type: TypeRef::I64,
-                statements: vec![Statement::Expr(ExprStatement {
-                    expression: Expr::binary(
-                        BinaryOperator::Add,
-                        Expr::identifier("a", Span::new(0, 1)),
-                        Expr::identifier("b", Span::new(4, 5)),
-                        Span::new(0, 5),
-                    ),
+            functions: vec![
+                FunctionItem {
+                    name: "sum".into(),
+                    parameters: vec![
+                        FunctionParameter {
+                            name: "a".into(),
+                            ty: TypeRef::I64,
+                            span: Span::new(0, 1),
+                        },
+                        FunctionParameter {
+                            name: "b".into(),
+                            ty: TypeRef::I64,
+                            span: Span::new(3, 4),
+                        },
+                    ],
+                    return_type: TypeRef::I64,
+                    statements: vec![Statement::Expr(ExprStatement {
+                        expression: Expr::binary(
+                            BinaryOperator::Add,
+                            Expr::identifier("a", Span::new(0, 1)),
+                            Expr::identifier("b", Span::new(4, 5)),
+                            Span::new(0, 5),
+                        ),
+                        span: Span::new(0, 6),
+                    })],
+                    is_test: false,
                     span: Span::new(0, 6),
-                })],
-                is_test: false,
-                span: Span::new(0, 6),
-            }],
-            tests: vec![TestItem {
-                name: "arith".into(),
-                statements: vec![Statement::Assert(AssertStatement {
-                    expression: Expr::negation(
-                        Expr::binary(
-                            BinaryOperator::Subtract,
-                            Expr::call(
-                                Expr::identifier("sum", Span::new(0, 3)),
-                                vec![
-                                    Expr::number_literal("3i64", Span::new(4, 8)),
-                                    Expr::number_literal("3i64", Span::new(10, 14)),
-                                ],
-                                Span::new(0, 15),
+                },
+                FunctionItem {
+                    name: "arith".into(),
+                    parameters: Vec::new(),
+                    return_type: Type::Unit,
+                    statements: vec![Statement::Assert(AssertStatement {
+                        expression: Expr::negation(
+                            Expr::binary(
+                                BinaryOperator::Subtract,
+                                Expr::call(
+                                    Expr::identifier("sum", Span::new(0, 3)),
+                                    vec![
+                                        Expr::number_literal("3i64", Span::new(4, 8)),
+                                        Expr::number_literal("3i64", Span::new(10, 14)),
+                                    ],
+                                    Span::new(0, 15),
+                                ),
+                                Expr::number_literal("0i64", Span::new(18, 22)),
+                                Span::new(0, 22),
                             ),
-                            Expr::number_literal("0i64", Span::new(18, 22)),
                             Span::new(0, 22),
                         ),
-                        Span::new(0, 22),
-                    ),
+                        span: Span::new(0, 23),
+                    })],
+                    is_test: true,
                     span: Span::new(0, 23),
-                })],
-                span: Span::new(0, 23),
-            }],
+                },
+            ],
         };
 
         let interpreter = BasicInterpreter::default();
@@ -1137,9 +1155,10 @@ mod tests {
     #[test]
     fn fails_test_on_division_by_zero() {
         let module = Module {
-            functions: Vec::new(),
-            tests: vec![TestItem {
+            functions: vec![FunctionItem {
                 name: "div_zero".into(),
+                parameters: Vec::new(),
+                return_type: Type::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
                         BinaryOperator::Divide,
@@ -1149,6 +1168,7 @@ mod tests {
                     ),
                     span: Span::new(0, 12),
                 })],
+                is_test: true,
                 span: Span::new(0, 12),
             }],
         };

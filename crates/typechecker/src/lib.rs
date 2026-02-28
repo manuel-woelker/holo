@@ -974,8 +974,13 @@ impl Typechecker for BasicTypechecker {
         let mut tests = Vec::new();
         for item in &module.items {
             match item {
-                ModuleItem::Function(f) => functions.push(f),
-                ModuleItem::Test(t) => tests.push(t),
+                ModuleItem::Function(f) => {
+                    if f.is_test {
+                        tests.push(f);
+                    } else {
+                        functions.push(f);
+                    }
+                }
             }
         }
 
@@ -1136,19 +1141,22 @@ mod tests {
     use super::{BasicTypechecker, Typechecker};
     use holo_ast::{
         AssertStatement, BinaryOperator, Expr, FunctionItem, FunctionParameter, Module, ModuleItem,
-        Statement, TestItem, TypeRef,
+        Statement, TypeRef,
     };
     use holo_base::Span;
 
     #[test]
     fn typechecks_assertion_count_for_module() {
         let module = Module {
-            items: vec![ModuleItem::Test(TestItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "sample".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::bool_literal(true, Span::new(20, 24)),
                     span: Span::new(13, 25),
                 })],
+                is_test: true,
                 span: Span::new(0, 26),
             })],
         };
@@ -1164,20 +1172,26 @@ mod tests {
     fn reports_duplicate_test_names_and_continues() {
         let module = Module {
             items: vec![
-                ModuleItem::Test(TestItem {
+                ModuleItem::Function(FunctionItem {
                     name: "same_name".into(),
+                    parameters: Vec::new(),
+                    return_type: TypeRef::Unit,
                     statements: vec![Statement::Assert(AssertStatement {
                         expression: Expr::bool_literal(true, Span::new(20, 24)),
                         span: Span::new(13, 25),
                     })],
+                    is_test: true,
                     span: Span::new(0, 26),
                 }),
-                ModuleItem::Test(TestItem {
+                ModuleItem::Function(FunctionItem {
                     name: "same_name".into(),
+                    parameters: Vec::new(),
+                    return_type: TypeRef::Unit,
                     statements: vec![Statement::Assert(AssertStatement {
                         expression: Expr::bool_literal(true, Span::new(50, 54)),
                         span: Span::new(43, 55),
                     })],
+                    is_test: true,
                     span: Span::new(30, 56),
                 }),
             ],
@@ -1196,8 +1210,10 @@ mod tests {
     #[test]
     fn infers_default_numeric_literal_types() {
         let module = Module {
-            items: vec![ModuleItem::Test(TestItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "numeric".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
                         BinaryOperator::Add,
@@ -1207,6 +1223,7 @@ mod tests {
                     ),
                     span: Span::new(0, 6),
                 })],
+                is_test: true,
                 span: Span::new(0, 6),
             })],
         };
@@ -1221,8 +1238,10 @@ mod tests {
     #[test]
     fn rejects_mixed_numeric_types_in_binary_ops() {
         let module = Module {
-            items: vec![ModuleItem::Test(TestItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "mixed".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
                         BinaryOperator::Add,
@@ -1232,6 +1251,7 @@ mod tests {
                     ),
                     span: Span::new(0, 14),
                 })],
+                is_test: true,
                 span: Span::new(0, 14),
             })],
         };
@@ -1403,8 +1423,10 @@ mod tests {
     #[test]
     fn rejects_non_numeric_arithmetic_operands() {
         let module = Module {
-            items: vec![ModuleItem::Test(TestItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "non_numeric".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
                         BinaryOperator::Add,
@@ -1414,6 +1436,7 @@ mod tests {
                     ),
                     span: Span::new(0, 13),
                 })],
+                is_test: true,
                 span: Span::new(0, 13),
             })],
         };
@@ -1437,8 +1460,10 @@ mod tests {
     #[test]
     fn rejects_float_modulo() {
         let module = Module {
-            items: vec![ModuleItem::Test(TestItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "float_modulo".into(),
+                parameters: Vec::new(),
+                return_type: TypeRef::Unit,
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
                         BinaryOperator::Modulo,
@@ -1448,6 +1473,7 @@ mod tests {
                     ),
                     span: Span::new(0, 16),
                 })],
+                is_test: true,
                 span: Span::new(0, 16),
             })],
         };

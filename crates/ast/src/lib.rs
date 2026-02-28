@@ -6,7 +6,7 @@ pub mod statement;
 pub mod types;
 
 pub use expression::{Expr, ExprKind, QualifiedName, TemplatePart};
-pub use module::{FunctionItem, FunctionParameter, Module, ModuleItem, TestItem};
+pub use module::{FunctionItem, FunctionParameter, Module, ModuleItem};
 pub use statement::{AssertStatement, ExprStatement, LetStatement, Statement};
 pub use types::{BinaryOperator, TypeRef};
 
@@ -57,10 +57,7 @@ mod tests {
         let deserialized = Module::read_from_buffer(&buffer).unwrap();
         assert_eq!(module, deserialized);
         assert_eq!(deserialized.items.len(), 1);
-        if let ModuleItem::Function(func) = &deserialized.items[0] {
-            assert_eq!(func.name.as_str(), "test_func");
-        } else {
-            panic!("Expected Function variant");
-        }
+        let ModuleItem::Function(func) = &deserialized.items[0];
+        assert_eq!(func.name.as_str(), "test_func");
     }
 }

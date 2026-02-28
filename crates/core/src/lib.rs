@@ -19,7 +19,7 @@ use holo_db::{
 use holo_interpreter::{
     native_functions, BasicInterpreter, Interpreter, TestRunSummary, TestStatus,
 };
-use holo_ir::{lower_module, Module as IrModule, TestItem as IrTestItem};
+use holo_ir::{lower_module, FunctionItem as IrFunctionItem, Module as IrModule};
 use holo_lexer::{BasicLexer, Lexer};
 use holo_parser::{BasicParser, Parser};
 use holo_query::{InMemoryQueryStore, QueryKey, QueryStage, QueryStore, QueryValue};
@@ -125,8 +125,13 @@ struct ImportResolution {
 }
 
 impl CompilerCore {
-    fn collect_tests(module: &IrModule) -> Vec<IrTestItem> {
-        let mut tests = module.tests.clone();
+    fn collect_tests(module: &IrModule) -> Vec<IrFunctionItem> {
+        let mut tests: Vec<IrFunctionItem> = module
+            .functions
+            .iter()
+            .filter(|f| f.is_test)
+            .cloned()
+            .collect();
         tests.sort_by(|left, right| {
             left.name
                 .as_str()
@@ -225,25 +230,24 @@ impl CompilerCore {
         });
         let mut module: AstModule = parsed.module;
         let mut new_functions = Vec::new();
-        let mut new_tests = Vec::new();
         for item in std::mem::take(&mut module.items) {
             match item {
                 ModuleItem::Function(f) => new_functions.push(f),
-                ModuleItem::Test(t) => new_tests.push(t),
             }
         }
         new_functions.extend(import_resolution.functions);
-        let mut items: Vec<_> = new_functions
+        module.items = new_functions
             .into_iter()
             .map(ModuleItem::Function)
             .collect();
-        items.extend(new_tests.into_iter().map(ModuleItem::Test));
-        module.items = items;
         diagnostics.extend(parsed.diagnostics);
         let test_count = module
             .items
             .iter()
-            .filter(|i| matches!(i, ModuleItem::Test(_)))
+            .filter(|i| {
+                let ModuleItem::Function(f) = i;
+                f.is_test
+            })
             .count();
         info!(
             file_path = %file_path,
@@ -363,6 +367,7 @@ impl CompilerCore {
                 let test_fingerprint = {
                     let mut hasher = DefaultHasher::new();
                     function_fingerprint.hash(&mut hasher);
+                    let test: &IrFunctionItem = test;
                     test.hash(&mut hasher);
                     hasher.finish()
                 };
@@ -668,9 +673,8 @@ impl<'a> ImportResolver<'a> {
         }
         self.diagnostics.extend(parse_diagnostics);
         for item in parsed.module.items {
-            if let ModuleItem::Function(f) = item {
-                self.functions.push(f);
-            }
+            let ModuleItem::Function(f) = item;
+            self.functions.push(f);
         }
 
         for nested in imports {

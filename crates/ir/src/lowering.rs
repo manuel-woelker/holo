@@ -5,7 +5,6 @@ use std::collections::HashMap;
 
 pub fn lower_module(module: &holo_ast::Module) -> Module {
     let mut functions = Vec::new();
-    let mut tests = Vec::new();
 
     for item in &module.items {
         match item {
@@ -14,11 +13,8 @@ pub fn lower_module(module: &holo_ast::Module) -> Module {
                     .items
                     .iter()
                     .filter_map(|i| {
-                        if let ModuleItem::Function(f) = i {
-                            Some((f.name.clone(), type_from_ref(f.return_type)))
-                        } else {
-                            None
-                        }
+                        let ModuleItem::Function(f) = i;
+                        Some((f.name.clone(), type_from_ref(f.return_type)))
                     })
                     .collect();
 
@@ -49,35 +45,10 @@ pub fn lower_module(module: &holo_ast::Module) -> Module {
                     span: function.span,
                 });
             }
-            ModuleItem::Test(test) => {
-                let function_types: HashMap<SharedString, Type> = module
-                    .items
-                    .iter()
-                    .filter_map(|i| {
-                        if let ModuleItem::Function(f) = i {
-                            Some((f.name.clone(), type_from_ref(f.return_type)))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-                let mut scopes = vec![HashMap::new()];
-                let statements = test
-                    .statements
-                    .iter()
-                    .map(|statement| lower_statement(statement, &function_types, &mut scopes))
-                    .collect();
-                tests.push(crate::types::TestItem {
-                    name: test.name.clone(),
-                    statements,
-                    span: test.span,
-                });
-            }
         }
     }
 
-    Module { functions, tests }
+    Module { functions }
 }
 
 fn lower_statement(

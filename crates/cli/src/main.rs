@@ -730,7 +730,7 @@ fn extract_test_dependencies_from_source(
     let mut dependencies = Vec::new();
     for item in module.items {
         let test = match item {
-            ModuleItem::Test(t) => t,
+            ModuleItem::Function(f) if f.is_test => f,
             ModuleItem::Function(_) => continue,
         };
         let mut used_functions = test

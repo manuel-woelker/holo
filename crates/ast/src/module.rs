@@ -9,20 +9,17 @@ pub struct Module {
     pub items: Vec<ModuleItem>,
 }
 
-/// A function or test item in a module.
+/// A function item in a module.
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub enum ModuleItem {
     /// A `fn name(...) -> type { ... }` item.
     Function(FunctionItem),
-    /// A `#[test] fn name() { ... }` item.
-    Test(TestItem),
 }
 
 impl ModuleItem {
     pub fn span(&self) -> Span {
         match self {
             ModuleItem::Function(f) => f.span,
-            ModuleItem::Test(t) => t.span,
         }
     }
 }
@@ -52,16 +49,5 @@ pub struct FunctionParameter {
     /// Parameter type annotation.
     pub ty: TypeRef,
     /// Byte span for the whole parameter.
-    pub span: Span,
-}
-
-/// A `#[test] fn name() { ... }` item.
-#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
-pub struct TestItem {
-    /// Test function name.
-    pub name: SharedString,
-    /// Ordered statements in the test body.
-    pub statements: Vec<super::Statement>,
-    /// Byte span for the whole test item.
     pub span: Span,
 }

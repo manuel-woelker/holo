@@ -6,6 +6,6 @@ pub mod types;
 pub use lowering::lower_module;
 pub use types::{
     AssertStatement, BinaryExpr, BinaryOperator, BlockExpr, CallExpr, Expr, ExprKind, FunctionItem,
-    FunctionParameter, IfExpr, IrTemplatePart, LetStatement, Module, Statement, TestItem, Type,
-    TypeRef, WhileExpr,
+    FunctionParameter, IfExpr, IrTemplatePart, LetStatement, Module, Statement, Type, TypeRef,
+    WhileExpr,
 };
