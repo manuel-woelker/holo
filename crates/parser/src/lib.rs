@@ -105,15 +105,15 @@ impl<'a> ParserState<'a> {
         )?;
         let attribute =
             self.expect(TokenKind::Identifier, "expected attribute name in `#[...]`")?;
-        if self.lexeme(&attribute) != "test" {
+        if self.lexeme(attribute) != "test" {
             self.report_current(
                 format!(
                     "expected `#[test]` attribute, found `#[{}]`",
-                    self.lexeme(&attribute)
+                    self.lexeme(attribute)
                 )
                 .into(),
                 attribute.span,
-                format!("unsupported test attribute `{}`", self.lexeme(&attribute)).into(),
+                format!("unsupported test attribute `{}`", self.lexeme(attribute)).into(),
                 Some("use `#[test]` for executable test functions".into()),
             );
             self.recover_to_next_item();
@@ -156,7 +156,7 @@ impl<'a> ParserState<'a> {
         let close_brace = self.expect(TokenKind::CloseBrace, "expected `}` after function body")?;
 
         Some(FunctionItem {
-            name: self.lexeme(&name).into(),
+            name: self.lexeme(name).into(),
             parameters,
             return_type,
             statements,
@@ -176,7 +176,7 @@ impl<'a> ParserState<'a> {
             self.expect(TokenKind::Colon, "expected `:` after parameter name")?;
             let ty = self.parse_type_ref()?;
             parameters.push(FunctionParameter {
-                name: self.lexeme(&name).into(),
+                name: self.lexeme(name).into(),
                 ty,
                 span: Span::new(name.span.start, self.previous_span_end()),
             });
@@ -240,7 +240,7 @@ impl<'a> ParserState<'a> {
         let semicolon = self.expect(TokenKind::Semicolon, "expected `;` after let statement")?;
 
         Some(LetStatement {
-            name: self.lexeme(&name).into(),
+            name: self.lexeme(name).into(),
             ty,
             value,
             span: Span::new(let_keyword.span.start, semicolon.span.end),

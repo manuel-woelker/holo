@@ -45,7 +45,7 @@ impl FilePath {
         let path_str = path.as_ref().to_string_lossy();
         Self(
             self.0
-                .join(&relative_path::RelativePath::from_path(&*path_str).unwrap()),
+                .join(relative_path::RelativePath::from_path(&*path_str).unwrap()),
         )
     }
 
@@ -231,6 +231,7 @@ mod tests {
 
         let deserialized = from_bytes::<FilePath, Error>(&bytes).unwrap();
 
+        let path = "src/main.rs";
         assert_eq!(deserialized.as_str(), path);
     }
 
