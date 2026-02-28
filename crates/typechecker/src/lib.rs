@@ -445,21 +445,6 @@ impl BasicTypechecker {
                 Type::String
             }
             ExprKind::Identifier(name) => {
-                if let Some(symbol) = scopes.lookup(name) {
-                    return symbol.ty;
-                }
-                diagnostics.push(
-                    SourceDiagnostic::new(
-                        DiagnosticKind::Typecheck,
-                        format!("unknown identifier `{name}`"),
-                    )
-                    .with_error_code("T1003")
-                    .with_annotated_span(expression.span, "this name is not defined in scope")
-                    .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
-                );
-                Type::Unknown
-            }
-            ExprKind::QualifiedIdentifier(name) => {
                 let ident = name.ident();
                 if let Some(symbol) = scopes.lookup(ident) {
                     return symbol.ty;
@@ -723,11 +708,12 @@ impl BasicTypechecker {
                     return Type::Unknown;
                 };
 
-                let Some(function_type) = function_types.get(callee_name) else {
+                let callee_ident = callee_name.ident();
+                let Some(function_type) = function_types.get(callee_ident) else {
                     diagnostics.push(
                         SourceDiagnostic::new(
                             DiagnosticKind::Typecheck,
-                            format!("unknown function `{callee_name}`"),
+                            format!("unknown function `{callee_ident}`"),
                         )
                         .with_error_code("T1009")
                         .with_annotated_span(call.callee.span, "this function is not defined")
@@ -763,10 +749,10 @@ impl BasicTypechecker {
                         expression.span,
                         "call argument count does not match function signature",
                     );
-                    if let Some(definition_span) = function_spans.get(callee_name) {
+                    if let Some(definition_span) = function_spans.get(callee_ident) {
                         diagnostic = diagnostic.with_annotated_span(
                             *definition_span,
-                            format!("function `{callee_name}` is defined here"),
+                            format!("function `{callee_ident}` is defined here"),
                         );
                     }
                     diagnostics

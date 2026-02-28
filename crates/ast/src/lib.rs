@@ -4,7 +4,7 @@ pub mod expression;
 pub mod statement;
 pub mod types;
 
-pub use expression::{Expr, ExprKind, TemplatePart};
+pub use expression::{Expr, ExprKind, QualifiedName, TemplatePart};
 pub use statement::{
     AssertStatement, ExprStatement, FunctionItem, FunctionParameter, LetStatement, Module,
     Statement, TestItem,

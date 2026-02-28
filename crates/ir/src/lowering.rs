@@ -119,14 +119,6 @@ fn lower_expression(
             Expr::template_string(ir_parts, expression.span)
         }
         holo_ast::ExprKind::Identifier(name) => {
-            let ty = lookup_scope(scopes, name).unwrap_or(Type::Unknown);
-            Expr {
-                kind: ExprKind::Identifier(name.clone()),
-                ty,
-                span: expression.span,
-            }
-        }
-        holo_ast::ExprKind::QualifiedIdentifier(name) => {
             let ty = lookup_scope(scopes, name.ident()).unwrap_or(Type::Unknown);
             Expr {
                 kind: ExprKind::Identifier(name.ident().clone()),
@@ -156,9 +148,10 @@ fn lower_expression(
                 .map(|argument| lower_expression(argument, function_types, scopes))
                 .collect();
             let return_ty = match &call.callee.kind {
-                holo_ast::ExprKind::Identifier(name) => {
-                    function_types.get(name).cloned().unwrap_or(Type::Unknown)
-                }
+                holo_ast::ExprKind::Identifier(name) => function_types
+                    .get(name.ident())
+                    .cloned()
+                    .unwrap_or(Type::Unknown),
                 _ => Type::Unknown,
             };
             Expr::call_typed(callee, arguments, return_ty, expression.span)

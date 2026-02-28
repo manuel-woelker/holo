@@ -2,7 +2,7 @@
 
 use holo_ast::{
     AssertStatement, BinaryOperator, Expr, ExprStatement, FunctionItem, FunctionParameter,
-    LetStatement, Module, Statement, TemplatePart, TestItem, TypeRef,
+    LetStatement, Module, QualifiedName, Statement, TemplatePart, TestItem, TypeRef,
 };
 use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, SourceFile, Span};
 use holo_lexer::{Token, TokenKind};
@@ -523,7 +523,10 @@ impl<'a> ParserState<'a> {
                 }
                 TokenKind::Identifier => {
                     let name = self.advance().expect("peek guaranteed token");
-                    return Some(Expr::identifier(self.lexeme(name), name.span));
+                    return Some(Expr::identifier(
+                        QualifiedName::from_ident(self.lexeme(name).into()),
+                        name.span,
+                    ));
                 }
                 TokenKind::OpenParen => {
                     let open = self.advance().expect("peek guaranteed token");

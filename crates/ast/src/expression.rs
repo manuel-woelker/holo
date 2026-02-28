@@ -1,6 +1,7 @@
 use super::statement::Statement;
 use super::types::BinaryOperator;
-use holo_base::{QualifiedName, SharedString, Span};
+pub use holo_base::QualifiedName;
+use holo_base::{SharedString, Span};
 use speedy::{Readable, Writable};
 
 /// Expression node with span metadata.
@@ -23,10 +24,8 @@ pub enum ExprKind {
     StringLiteral(SharedString),
     /// Template string expression with interpolation.
     TemplateString(Vec<TemplatePart>),
-    /// Simple identifier reference.
-    Identifier(SharedString),
-    /// Qualified identifier reference (e.g., `module::name`).
-    QualifiedIdentifier(QualifiedName),
+    /// Identifier reference (simple or qualified).
+    Identifier(QualifiedName),
     /// Unary boolean negation (`!expr`).
     Negation(Box<Expr>),
     /// Unary arithmetic negation (`-expr`).
@@ -143,17 +142,9 @@ impl Expr {
     }
 
     /// Creates an identifier expression.
-    pub fn identifier(name: impl Into<SharedString>, span: Span) -> Self {
+    pub fn identifier(name: impl Into<QualifiedName>, span: Span) -> Self {
         Self {
             kind: ExprKind::Identifier(name.into()),
-            span,
-        }
-    }
-
-    /// Creates a qualified identifier expression.
-    pub fn qualified_identifier(name: QualifiedName, span: Span) -> Self {
-        Self {
-            kind: ExprKind::QualifiedIdentifier(name),
             span,
         }
     }
