@@ -1,6 +1,7 @@
 //! Shared string wrapper type for efficient string handling.
 
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use smol_str::SmolStr;
 
 /// A wrapper around smol_str::SmolStr for efficient shared string storage.
@@ -8,7 +9,20 @@ use smol_str::SmolStr;
 /// This type provides copy-on-write semantics with cheap cloning,
 /// making it ideal for storing strings that are shared across multiple
 /// parts of the compiler without unnecessary allocations.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Archive,
+    Serialize,
+    Deserialize,
+    SerdeSerialize,
+    SerdeDeserialize,
+)]
 pub struct SharedString(pub SmolStr);
 
 impl SharedString {
