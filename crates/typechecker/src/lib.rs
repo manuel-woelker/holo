@@ -459,6 +459,22 @@ impl BasicTypechecker {
                 );
                 Type::Unknown
             }
+            ExprKind::QualifiedIdentifier(name) => {
+                let ident = name.ident();
+                if let Some(symbol) = scopes.lookup(ident) {
+                    return symbol.ty;
+                }
+                diagnostics.push(
+                    SourceDiagnostic::new(
+                        DiagnosticKind::Typecheck,
+                        format!("unknown identifier `{ident}`"),
+                    )
+                    .with_error_code("T1003")
+                    .with_annotated_span(expression.span, "this name is not defined in scope")
+                    .with_source_excerpt(SourceExcerpt::new(source, 1, 0)),
+                );
+                Type::Unknown
+            }
             ExprKind::Negation(inner) => {
                 let inner_type = Self::typecheck_expression(
                     inner,

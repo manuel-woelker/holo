@@ -813,7 +813,7 @@ mod tests {
 
         assert_eq!(module.functions.len(), 1);
         assert_eq!(module.tests.len(), 1);
-        assert_eq!(module.tests[0].name, "sample");
+        assert_eq!(module.tests[0].name.as_str(), "sample");
         match &module.tests[0].statements[0] {
             Statement::Assert(assertion) => {
                 assert!(matches!(assertion.expression.kind, ExprKind::Negation(_)));
@@ -832,7 +832,7 @@ mod tests {
         let module = parsed.module;
         assert_eq!(module.functions.len(), 1);
         let function = &module.functions[0];
-        assert_eq!(function.name, "add");
+        assert_eq!(function.name.as_str(), "add");
         assert_eq!(function.parameters.len(), 2);
         assert_eq!(function.parameters[0].ty, TypeRef::I64);
         assert_eq!(function.return_type, TypeRef::I64);
@@ -928,7 +928,7 @@ mod tests {
 
         assert!(!result.diagnostics.is_empty());
         assert_eq!(result.module.tests.len(), 1);
-        assert_eq!(result.module.tests[0].name, "ok");
+        assert_eq!(result.module.tests[0].name.as_str(), "ok");
     }
 
     #[test]

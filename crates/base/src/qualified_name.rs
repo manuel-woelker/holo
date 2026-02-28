@@ -1,6 +1,7 @@
 //! Qualified name representation for name resolution.
 
 use serde::{Deserialize, Serialize};
+use speedy::{Readable, Writable};
 
 use crate::SharedString;
 
@@ -12,7 +13,7 @@ use crate::SharedString;
 ///
 /// This structure preserves the hierarchical nature of qualified names, which is
 /// essential for name resolution.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Readable, Writable)]
 pub struct QualifiedName {
     /// The sequence of name segments (e.g., `["std", "collections", "HashMap"]`).
     segments: Vec<SharedString>,
@@ -61,11 +62,6 @@ impl QualifiedName {
     /// Returns an iterator over the segments.
     pub fn segments(&self) -> &[SharedString] {
         &self.segments
-    }
-
-    /// Returns the qualified name as a single string with `::` separators.
-    pub fn to_string(&self) -> String {
-        self.segments.join("::")
     }
 }
 

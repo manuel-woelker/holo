@@ -126,6 +126,14 @@ fn lower_expression(
                 span: expression.span,
             }
         }
+        holo_ast::ExprKind::QualifiedIdentifier(name) => {
+            let ty = lookup_scope(scopes, name.ident()).unwrap_or(Type::Unknown);
+            Expr {
+                kind: ExprKind::Identifier(name.ident().clone()),
+                ty,
+                span: expression.span,
+            }
+        }
         holo_ast::ExprKind::Negation(inner) => Expr::negation(
             lower_expression(inner, function_types, scopes),
             expression.span,
