@@ -6,7 +6,7 @@ pub mod legacy_rocksdb;
 pub mod rocksdb;
 pub mod table;
 
-pub use database::{Database, DatabaseTransaction};
+pub use database::{Database, Transaction, TransactionWrapper};
 pub use legacy::{ArtifactKey, ArtifactKind, ArtifactRecord, LegacyDatabase, NodeId, Revision};
 pub use legacy_rocksdb::{LegacyRocksDbDatabase, RocksDbMode};
 pub use rocksdb::{RocksDbDatabase, RocksDbMode as RocksDbDatabaseMode, RocksDbTransaction};

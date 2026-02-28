@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use holo_base::{Result, SharedString};
 use rocksdb::{ColumnFamilyDescriptor, Env, Options, WriteBatch, DB};
 
-use crate::database::{Database, DatabaseTransaction};
+use crate::database::{Database, Transaction, TransactionWrapper};
 
 /// RocksDB initialization mode.
 #[derive(Clone, Debug)]
@@ -68,8 +68,6 @@ impl RocksDbDatabase {
 }
 
 impl Database for RocksDbDatabase {
-    type Transaction = RocksDbTransaction;
-
     fn open(path: PathBuf, table_names: Vec<SharedString>) -> Result<Self> {
         Self::new(RocksDbMode::Persistent(path), &table_names)
     }
@@ -78,10 +76,10 @@ impl Database for RocksDbDatabase {
         Self::new(RocksDbMode::InMemory, &table_names)
     }
 
-    fn begin_tx(&self) -> Result<Self::Transaction> {
-        Ok(RocksDbTransaction {
+    fn begin_tx(&self) -> Result<TransactionWrapper> {
+        Ok(TransactionWrapper::new(Box::new(RocksDbTransaction {
             db: Arc::clone(&self.db),
-        })
+        })))
     }
 }
 
@@ -90,7 +88,7 @@ pub struct RocksDbTransaction {
     db: Arc<DB>,
 }
 
-impl DatabaseTransaction for RocksDbTransaction {
+impl Transaction for RocksDbTransaction {
     fn get(&self, table: &str, keys: &[SharedString]) -> Result<Vec<Option<Vec<u8>>>> {
         let cf = self
             .db

@@ -2,7 +2,7 @@ use crate::cycle::Cycle;
 use crate::observer::{CycleObserver, StdoutObserver};
 use holo_ast::Module;
 use holo_base::{FilePath, SourceDiagnostic};
-use holo_db::{Database, RocksDbTransaction};
+use holo_db::Database;
 use holo_fs::{FileSystem, StdFileSystem};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub struct Engine {
     pub(crate) ast_cache: HashMap<FilePath, AstState>,
     pub(crate) dirty_files: HashSet<FilePath>,
     pub(crate) filesystem: Arc<dyn FileSystem>,
-    pub(crate) database: Arc<dyn Database<Transaction = RocksDbTransaction>>,
+    pub(crate) database: Arc<dyn Database>,
     pub(crate) observer: Arc<dyn CycleObserver>,
 }
 
@@ -56,10 +56,7 @@ impl Engine {
     }
 
     /// Configures the engine to use a specific database.
-    pub fn with_database(
-        mut self,
-        database: Arc<dyn Database<Transaction = RocksDbTransaction>>,
-    ) -> Self {
+    pub fn with_database(mut self, database: Arc<dyn Database>) -> Self {
         self.database = database;
         self
     }

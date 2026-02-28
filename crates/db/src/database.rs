@@ -14,7 +14,7 @@ use holo_base::SharedString;
 /// Transactions provide atomic operations on tables. Changes made
 /// within a transaction are not visible until the transaction is
 /// committed.
-pub trait DatabaseTransaction {
+pub trait Transaction {
     /// Retrieves values for the given keys from a table.
     ///
     /// Returns a vector of optional values. Each entry corresponds
@@ -30,15 +30,43 @@ pub trait DatabaseTransaction {
     fn remove(&self, table: &str, keys: &[SharedString]) -> Result<()>;
 }
 
+/// Wrapper around a transaction that hides the underlying type.
+pub struct TransactionWrapper {
+    tx: Box<dyn Transaction>,
+}
+
+impl TransactionWrapper {
+    /// Creates a new transaction wrapper from a boxed transaction.
+    pub fn new(tx: Box<dyn Transaction>) -> Self {
+        Self { tx }
+    }
+
+    /// Retrieves values for the given keys from a table.
+    pub fn get(&self, table: &str, keys: &[SharedString]) -> Result<Vec<Option<Vec<u8>>>> {
+        self.tx.get(table, keys)
+    }
+
+    /// Writes key-value entries to a table.
+    pub fn put(&self, table: &str, entries: &[(SharedString, Vec<u8>)]) -> Result<()> {
+        self.tx.put(table, entries)
+    }
+
+    /// Removes entries from a table by keys.
+    pub fn remove(&self, table: &str, keys: &[SharedString]) -> Result<()> {
+        self.tx.remove(table, keys)
+    }
+}
+
+/// Alias for the old trait name (deprecated, use Transaction instead).
+#[deprecated(since = "0.1.0", note = "use Transaction instead")]
+pub trait DatabaseTransaction: Transaction {}
+
 /// Database trait for managing table storage.
 ///
 /// This trait defines the interface for opening databases and
 /// creating transactions. Implementations provide persistent or
 /// in-memory storage using various backends.
 pub trait Database {
-    /// The transaction type used by this database.
-    type Transaction: DatabaseTransaction;
-
     /// Opens a database at the given path with the specified table names.
     ///
     /// # Arguments
@@ -66,5 +94,5 @@ pub trait Database {
     ///
     /// Transactions may be read-only or read-write depending on
     /// the implementation.
-    fn begin_tx(&self) -> Result<Self::Transaction>;
+    fn begin_tx(&self) -> Result<TransactionWrapper>;
 }
