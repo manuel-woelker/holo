@@ -1227,7 +1227,7 @@ mod tests {
         let root = Path::new("repo");
         let source = Path::new("repo/src/main.holo");
         let rendered = display_source_path(root, source);
-        assert_eq!(rendered, "src/main.holo");
+        assert_eq!(rendered, "src/main.holo".into());
     }
 
     #[test]
@@ -1295,7 +1295,7 @@ mod tests {
 
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].source_diagnostics.len(), 1);
-        assert_eq!(issues[0].file, "tests/sample.holo");
+        assert_eq!(issues[0].file, "tests/sample.holo".into());
         assert_eq!(issues[0].line, 1);
         assert!(issues[0].source_diagnostics[0]
             .message

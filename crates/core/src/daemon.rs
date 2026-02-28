@@ -338,7 +338,7 @@ mod tests {
             .process_ready(&mut core, 40)
             .expect("follow-up tick should succeed");
         assert_eq!(second.processed_files.len(), 1);
-        assert_eq!(second.processed_files[0].file_path, "b.holo");
+        assert_eq!(second.processed_files[0].file_path, "b.holo".into());
         assert_eq!(second.tests_failed, 1);
         assert_eq!(second.failing_tests, vec![SharedString::from("b_test")]);
     }
@@ -432,7 +432,7 @@ error: z.holo: typecheck failed";
         assert_eq!(result.status, TestStatus::Failed);
         assert!(result.failure_span.is_some());
         assert_eq!(update.test_failures.len(), 1);
-        assert_eq!(update.test_failures[0].file_path, "suite.holo");
+        assert_eq!(update.test_failures[0].file_path, "suite.holo".into());
         let diagnostic = update.test_failures[0]
             .source_diagnostic
             .as_ref()

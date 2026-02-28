@@ -76,4 +76,3 @@ mod tests {
         assert_eq!(token.span, Span::new(0, 4));
     }
 }
-

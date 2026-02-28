@@ -364,7 +364,7 @@ pub fn create_builtin_registry() -> Arc<NativeFunctionRegistry> {
 /// assert_eq!(output.as_str(), "42");
 /// ```
 pub fn create_test_registry() -> (Arc<NativeFunctionRegistry>, Arc<Mutex<SharedString>>) {
-    let buffer = Arc::new(Mutex::new(SharedString::new()));
+    let buffer = Arc::new(Mutex::new(SharedString::empty()));
     let output = Arc::new(crate::output_stream::TestOutputStream::with_buffer(
         buffer.clone(),
     ));
@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn print_function_call_with_i64() {
-        let buffer = Arc::new(Mutex::new(SharedString::new()));
+        let buffer = Arc::new(Mutex::new(SharedString::empty()));
         let output = Arc::new(TestOutputStream::with_buffer(buffer.clone()));
         let print = PrintFunction::with_output(output);
         let result = print.call(vec![Value::I64(42)]);
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn println_function_call_with_i64() {
-        let buffer = Arc::new(Mutex::new(SharedString::new()));
+        let buffer = Arc::new(Mutex::new(SharedString::empty()));
         let output = Arc::new(TestOutputStream::with_buffer(buffer.clone()));
         let println = PrintlnFunction::with_output(output);
         let result = println.call(vec![Value::I64(42)]);

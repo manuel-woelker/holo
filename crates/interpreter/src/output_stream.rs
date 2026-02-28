@@ -76,7 +76,7 @@ impl TestOutputStream {
     /// Creates a new test output stream with an empty buffer.
     pub fn new() -> Self {
         Self {
-            buffer: Arc::new(Mutex::new(SharedString::new())),
+            buffer: Arc::new(Mutex::new(SharedString::empty())),
         }
     }
 
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_output_stream_shared_buffer() {
-        let buffer = Arc::new(Mutex::new(SharedString::new()));
+        let buffer = Arc::new(Mutex::new(SharedString::empty()));
         let stream1 = TestOutputStream::with_buffer(buffer.clone());
         let stream2 = TestOutputStream::with_buffer(buffer.clone());
 

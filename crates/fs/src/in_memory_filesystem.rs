@@ -41,7 +41,9 @@ impl FileSystem for InMemoryFileSystem {
 
     fn write_string(&self, path: &FilePath, contents: &str) -> Result<()> {
         let mut state = self.lock_state();
-        state.files.insert(PathBuf::from(path.as_str()), contents.into());
+        state
+            .files
+            .insert(PathBuf::from(path.as_str()), contents.into());
         Ok(())
     }
 

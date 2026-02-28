@@ -909,7 +909,7 @@ fn collect_visible_dependency_node(
     ancestor_has_more: &[bool],
     output: &mut Vec<VisibleDependencyNode>,
 ) {
-    let mut prefix = SharedString::new();
+    let mut prefix = SharedString::empty();
     if depth > 0 {
         for has_more in ancestor_has_more {
             prefix.push_str(if *has_more { "│ " } else { "  " });

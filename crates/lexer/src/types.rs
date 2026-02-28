@@ -16,7 +16,6 @@ pub struct LexResult {
     pub diagnostics: Vec<SourceDiagnostic>,
 }
 
-
 /// Minimal lexer implementation used for initial pipeline wiring.
 #[derive(Debug, Default)]
 pub struct BasicLexer;
