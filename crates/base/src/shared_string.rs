@@ -1,34 +1,37 @@
 //! Shared string wrapper type for efficient string handling.
 
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 
-/// A wrapper around ecow::EcoString for efficient shared string storage.
+/// A wrapper around smol_str::SmolStr for efficient shared string storage.
 ///
 /// This type provides copy-on-write semantics with cheap cloning,
 /// making it ideal for storing strings that are shared across multiple
 /// parts of the compiler without unnecessary allocations.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct SharedString(pub ecow::EcoString);
+pub struct SharedString(pub SmolStr);
 
 impl SharedString {
     /// Creates a new SharedString from the given string.
     pub fn new(s: impl Into<String>) -> Self {
-        Self(ecow::EcoString::from(s.into()))
+        Self(SmolStr::from(s.into()))
     }
 
     /// Creates a new empty SharedString.
     pub fn empty() -> Self {
-        Self(ecow::EcoString::new())
+        Self(SmolStr::new())
     }
 
     /// Clears the contents of the string.
     pub fn clear(&mut self) {
-        self.0.clear();
+        self.0 = SmolStr::new();
     }
 
     /// Appends a string slice to this string.
     pub fn push_str(&mut self, string: &str) {
-        self.0.push_str(string);
+        let mut new_string = self.0.to_string();
+        new_string.push_str(string);
+        self.0 = SmolStr::from(new_string);
     }
 
     /// Returns the underlying string as a string slice.
@@ -55,19 +58,19 @@ impl Default for SharedString {
 
 impl From<String> for SharedString {
     fn from(s: String) -> Self {
-        Self(ecow::EcoString::from(s))
+        Self(SmolStr::from(s))
     }
 }
 
 impl From<&str> for SharedString {
     fn from(s: &str) -> Self {
-        Self(ecow::EcoString::from(s))
+        Self(SmolStr::from(s))
     }
 }
 
 impl From<Box<str>> for SharedString {
     fn from(s: Box<str>) -> Self {
-        Self(ecow::EcoString::from(&*s))
+        Self(SmolStr::from(&*s))
     }
 }
 
