@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 holo-ast = { path = "../ast" }
 holo-base = { path = "../base" }
+holo-db = { path = "../db" }
+holo-fs = { path = "../fs" }
 holo-lexer = { path = "../lexer" }
 holo-parser = { path = "../parser" }
-holo-fs = { path = "../fs" }

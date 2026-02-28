@@ -2,6 +2,7 @@ use crate::cycle::Cycle;
 use crate::observer::{CycleObserver, StdoutObserver};
 use holo_ast::Module;
 use holo_base::{FilePath, SourceDiagnostic};
+use holo_db::{Database, RocksDbTransaction};
 use holo_fs::{FileSystem, StdFileSystem};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -15,6 +16,7 @@ pub struct Engine {
     pub(crate) ast_cache: HashMap<FilePath, AstState>,
     pub(crate) dirty_files: HashSet<FilePath>,
     pub(crate) filesystem: Arc<dyn FileSystem>,
+    pub(crate) database: Arc<dyn Database<Transaction = RocksDbTransaction>>,
     pub(crate) observer: Arc<dyn CycleObserver>,
 }
 
@@ -35,6 +37,7 @@ impl Default for Engine {
             ast_cache: HashMap::new(),
             dirty_files: HashSet::new(),
             filesystem: Arc::new(StdFileSystem::new_at_cwd()),
+            database: Arc::new(holo_db::RocksDbDatabase::new_in_memory(vec![]).unwrap()),
             observer: Arc::new(StdoutObserver),
         }
     }
@@ -49,6 +52,15 @@ impl Engine {
     /// Configures the engine to use a specific filesystem.
     pub fn with_filesystem(mut self, filesystem: Arc<dyn FileSystem>) -> Self {
         self.filesystem = filesystem;
+        self
+    }
+
+    /// Configures the engine to use a specific database.
+    pub fn with_database(
+        mut self,
+        database: Arc<dyn Database<Transaction = RocksDbTransaction>>,
+    ) -> Self {
+        self.database = database;
         self
     }
 
