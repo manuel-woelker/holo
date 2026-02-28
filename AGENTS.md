@@ -178,3 +178,7 @@ Never push code or ask to push code.
 
 Choose descriptive names for files. Avoid names like "index.ts" or "types.ts".
 Do not bulk export items using "export * from 'submodule'".
+
+## Code Organization
+
+Put traits and structs into their own files. The module root (e.g., `lib.rs`) should only contain module declarations and re-exports.
