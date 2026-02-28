@@ -1,5 +1,9 @@
+//! Arithmetic binary operators and type annotations for the minimal holo language.
+
+use speedy::{Readable, Writable};
+
 /// Arithmetic binary operators supported by the parser.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
 pub enum BinaryOperator {
     Add,
     Subtract,
@@ -15,7 +19,7 @@ pub enum BinaryOperator {
 }
 
 /// Type annotation reference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Readable, Writable)]
 pub enum TypeRef {
     Bool,
     U32,

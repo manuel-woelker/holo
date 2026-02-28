@@ -139,6 +139,30 @@ impl std::ops::Deref for FilePath {
     }
 }
 
+use speedy::{Readable, Writable};
+
+impl<'a, C> speedy::Readable<'a, C> for FilePath
+where
+    C: speedy::Context,
+{
+    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let string = String::read_from(reader)?;
+        Ok(FilePath::from(string))
+    }
+}
+
+impl<C> speedy::Writable<C> for FilePath
+where
+    C: speedy::Context,
+{
+    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
+    where
+        W: speedy::Writer<C> + ?Sized,
+    {
+        self.as_str().write_to(writer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,10 +253,10 @@ mod tests {
     #[test]
     fn test_file_path_speedy_empty_path() {
         let original = FilePath::default();
-        
+
         let buffer = original.write_to_vec().unwrap();
         let deserialized = FilePath::read_from_buffer(&buffer).unwrap();
-        
+
         assert_eq!(original, deserialized);
         assert!(deserialized.as_str().is_empty());
     }
@@ -240,10 +264,10 @@ mod tests {
     #[test]
     fn test_file_path_speedy_complex_path() {
         let original = FilePath::new("src/components/ui/button.rs");
-        
+
         let buffer = original.write_to_vec().unwrap();
         let deserialized = FilePath::read_from_buffer(&buffer).unwrap();
-        
+
         assert_eq!(original, deserialized);
         assert_eq!(deserialized.as_str(), "src/components/ui/button.rs");
     }
@@ -257,27 +281,5 @@ mod tests {
 
         assert_eq!(original, deserialized);
         assert_eq!(deserialized.as_str(), "path-with_dashes/123_file.holo");
-    }
-}
-
-impl<'a, C> speedy::Readable<'a, C> for FilePath
-where
-    C: speedy::Context,
-{
-    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
-        let string = String::read_from(reader)?;
-        Ok(FilePath::from(string))
-    }
-}
-
-impl<C> speedy::Writable<C> for FilePath
-where
-    C: speedy::Context,
-{
-    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
-    where
-        W: speedy::Writer<C> + ?Sized,
-    {
-        self.as_str().write_to(writer)
     }
 }

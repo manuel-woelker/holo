@@ -1,9 +1,10 @@
 use super::expression::Expr;
 use super::types::TypeRef;
 use holo_base::{SharedString, Span};
+use speedy::{Readable, Writable};
 
 /// Full file-level syntax tree.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Readable, Writable)]
 pub struct Module {
     /// Function items declared in this source file.
     pub functions: Vec<FunctionItem>,
@@ -12,7 +13,7 @@ pub struct Module {
 }
 
 /// A `fn name(...) -> type { ... }` item.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct FunctionItem {
     /// Function name.
     pub name: SharedString,
@@ -29,7 +30,7 @@ pub struct FunctionItem {
 }
 
 /// Function parameter declaration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct FunctionParameter {
     /// Parameter name.
     pub name: SharedString,
@@ -40,7 +41,7 @@ pub struct FunctionParameter {
 }
 
 /// A `#[test] fn name() { ... }` item.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct TestItem {
     /// Test function name.
     pub name: SharedString,
@@ -51,7 +52,7 @@ pub struct TestItem {
 }
 
 /// Supported statement forms in the minimal language.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub enum Statement {
     /// `assert(<expr>);`
     Assert(AssertStatement),
@@ -62,7 +63,7 @@ pub enum Statement {
 }
 
 /// Assertion statement node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct AssertStatement {
     /// Expression that must evaluate to `true`.
     pub expression: Expr,
@@ -71,7 +72,7 @@ pub struct AssertStatement {
 }
 
 /// Let-binding statement node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct LetStatement {
     /// Bound identifier.
     pub name: SharedString,
@@ -84,7 +85,7 @@ pub struct LetStatement {
 }
 
 /// Expression statement node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct ExprStatement {
     /// Evaluated expression.
     pub expression: Expr,

@@ -8,17 +8,7 @@ use smol_str::SmolStr;
 /// This type provides copy-on-write semantics with cheap cloning,
 /// making it ideal for storing strings that are shared across multiple
 /// parts of the compiler without unnecessary allocations.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    SerdeSerialize,
-    SerdeDeserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, SerdeSerialize, SerdeDeserialize)]
 pub struct SharedString(pub SmolStr);
 
 impl SharedString {

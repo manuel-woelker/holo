@@ -8,4 +8,4 @@ publish = false
 
 [dependencies]
 holo-base = { path = "../base" }
-rkyv = { version = "0.8", features = ["smol_str-0_3"] }
+speedy = "0.8"

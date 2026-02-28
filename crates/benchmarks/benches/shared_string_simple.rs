@@ -2,7 +2,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use holo_base::shared_string::SharedString;
-use serde_json;
+use serde_json::{self, from_str, to_string};
 use speedy::{Readable, Writable};
 
 fn create_test_data(size: usize) -> Vec<SharedString> {
@@ -16,11 +16,12 @@ fn create_test_data(size: usize) -> Vec<SharedString> {
 
 fn bench_serde_json(c: &mut Criterion) {
     let data = create_test_data(1000);
-    
+
     c.bench_function("serde_json_roundtrip", |b| {
         b.iter(|| {
             let serialized = serde_json::to_string(&black_box(&data)).unwrap();
-            let deserialized: Vec<SharedString> = serde_json::from_str(&black_box(&serialized)).unwrap();
+            let deserialized: Vec<SharedString> =
+                serde_json::from_str(black_box(&serialized)).unwrap();
             black_box(deserialized)
         })
     });
@@ -28,11 +29,12 @@ fn bench_serde_json(c: &mut Criterion) {
 
 fn bench_speedy(c: &mut Criterion) {
     let data = create_test_data(1000);
-    
+
     c.bench_function("speedy_roundtrip", |b| {
         b.iter(|| {
             let serialized = black_box(&data).write_to_vec().unwrap();
-            let deserialized = Vec::<SharedString>::read_from_buffer(&black_box(&serialized)).unwrap();
+            let deserialized =
+                Vec::<SharedString>::read_from_buffer(black_box(&serialized)).unwrap();
             black_box(deserialized)
         })
     });
@@ -40,21 +42,27 @@ fn bench_speedy(c: &mut Criterion) {
 
 fn bench_size_comparison(c: &mut Criterion) {
     let data = create_test_data(1000);
-    
+
     let serde_size = serde_json::to_string(&data).unwrap().len();
     let speedy_size = data.write_to_vec().unwrap().len();
-    
+
     println!("Serialization size comparison for 1000 SharedStrings:");
     println!("serde_json: {} bytes", serde_size);
     println!("speedy: {} bytes", speedy_size);
-    println!("speedy compression ratio: {:.2}x vs serde_json", serde_size as f64 / speedy_size as f64);
-    
+    println!(
+        "speedy compression ratio: {:.2}x vs serde_json",
+        serde_size as f64 / speedy_size as f64
+    );
+
     c.bench_function("size_info", |b| {
-        b.iter(|| {
-            black_box((serde_size, speedy_size))
-        })
+        b.iter(|| black_box((serde_size, speedy_size)))
     });
 }
 
-criterion_group!(benches, bench_serde_json, bench_speedy, bench_size_comparison);
+criterion_group!(
+    benches,
+    bench_serde_json,
+    bench_speedy,
+    bench_size_comparison
+);
 criterion_main!(benches);

@@ -1,9 +1,10 @@
 use super::statement::Statement;
 use super::types::BinaryOperator;
 use holo_base::{SharedString, Span};
+use speedy::{Readable, Writable};
 
 /// Expression node with span metadata.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct Expr {
     /// Expression variant payload.
     pub kind: ExprKind,
@@ -12,7 +13,7 @@ pub struct Expr {
 }
 
 /// Supported expression kinds in the minimal language.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub enum ExprKind {
     /// Boolean literal expression.
     BoolLiteral(bool),
@@ -41,7 +42,7 @@ pub enum ExprKind {
 }
 
 /// A part of a template string - either literal text or an expression to interpolate.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub enum TemplatePart {
     /// Literal text content.
     Literal(SharedString),
@@ -50,7 +51,7 @@ pub enum TemplatePart {
 }
 
 /// Binary expression payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct BinaryExpr {
     /// Binary operator.
     pub operator: BinaryOperator,
@@ -61,7 +62,7 @@ pub struct BinaryExpr {
 }
 
 /// Function call payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct CallExpr {
     /// Called function expression.
     pub callee: Box<Expr>,
@@ -70,7 +71,7 @@ pub struct CallExpr {
 }
 
 /// If expression payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct IfExpr {
     /// Condition expression.
     pub condition: Box<Expr>,
@@ -81,7 +82,7 @@ pub struct IfExpr {
 }
 
 /// While expression payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct WhileExpr {
     /// Loop condition expression.
     pub condition: Box<Expr>,
@@ -90,7 +91,7 @@ pub struct WhileExpr {
 }
 
 /// Block expression payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct BlockExpr {
     /// Statements evaluated in order.
     pub statements: Vec<Statement>,
