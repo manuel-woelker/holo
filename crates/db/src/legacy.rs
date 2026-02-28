@@ -1,3 +1,8 @@
+//! Legacy database abstraction for compiler artifacts.
+//!
+//! This module contains the original database trait and its RocksDB implementation.
+//! These are considered legacy and will be replaced by a simpler, more focused API.
+
 use std::collections::BTreeSet;
 use std::hash::Hash;
 
@@ -38,8 +43,8 @@ pub struct ArtifactRecord {
     pub schema_version: u32,
 }
 
-/// Database API for artifact storage and dependency indexing.
-pub trait Database<K, A>
+/// Legacy Database API for artifact storage and dependency indexing.
+pub trait LegacyDatabase<K, A>
 where
     K: ArtifactKind,
     A: ArtifactKey,

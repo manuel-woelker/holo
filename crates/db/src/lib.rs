@@ -1,7 +1,7 @@
 //! Database abstraction for compiler artifacts.
 
-pub mod database;
-pub mod rocksdb_database;
+pub mod legacy;
+pub mod legacy_rocksdb;
 
-pub use database::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, NodeId, Revision};
-pub use rocksdb_database::{RocksDbDatabase, RocksDbMode};
+pub use legacy::{ArtifactKey, ArtifactKind, ArtifactRecord, LegacyDatabase, NodeId, Revision};
+pub use legacy_rocksdb::{LegacyRocksDbDatabase, RocksDbMode};

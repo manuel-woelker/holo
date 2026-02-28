@@ -13,7 +13,9 @@ use holo_base::{
     holo_message_error, project_revision, time_task, DiagnosticKind, FilePath, Result,
     SharedString, SourceDiagnostic, SourceExcerpt, SourceFile, Span, TaskTiming,
 };
-use holo_db::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, RocksDbDatabase, RocksDbMode};
+use holo_db::{
+    ArtifactKey, ArtifactKind, ArtifactRecord, LegacyDatabase, LegacyRocksDbDatabase, RocksDbMode,
+};
 use holo_interpreter::{
     native_functions, BasicInterpreter, Interpreter, TestRunSummary, TestStatus,
 };
@@ -146,7 +148,7 @@ impl CompilerCore {
             .with_std_source(error)
         })?;
 
-        let db = RocksDbDatabase::open(RocksDbMode::Persistent(db_dir)).map_err(|error| {
+        let db = LegacyRocksDbDatabase::open(RocksDbMode::Persistent(db_dir)).map_err(|error| {
             holo_message_error!("failed to open persisted cache database").with_std_source(error)
         })?;
 
@@ -1020,7 +1022,7 @@ impl PersistedDiagnostic {
 }
 
 struct PersistedCache {
-    db: RocksDbDatabase<CoreArtifactKind, CoreArtifactKey>,
+    db: LegacyRocksDbDatabase<CoreArtifactKind, CoreArtifactKey>,
 }
 
 impl std::fmt::Debug for PersistedCache {

@@ -242,4 +242,44 @@ mod tests {
         assert_eq!(original, deserialized);
         assert_eq!(deserialized.as_str(), "Hello 🌍 世界");
     }
+
+    // TODO: Implement bitcode support for SharedString
+    // For now, benchmarks will use String conversion approach
+    /*
+    #[test]
+    fn test_shared_string_bitcode_serialization() {
+        let original = SharedString::new("hello world");
+
+        // Test encoding
+        let encoded = bitcode::encode(&original).unwrap();
+        assert!(!encoded.is_empty());
+
+        // Test decoding
+        let decoded: SharedString = bitcode::decode(&encoded).unwrap();
+        assert_eq!(original, decoded);
+        assert_eq!(decoded.as_str(), "hello world");
+    }
+
+    #[test]
+    fn test_shared_string_bitcode_empty_string() {
+        let original = SharedString::empty();
+
+        let encoded = bitcode::encode(&original).unwrap();
+        let decoded: SharedString = bitcode::decode(&encoded).unwrap();
+
+        assert_eq!(original, decoded);
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn test_shared_string_bitcode_unicode() {
+        let original = SharedString::new("Hello 🌍 世界");
+
+        let encoded = bitcode::encode(&original).unwrap();
+        let decoded: SharedString = bitcode::decode(&encoded).unwrap();
+
+        assert_eq!(original, decoded);
+        assert_eq!(decoded.as_str(), "Hello 🌍 世界");
+    }
+    */
 }

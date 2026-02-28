@@ -1,3 +1,8 @@
+//! Legacy RocksDB implementation of the database trait.
+//!
+//! This module contains the original RocksDB implementation of the LegacyDatabase trait.
+//! This implementation is considered legacy and will be replaced by a simpler approach.
+
 use std::collections::{BTreeSet, VecDeque};
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -7,7 +12,7 @@ use bitcode::{Decode, Encode};
 use holo_base::Result;
 use rocksdb::{ColumnFamilyDescriptor, Env, Options, WriteBatch, DB};
 
-use crate::database::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, NodeId};
+use super::legacy::{ArtifactKey, ArtifactKind, ArtifactRecord, LegacyDatabase, NodeId};
 
 const ARTIFACTS_CF: &str = "artifacts";
 const FORWARD_DEPS_CF: &str = "forward_dependencies";
@@ -30,14 +35,14 @@ pub enum RocksDbMode {
     InMemory,
 }
 
-/// RocksDB-backed implementation of [`Database`].
-pub struct RocksDbDatabase<K, A> {
+/// Legacy RocksDB-backed implementation of [`LegacyDatabase`].
+pub struct LegacyRocksDbDatabase<K, A> {
     db: DB,
     _env: Option<Env>,
     _marker: PhantomData<(K, A)>,
 }
 
-impl<K, A> RocksDbDatabase<K, A> {
+impl<K, A> LegacyRocksDbDatabase<K, A> {
     /// Opens a new database with required column families.
     pub fn open(mode: RocksDbMode) -> Result<Self> {
         let mut opts = Options::default();
@@ -84,7 +89,7 @@ impl<K, A> RocksDbDatabase<K, A> {
     }
 }
 
-impl<K, A> RocksDbDatabase<K, A>
+impl<K, A> LegacyRocksDbDatabase<K, A>
 where
     K: ArtifactKind + Encode + for<'a> Decode<'a>,
     A: ArtifactKey + Encode + for<'a> Decode<'a>,
@@ -136,7 +141,7 @@ where
     }
 }
 
-impl<K, A> Database<K, A> for RocksDbDatabase<K, A>
+impl<K, A> LegacyDatabase<K, A> for LegacyRocksDbDatabase<K, A>
 where
     K: ArtifactKind + Encode + for<'a> Decode<'a>,
     A: ArtifactKey + Encode + for<'a> Decode<'a>,
@@ -268,8 +273,8 @@ mod tests {
 
     use bitcode::{Decode, Encode};
 
-    use crate::database::{ArtifactKey, ArtifactKind, ArtifactRecord, Database, NodeId};
-    use crate::rocksdb_database::{RocksDbDatabase, RocksDbMode};
+    use crate::legacy::{ArtifactKey, ArtifactKind, ArtifactRecord, LegacyDatabase, NodeId};
+    use crate::legacy_rocksdb::{LegacyRocksDbDatabase, RocksDbMode};
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Encode, Decode)]
     enum TestKind {
@@ -298,8 +303,8 @@ mod tests {
         }
     }
 
-    fn make_db() -> RocksDbDatabase<TestKind, TestKey> {
-        RocksDbDatabase::open(RocksDbMode::InMemory).expect("db should open")
+    fn make_db() -> LegacyRocksDbDatabase<TestKind, TestKey> {
+        LegacyRocksDbDatabase::open(RocksDbMode::InMemory).expect("db should open")
     }
 
     #[test]
