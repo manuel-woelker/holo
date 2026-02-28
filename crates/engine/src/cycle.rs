@@ -64,7 +64,7 @@ impl<'a> Cycle<'a> {
             let content_hash = hash_string(&content);
             let key = SharedString::from(file_path.as_str());
 
-            let stored_hash = tx.get(FILE_HASH_TABLE, &[key.clone()]);
+            let stored_hash = tx.get(FILE_HASH_TABLE, std::slice::from_ref(&key));
             let should_parse = match stored_hash {
                 Ok(results) if results.len() == 1 => {
                     let stored = results[0].as_ref();
