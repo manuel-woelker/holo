@@ -1,6 +1,5 @@
 //! Shared string wrapper type for efficient string handling.
 
-use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use smol_str::SmolStr;
 
@@ -17,9 +16,6 @@ use smol_str::SmolStr;
     PartialOrd,
     Ord,
     Hash,
-    Archive,
-    Serialize,
-    Deserialize,
     SerdeSerialize,
     SerdeDeserialize,
 )]

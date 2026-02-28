@@ -1,9 +1,5 @@
 //! File path wrapper type for relative path handling.
 
-use rkyv::rancor::{Fallible, Source};
-use rkyv::ser::{Allocator, Writer};
-use rkyv::string::{ArchivedString, StringResolver};
-use rkyv::{Archive, Deserialize, Place, Portable, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 
 /// A wrapper around relative_path::RelativePathBuf for file path handling.
@@ -217,115 +213,6 @@ mod tests {
     }
 
     #[test]
-    fn test_file_path_rkyv_serialization() {
-        use rkyv::{from_bytes, rancor::Error};
-        let path = "src/main.rs";
-        let original = FilePath::new(path);
-
-        // Test rkyv serialization
-        let result = rkyv::to_bytes::<rkyv::rancor::Error>(&original);
-        assert!(result.is_ok(), "rkyv serialization should work");
-
-        // Verify we got some bytes
-        let bytes = result.unwrap();
-        assert!(!bytes.is_empty(), "serialized bytes should not be empty");
-
-        let deserialized = from_bytes::<FilePath, Error>(&bytes).unwrap();
-
-        let path = "src/main.rs";
-        assert_eq!(deserialized.as_str(), path);
-    }
-
-    #[test]
-    fn test_file_path_rkyv_multiple_paths() {
-        let paths = vec![
-            FilePath::new("src/main.rs"),
-            FilePath::from("lib/core.holo"),
-            FilePath::from("examples/demo.holo"),
-            FilePath::new("tests/integration/test.holo"),
-            FilePath::default(),
-        ];
-
-        for original in &paths {
-            // Test rkyv serialization
-            let result = rkyv::to_bytes::<rkyv::rancor::Error>(original);
-            assert!(
-                result.is_ok(),
-                "rkyv serialization should work for path: {}",
-                original.as_str()
-            );
-
-            let bytes = result.unwrap();
-            assert!(
-                !bytes.is_empty(),
-                "serialized bytes should not be empty for path: {}",
-                original.as_str()
-            );
-        }
-    }
-
-    #[test]
-    fn test_file_path_rkyv_basic_structure() {
-        let original = FilePath::new("test/path/file.holo");
-
-        // Test rkyv serialization - just verify it can serialize
-        let result = rkyv::to_bytes::<rkyv::rancor::Error>(&original);
-        assert!(result.is_ok(), "rkyv serialization should work");
-
-        // Verify we got some bytes
-        let bytes = result.unwrap();
-        assert!(!bytes.is_empty());
-
-        // Basic verification - the fact that serialization works is the main test
-        // Full rkyv testing would require more complex setup with proper ArchivedString handling
-    }
-
-    #[test]
-    fn test_file_path_rkyv_edge_cases() {
-        // Test empty path
-        let empty = FilePath::default();
-        let result = rkyv::to_bytes::<rkyv::rancor::Error>(&empty);
-        assert!(result.is_ok());
-        let bytes = result.unwrap();
-        assert!(!bytes.is_empty());
-
-        // Test path with special characters
-        let special = FilePath::new("path/with-dashes_and_underscores/123.holo");
-        let result = rkyv::to_bytes::<rkyv::rancor::Error>(&special);
-        assert!(result.is_ok());
-        let bytes = result.unwrap();
-        assert!(!bytes.is_empty());
-
-        // Test very long path
-        let long_path = "a".repeat(100) + ".holo";
-        let long = FilePath::from(long_path.as_str());
-        let result = rkyv::to_bytes::<rkyv::rancor::Error>(&long);
-        assert!(result.is_ok());
-        let bytes = result.unwrap();
-        assert!(!bytes.is_empty());
-    }
-
-    #[test]
-    fn test_file_path_rkyv_performance() {
-        // Test that rkyv serialization works efficiently for multiple paths
-        let paths: Vec<FilePath> = (0..100)
-            .map(|i| FilePath::from(format!("test/path/file_{}.holo", i)))
-            .collect();
-
-        for path in &paths {
-            let result = rkyv::to_bytes::<rkyv::rancor::Error>(path);
-            assert!(
-                result.is_ok(),
-                "rkyv serialization should work for path: {}",
-                path.as_str()
-            );
-
-            let bytes = result.unwrap();
-            assert!(!bytes.is_empty(), "should produce non-empty bytes");
-        }
-    }
-
-    #[test]
     fn test_file_path_speedy_serialization() {
         let original = FilePath::new("src/main.rs");
 
@@ -342,10 +229,10 @@ mod tests {
     #[test]
     fn test_file_path_speedy_empty_path() {
         let original = FilePath::default();
-
+        
         let buffer = original.write_to_vec().unwrap();
         let deserialized = FilePath::read_from_buffer(&buffer).unwrap();
-
+        
         assert_eq!(original, deserialized);
         assert!(deserialized.as_str().is_empty());
     }
@@ -353,10 +240,10 @@ mod tests {
     #[test]
     fn test_file_path_speedy_complex_path() {
         let original = FilePath::new("src/components/ui/button.rs");
-
+        
         let buffer = original.write_to_vec().unwrap();
         let deserialized = FilePath::read_from_buffer(&buffer).unwrap();
-
+        
         assert_eq!(original, deserialized);
         assert_eq!(deserialized.as_str(), "src/components/ui/button.rs");
     }
@@ -370,56 +257,6 @@ mod tests {
 
         assert_eq!(original, deserialized);
         assert_eq!(deserialized.as_str(), "path-with_dashes/123_file.holo");
-    }
-}
-
-impl Archive for FilePath {
-    type Archived = ArchivedString;
-    type Resolver = StringResolver;
-
-    #[inline]
-    fn resolve(&self, resolver: Self::Resolver, out: Place<Self::Archived>) {
-        ArchivedString::resolve_from_str(self.as_str(), resolver, out);
-    }
-}
-
-impl<S> Serialize<S> for FilePath
-where
-    S: Fallible + Allocator + Writer + ?Sized,
-    S::Error: Source,
-{
-    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        ArchivedString::serialize_from_str(self.as_str(), serializer)
-    }
-}
-
-impl<D> Deserialize<FilePath, D> for ArchivedFilePath
-where
-    D: Fallible + ?Sized,
-{
-    fn deserialize(&self, _deserializer: &mut D) -> Result<FilePath, D::Error> {
-        // Extract the string from the archived representation
-        let path_string = self.0.as_str();
-        // Reconstruct the FilePath from the string
-        Ok(FilePath::from(path_string.to_string()))
-    }
-}
-
-/// Archived representation of FilePath
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Portable)]
-pub struct ArchivedFilePath(rkyv::Archived<String>);
-
-impl ArchivedFilePath {
-    /// Returns the path as a string slice
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl<D: Fallible + ?Sized> Deserialize<FilePath, D> for ArchivedString {
-    fn deserialize(&self, _deserializer: &mut D) -> Result<FilePath, D::Error> {
-        Ok(FilePath::new(self.as_str()))
     }
 }
 

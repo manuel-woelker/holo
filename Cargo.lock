@@ -624,7 +624,6 @@ dependencies = [
  "parking_lot",
  "rapidhash",
  "relative-path",
- "rkyv",
  "serde",
  "smol_str",
  "speedy",
@@ -638,7 +637,6 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "holo-base",
- "rkyv",
  "serde",
  "serde_json",
  "speedy",
