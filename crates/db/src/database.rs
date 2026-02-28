@@ -51,6 +51,17 @@ pub trait Database {
     where
         Self: Sized;
 
+    /// Opens an in-memory database with the specified table names.
+    ///
+    /// # Arguments
+    /// * `table_names` - Names of the tables to create
+    ///
+    /// # Errors
+    /// Returns an error if the database cannot be created.
+    fn new_in_memory(table_names: Vec<SharedString>) -> Result<Self>
+    where
+        Self: Sized;
+
     /// Begins a new transaction on this database.
     ///
     /// Transactions may be read-only or read-write depending on

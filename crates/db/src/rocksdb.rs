@@ -74,6 +74,10 @@ impl Database for RocksDbDatabase {
         Self::new(RocksDbMode::Persistent(path), &table_names)
     }
 
+    fn new_in_memory(table_names: Vec<SharedString>) -> Result<Self> {
+        Self::new(RocksDbMode::InMemory, &table_names)
+    }
+
     fn begin_tx(&self) -> Result<Self::Transaction> {
         Ok(RocksDbTransaction {
             db: Arc::clone(&self.db),
