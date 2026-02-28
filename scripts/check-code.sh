@@ -17,9 +17,9 @@ echo "Running cargo fmt..."
 cargo fmt --manifest-path "$MANIFEST_PATH" --all
 
 echo "Running cargo clippy..."
-cargo clippy --manifest-path "$MANIFEST_PATH" --all-targets --all-features --no-deps -- -D warnings
+cargo clippy --manifest-path "$MANIFEST_PATH" --workspace --all-targets --all-features --no-deps -- -D warnings
 
 echo "Running cargo test..."
-cargo test --manifest-path "$MANIFEST_PATH" --all-targets --all-features
+cargo test --manifest-path "$MANIFEST_PATH" --workspace --all-targets --all-features
 
 echo "All checks passed."
