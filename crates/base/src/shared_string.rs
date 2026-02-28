@@ -19,12 +19,12 @@ impl SharedString {
 
     /// Creates a new empty SharedString.
     pub fn empty() -> Self {
-        Self(SmolStr::new())
+        Self(SmolStr::from(""))
     }
 
     /// Clears the contents of the string.
     pub fn clear(&mut self) {
-        self.0 = SmolStr::new();
+        self.0 = SmolStr::from("");
     }
 
     /// Appends a string slice to this string.
