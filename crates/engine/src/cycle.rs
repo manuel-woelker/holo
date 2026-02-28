@@ -7,16 +7,21 @@ use holo_parser::{BasicParser, Parser};
 /// Represents the state and logic of a single compilation cycle.
 pub struct Cycle<'a> {
     engine: &'a mut Engine,
+    diagnostics: Vec<SourceDiagnostic>,
 }
 
 impl<'a> Cycle<'a> {
     /// Creates a new cycle for the given engine.
     pub fn new(engine: &'a mut Engine) -> Self {
-        Self { engine }
+        Self {
+            engine,
+            diagnostics: Vec::new(),
+        }
     }
 
     /// Runs the cycle logic.
     pub fn run(&mut self) {
+        self.diagnostics.clear();
         self.stage_1_parse();
         // Stages 2-5 will be implemented here.
     }
@@ -46,15 +51,18 @@ impl<'a> Cycle<'a> {
                         error_message.clone().into(),
                     ));
 
+                    let diagnostics = vec![SourceDiagnostic::new(
+                        DiagnosticKind::Io,
+                        format!("failed to read file: {}", error_message),
+                    )];
+                    self.diagnostics.extend(diagnostics.iter().cloned());
+
                     self.engine.ast_cache.insert(
                         file_path.clone(),
                         AstState {
                             content_hash: 0,
                             ast: None,
-                            diagnostics: vec![SourceDiagnostic::new(
-                                DiagnosticKind::Io,
-                                format!("failed to read file: {}", error_message),
-                            )],
+                            diagnostics,
                         },
                     );
                     continue;
@@ -95,6 +103,7 @@ impl<'a> Cycle<'a> {
 
             let mut diagnostics = lexed.diagnostics;
             diagnostics.extend(parsed.diagnostics);
+            self.diagnostics.extend(diagnostics.iter().cloned());
 
             self.engine.ast_cache.insert(
                 file_path.clone(),
