@@ -200,26 +200,6 @@ pub enum BinaryOperator {
     GreaterThanOrEqual,
 }
 
-impl Module {
-    pub(crate) fn function(
-        name: SharedString,
-        parameters: Vec<FunctionParameter>,
-        return_type: Type,
-        statements: Vec<Statement>,
-        is_test: bool,
-        span: Span,
-    ) -> FunctionItem {
-        FunctionItem {
-            name,
-            parameters,
-            return_type,
-            statements,
-            is_test,
-            span,
-        }
-    }
-}
-
 impl Expr {
     pub fn bool_literal(value: bool, span: Span) -> Self {
         Self {

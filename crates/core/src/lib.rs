@@ -8,7 +8,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use bitcode::{Decode, Encode};
-use holo_ast::Module as AstModule;
+use holo_ast::{Module as AstModule, ModuleItem};
 use holo_base::{
     holo_message_error, project_revision, time_task, DiagnosticKind, FilePath, Result,
     SharedString, SourceDiagnostic, SourceExcerpt, SourceFile, Span, TaskTiming,
@@ -224,8 +224,27 @@ impl CompilerCore {
             self.parser.parse_module(&tokens, &source_file)
         });
         let mut module: AstModule = parsed.module;
-        module.functions.splice(0..0, import_resolution.functions);
+        let mut new_functions = Vec::new();
+        let mut new_tests = Vec::new();
+        for item in std::mem::take(&mut module.items) {
+            match item {
+                ModuleItem::Function(f) => new_functions.push(f),
+                ModuleItem::Test(t) => new_tests.push(t),
+            }
+        }
+        new_functions.extend(import_resolution.functions);
+        let mut items: Vec<_> = new_functions
+            .into_iter()
+            .map(ModuleItem::Function)
+            .collect();
+        items.extend(new_tests.into_iter().map(ModuleItem::Test));
+        module.items = items;
         diagnostics.extend(parsed.diagnostics);
+        let test_count = module
+            .items
+            .iter()
+            .filter(|i| matches!(i, ModuleItem::Test(_)))
+            .count();
         info!(
             file_path = %file_path,
             stage = "parse",
@@ -233,7 +252,7 @@ impl CompilerCore {
             "stage timing"
         );
         debug!(
-            test_item_count = module.tests.len(),
+            test_item_count = test_count,
             diagnostics = diagnostics.len(),
             "parsing completed"
         );
@@ -648,7 +667,11 @@ impl<'a> ImportResolver<'a> {
             }
         }
         self.diagnostics.extend(parse_diagnostics);
-        self.functions.extend(parsed.module.functions);
+        for item in parsed.module.items {
+            if let ModuleItem::Function(f) = item {
+                self.functions.push(f);
+            }
+        }
 
         for nested in imports {
             let nested_target = resolve_import_target(target_file, nested.module_name.as_str());

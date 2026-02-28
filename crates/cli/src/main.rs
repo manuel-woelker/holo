@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use holo_ast::Statement;
+use holo_ast::{ModuleItem, Statement};
 use holo_base::{
     holo_message_error, FilePath, Mutex, Result, SharedString, SourceFile, TaskTiming,
 };
@@ -728,7 +728,11 @@ fn extract_test_dependencies_from_source(
     let module = parsed.module;
 
     let mut dependencies = Vec::new();
-    for test in module.tests {
+    for item in module.items {
+        let test = match item {
+            ModuleItem::Test(t) => t,
+            ModuleItem::Function(_) => continue,
+        };
         let mut used_functions = test
             .statements
             .iter()

@@ -1,27 +1,25 @@
 //! Abstract syntax tree types for the minimal holo language.
 
 pub mod expression;
+pub mod module;
 pub mod statement;
 pub mod types;
 
 pub use expression::{Expr, ExprKind, QualifiedName, TemplatePart};
-pub use statement::{
-    AssertStatement, ExprStatement, FunctionItem, FunctionParameter, LetStatement, Module,
-    Statement, TestItem,
-};
+pub use module::{FunctionItem, FunctionParameter, Module, ModuleItem, TestItem};
+pub use statement::{AssertStatement, ExprStatement, LetStatement, Statement};
 pub use types::{BinaryOperator, TypeRef};
 
 #[cfg(test)]
 mod tests {
-    use super::{BinaryOperator, Expr, ExprKind, Module};
+    use super::{BinaryOperator, Expr, ExprKind, Module, ModuleItem};
     use holo_base::{SharedString, Span};
     use speedy::{Readable, Writable};
 
     #[test]
-    fn module_defaults_to_empty_tests() {
+    fn module_defaults_to_empty_items() {
         let module = Module::default();
-        assert!(module.functions.is_empty());
-        assert!(module.tests.is_empty());
+        assert!(module.items.is_empty());
     }
 
     #[test]
@@ -43,7 +41,6 @@ mod tests {
     fn test_module_speedy_serialization() {
         let mut module = Module::default();
 
-        // Add a simple function
         let func = super::FunctionItem {
             name: SharedString::from("test_func"),
             parameters: vec![],
@@ -52,16 +49,18 @@ mod tests {
             is_test: false,
             span: Span::new(0, 10),
         };
-        module.functions.push(func);
+        module.items.push(ModuleItem::Function(func));
 
-        // Test speedy serialization
         let buffer = module.write_to_vec().unwrap();
         assert!(!buffer.is_empty());
 
-        // Test speedy deserialization
         let deserialized = Module::read_from_buffer(&buffer).unwrap();
         assert_eq!(module, deserialized);
-        assert_eq!(deserialized.functions.len(), 1);
-        assert_eq!(deserialized.functions[0].name.as_str(), "test_func");
+        assert_eq!(deserialized.items.len(), 1);
+        if let ModuleItem::Function(func) = &deserialized.items[0] {
+            assert_eq!(func.name.as_str(), "test_func");
+        } else {
+            panic!("Expected Function variant");
+        }
     }
 }

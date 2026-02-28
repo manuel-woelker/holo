@@ -2,7 +2,7 @@
 
 use holo_ast::{
     AssertStatement, BinaryOperator, Expr, ExprStatement, FunctionItem, FunctionParameter,
-    LetStatement, Module, QualifiedName, Statement, TemplatePart, TestItem, TypeRef,
+    LetStatement, Module, ModuleItem, QualifiedName, Statement, TemplatePart, TestItem, TypeRef,
 };
 use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, SourceFile, Span};
 use holo_lexer::{Token, TokenKind};
@@ -56,8 +56,7 @@ impl<'a> ParserState<'a> {
     }
 
     fn parse_module(&mut self) -> ParseResult {
-        let mut functions = Vec::new();
-        let mut tests = Vec::new();
+        let mut items = Vec::new();
         while self.peek().is_some() {
             if !self.check(TokenKind::Hash) && !self.check(TokenKind::Fn) {
                 self.advance();
@@ -66,14 +65,14 @@ impl<'a> ParserState<'a> {
 
             let previous_index = self.index;
             if let Some(function) = self.parse_item() {
+                items.push(ModuleItem::Function(function.clone()));
                 if function.is_test {
-                    tests.push(TestItem {
+                    items.push(ModuleItem::Test(TestItem {
                         name: function.name.clone(),
                         statements: function.statements.clone(),
                         span: function.span,
-                    });
+                    }));
                 }
-                functions.push(function);
             } else {
                 self.recover_to_next_item();
             }
@@ -83,7 +82,7 @@ impl<'a> ParserState<'a> {
             }
         }
         ParseResult {
-            module: Module { functions, tests },
+            module: Module { items },
             diagnostics: std::mem::take(&mut self.diagnostics),
         }
     }
@@ -789,7 +788,9 @@ fn token_kind_name(kind: TokenKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{BasicParser, Parser};
-    use holo_ast::{expression::BinaryExpr, BinaryOperator, ExprKind, Statement, TypeRef};
+    use holo_ast::{
+        expression::BinaryExpr, BinaryOperator, ExprKind, ModuleItem, Statement, TypeRef,
+    };
     use holo_base::SourceFile;
     use holo_lexer::{BasicLexer, Lexer};
 
@@ -800,8 +801,7 @@ mod tests {
         let result = parser.parse_module(&[], &source_file);
         let module = result.module;
         assert!(result.diagnostics.is_empty());
-        assert!(module.functions.is_empty());
-        assert!(module.tests.is_empty());
+        assert!(module.items.is_empty());
     }
 
     #[test]
@@ -814,15 +814,25 @@ mod tests {
         assert!(parsed.diagnostics.is_empty());
         let module = parsed.module;
 
-        assert_eq!(module.functions.len(), 1);
-        assert_eq!(module.tests.len(), 1);
-        assert_eq!(module.tests[0].name.as_str(), "sample");
-        match &module.tests[0].statements[0] {
-            Statement::Assert(assertion) => {
-                assert!(matches!(assertion.expression.kind, ExprKind::Negation(_)));
+        let mut functions = 0;
+        let mut tests = 0;
+        for item in &module.items {
+            match item {
+                ModuleItem::Function(_) => functions += 1,
+                ModuleItem::Test(t) => {
+                    tests += 1;
+                    assert_eq!(t.name.as_str(), "sample");
+                    match &t.statements[0] {
+                        Statement::Assert(assertion) => {
+                            assert!(matches!(assertion.expression.kind, ExprKind::Negation(_)));
+                        }
+                        _ => panic!("expected assert statement"),
+                    }
+                }
             }
-            _ => panic!("expected assert statement"),
         }
+        assert_eq!(functions, 1);
+        assert_eq!(tests, 1);
     }
 
     #[test]
@@ -833,13 +843,17 @@ mod tests {
         let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
         let module = parsed.module;
-        assert_eq!(module.functions.len(), 1);
-        let function = &module.functions[0];
-        assert_eq!(function.name.as_str(), "add");
-        assert_eq!(function.parameters.len(), 2);
-        assert_eq!(function.parameters[0].ty, TypeRef::I64);
-        assert_eq!(function.return_type, TypeRef::I64);
-        assert!(matches!(function.statements[0], Statement::Let(_)));
+        assert_eq!(module.items.len(), 1);
+        let func = &module.items[0];
+        if let ModuleItem::Function(function) = func {
+            assert_eq!(function.name.as_str(), "add");
+            assert_eq!(function.parameters.len(), 2);
+            assert_eq!(function.parameters[0].ty, TypeRef::I64);
+            assert_eq!(function.return_type, TypeRef::I64);
+            assert!(matches!(function.statements[0], Statement::Let(_)));
+        } else {
+            panic!("Expected Function variant");
+        }
     }
 
     #[test]
@@ -849,7 +863,11 @@ mod tests {
         let source_file = SourceFile::new(source, "test.holo");
         let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
-        let function = &parsed.module.functions[0];
+        let func = &parsed.module.items[0];
+        let function = match func {
+            ModuleItem::Function(f) => f,
+            _ => panic!("Expected Function variant"),
+        };
         let Statement::Assert(assertion) = &function.statements[0] else {
             panic!("expected assert statement");
         };
@@ -895,8 +913,12 @@ mod tests {
         let source_file = SourceFile::new(source, "test.holo");
         let result = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(!result.diagnostics.is_empty());
-        assert_eq!(result.module.tests.len(), 1);
-        assert_eq!(result.module.tests[0].statements.len(), 1);
+        assert_eq!(result.module.items.len(), 2);
+        if let ModuleItem::Test(t) = &result.module.items[1] {
+            assert_eq!(t.statements.len(), 1);
+        } else {
+            panic!("Expected Test variant");
+        }
     }
 
     #[test]
@@ -918,7 +940,7 @@ mod tests {
                 "{source}: {:?}",
                 parsed.diagnostics
             );
-            assert_eq!(parsed.module.functions.len(), 1, "{source}");
+            assert_eq!(parsed.module.items.len(), 1, "{source}");
         }
     }
 
@@ -930,8 +952,12 @@ mod tests {
         let result = BasicParser.parse_module(&lexed.tokens, &source_file);
 
         assert!(!result.diagnostics.is_empty());
-        assert_eq!(result.module.tests.len(), 1);
-        assert_eq!(result.module.tests[0].name.as_str(), "ok");
+        assert_eq!(result.module.items.len(), 2);
+        if let ModuleItem::Test(t) = &result.module.items[1] {
+            assert_eq!(t.name.as_str(), "ok");
+        } else {
+            panic!("Expected Test variant");
+        }
     }
 
     #[test]
@@ -941,7 +967,11 @@ mod tests {
         let source_file = SourceFile::new(source, "test.holo");
         let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
-        let function = &parsed.module.functions[0];
+        let func = &parsed.module.items[0];
+        let function = match func {
+            ModuleItem::Function(f) => f,
+            _ => panic!("Expected Function variant"),
+        };
         let Statement::Expr(expr_statement) = &function.statements[0] else {
             panic!("expected expression statement");
         };
@@ -959,7 +989,11 @@ mod tests {
         let source_file = SourceFile::new(source, "test.holo");
         let parsed = BasicParser.parse_module(&lexed.tokens, &source_file);
         assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
-        let function = &parsed.module.functions[0];
+        let func = &parsed.module.items[0];
+        let function = match func {
+            ModuleItem::Function(f) => f,
+            _ => panic!("Expected Function variant"),
+        };
         let Statement::Expr(expr_statement) = &function.statements[0] else {
             panic!("expected expression statement");
         };

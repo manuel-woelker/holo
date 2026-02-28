@@ -1,19 +1,27 @@
 use crate::types::*;
+use holo_ast::ModuleItem;
 use holo_base::SharedString;
 use std::collections::HashMap;
 
 pub fn lower_module(module: &holo_ast::Module) -> Module {
-    let function_types: HashMap<SharedString, Type> = module
-        .functions
-        .iter()
-        .map(|function| (function.name.clone(), type_from_ref(function.return_type)))
-        .collect();
+    let mut functions = Vec::new();
+    let mut tests = Vec::new();
 
-    Module {
-        functions: module
-            .functions
-            .iter()
-            .map(|function| {
+    for item in &module.items {
+        match item {
+            ModuleItem::Function(function) => {
+                let function_types: HashMap<SharedString, Type> = module
+                    .items
+                    .iter()
+                    .filter_map(|i| {
+                        if let ModuleItem::Function(f) = i {
+                            Some((f.name.clone(), type_from_ref(f.return_type)))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
                 let mut scopes = vec![HashMap::new()];
                 for parameter in &function.parameters {
                     scopes[0].insert(parameter.name.clone(), type_from_ref(parameter.ty));
@@ -24,42 +32,52 @@ pub fn lower_module(module: &holo_ast::Module) -> Module {
                     .iter()
                     .map(|statement| lower_statement(statement, &function_types, &mut scopes))
                     .collect();
-                Module::function(
-                    function.name.clone(),
-                    function
+                functions.push(crate::types::FunctionItem {
+                    name: function.name.clone(),
+                    parameters: function
                         .parameters
                         .iter()
-                        .map(|parameter| FunctionParameter {
+                        .map(|parameter| crate::types::FunctionParameter {
                             name: parameter.name.clone(),
                             ty: type_from_ref(parameter.ty),
                             span: parameter.span,
                         })
                         .collect(),
-                    type_from_ref(function.return_type),
+                    return_type: type_from_ref(function.return_type),
                     statements,
-                    function.is_test,
-                    function.span,
-                )
-            })
-            .collect(),
-        tests: module
-            .tests
-            .iter()
-            .map(|test| {
+                    is_test: function.is_test,
+                    span: function.span,
+                });
+            }
+            ModuleItem::Test(test) => {
+                let function_types: HashMap<SharedString, Type> = module
+                    .items
+                    .iter()
+                    .filter_map(|i| {
+                        if let ModuleItem::Function(f) = i {
+                            Some((f.name.clone(), type_from_ref(f.return_type)))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
                 let mut scopes = vec![HashMap::new()];
                 let statements = test
                     .statements
                     .iter()
                     .map(|statement| lower_statement(statement, &function_types, &mut scopes))
                     .collect();
-                TestItem {
+                tests.push(crate::types::TestItem {
                     name: test.name.clone(),
                     statements,
                     span: test.span,
-                }
-            })
-            .collect(),
+                });
+            }
+        }
     }
+
+    Module { functions, tests }
 }
 
 fn lower_statement(
@@ -230,14 +248,15 @@ fn type_from_ref(type_ref: holo_ast::TypeRef) -> Type {
 mod tests {
     use super::{lower_module, ExprKind, Type};
     use holo_ast::{
-        Expr, ExprStatement, FunctionItem, Module as AstModule, Statement as AstStatement, TypeRef,
+        Expr, ExprStatement, FunctionItem, Module as AstModule, ModuleItem,
+        Statement as AstStatement, TypeRef,
     };
     use holo_base::Span;
 
     #[test]
     fn lowers_function_signatures_and_expression_types() {
         let module = AstModule {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "entry".into(),
                 parameters: vec![holo_ast::FunctionParameter {
                     name: "v".into(),
@@ -251,8 +270,7 @@ mod tests {
                 })],
                 is_test: false,
                 span: Span::new(0, 2),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let lowered = lower_module(&module);

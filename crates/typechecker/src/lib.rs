@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use holo_ast::{BinaryOperator, Expr, ExprKind, Module, Statement, TypeRef};
+use holo_ast::{BinaryOperator, Expr, ExprKind, Module, ModuleItem, Statement, TypeRef};
 use holo_base::{
     DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, Span, TaskTimer, TaskTiming,
 };
@@ -969,7 +969,17 @@ impl Typechecker for BasicTypechecker {
         let mut function_types = HashMap::new();
         let mut function_spans = HashMap::new();
         let mut seen_function_names = HashMap::new();
-        for function in &module.functions {
+
+        let mut functions = Vec::new();
+        let mut tests = Vec::new();
+        for item in &module.items {
+            match item {
+                ModuleItem::Function(f) => functions.push(f),
+                ModuleItem::Test(t) => tests.push(t),
+            }
+        }
+
+        for function in &functions {
             if let Some(first_span) = seen_function_names.get(function.name.as_str()).copied() {
                 diagnostics.push(
                     SourceDiagnostic::new(
@@ -1015,7 +1025,7 @@ impl Typechecker for BasicTypechecker {
             );
         }
 
-        for function in &module.functions {
+        for function in &functions {
             let mut parameter_names = HashSet::new();
             let mut scopes = ScopeStack::default();
             scopes.push_scope();
@@ -1067,7 +1077,7 @@ impl Typechecker for BasicTypechecker {
             scopes.pop_scope();
         }
 
-        for test in &module.tests {
+        for test in &tests {
             let timer = TaskTimer::start(format!("typecheck test `{}`", test.name));
             if let Some(first_span) = seen_test_names.get(test.name.as_str()).copied() {
                 diagnostics.push(
@@ -1111,7 +1121,7 @@ impl Typechecker for BasicTypechecker {
 
         TypecheckResult {
             summary: TypecheckSummary {
-                test_count: module.tests.len(),
+                test_count: tests.len(),
                 assertion_count,
             },
             diagnostics,
@@ -1125,23 +1135,22 @@ impl Typechecker for BasicTypechecker {
 mod tests {
     use super::{BasicTypechecker, Typechecker};
     use holo_ast::{
-        AssertStatement, BinaryOperator, Expr, FunctionItem, FunctionParameter, Module, Statement,
-        TestItem, TypeRef,
+        AssertStatement, BinaryOperator, Expr, FunctionItem, FunctionParameter, Module, ModuleItem,
+        Statement, TestItem, TypeRef,
     };
     use holo_base::Span;
 
     #[test]
     fn typechecks_assertion_count_for_module() {
         let module = Module {
-            functions: Vec::new(),
-            tests: vec![TestItem {
+            items: vec![ModuleItem::Test(TestItem {
                 name: "sample".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::bool_literal(true, Span::new(20, 24)),
                     span: Span::new(13, 25),
                 })],
                 span: Span::new(0, 26),
-            }],
+            })],
         };
 
         let result =
@@ -1154,24 +1163,23 @@ mod tests {
     #[test]
     fn reports_duplicate_test_names_and_continues() {
         let module = Module {
-            functions: Vec::new(),
-            tests: vec![
-                TestItem {
+            items: vec![
+                ModuleItem::Test(TestItem {
                     name: "same_name".into(),
                     statements: vec![Statement::Assert(AssertStatement {
                         expression: Expr::bool_literal(true, Span::new(20, 24)),
                         span: Span::new(13, 25),
                     })],
                     span: Span::new(0, 26),
-                },
-                TestItem {
+                }),
+                ModuleItem::Test(TestItem {
                     name: "same_name".into(),
                     statements: vec![Statement::Assert(AssertStatement {
                         expression: Expr::bool_literal(true, Span::new(50, 54)),
                         span: Span::new(43, 55),
                     })],
                     span: Span::new(30, 56),
-                },
+                }),
             ],
         };
 
@@ -1188,8 +1196,7 @@ mod tests {
     #[test]
     fn infers_default_numeric_literal_types() {
         let module = Module {
-            functions: Vec::new(),
-            tests: vec![TestItem {
+            items: vec![ModuleItem::Test(TestItem {
                 name: "numeric".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
@@ -1201,7 +1208,7 @@ mod tests {
                     span: Span::new(0, 6),
                 })],
                 span: Span::new(0, 6),
-            }],
+            })],
         };
 
         let result = BasicTypechecker::default().typecheck_module(&module, "assert(1 + 2);");
@@ -1214,8 +1221,7 @@ mod tests {
     #[test]
     fn rejects_mixed_numeric_types_in_binary_ops() {
         let module = Module {
-            functions: Vec::new(),
-            tests: vec![TestItem {
+            items: vec![ModuleItem::Test(TestItem {
                 name: "mixed".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
@@ -1227,7 +1233,7 @@ mod tests {
                     span: Span::new(0, 14),
                 })],
                 span: Span::new(0, 14),
-            }],
+            })],
         };
 
         let result =
@@ -1253,7 +1259,7 @@ mod tests {
     #[test]
     fn reports_unknown_identifier() {
         let module = Module {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "entry".into(),
                 parameters: Vec::new(),
                 return_type: TypeRef::Unit,
@@ -1263,8 +1269,7 @@ mod tests {
                 })],
                 is_test: false,
                 span: Span::new(0, 8),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let result = BasicTypechecker::default().typecheck_module(&module, "missing;");
@@ -1277,7 +1282,7 @@ mod tests {
     #[test]
     fn allows_local_to_shadow_parameter_in_function_body_scope() {
         let module = Module {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "shadow".into(),
                 parameters: vec![FunctionParameter {
                     name: "value".into(),
@@ -1299,8 +1304,7 @@ mod tests {
                 ],
                 is_test: false,
                 span: Span::new(0, 53),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let result = BasicTypechecker::default().typecheck_module(
@@ -1320,7 +1324,7 @@ mod tests {
     #[test]
     fn reports_unknown_function_call() {
         let module = Module {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "entry".into(),
                 parameters: Vec::new(),
                 return_type: TypeRef::Unit,
@@ -1334,8 +1338,7 @@ mod tests {
                 })],
                 is_test: false,
                 span: Span::new(0, 13),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let result = BasicTypechecker::default().typecheck_module(&module, "unknown_fn();");
@@ -1348,8 +1351,8 @@ mod tests {
     #[test]
     fn reports_call_arity_mismatch() {
         let module = Module {
-            functions: vec![
-                FunctionItem {
+            items: vec![
+                ModuleItem::Function(FunctionItem {
                     name: "sum".into(),
                     parameters: vec![
                         FunctionParameter {
@@ -1367,8 +1370,8 @@ mod tests {
                     statements: Vec::new(),
                     is_test: false,
                     span: Span::new(0, 10),
-                },
-                FunctionItem {
+                }),
+                ModuleItem::Function(FunctionItem {
                     name: "entry".into(),
                     parameters: Vec::new(),
                     return_type: TypeRef::Unit,
@@ -1382,9 +1385,8 @@ mod tests {
                     })],
                     is_test: false,
                     span: Span::new(11, 18),
-                },
+                }),
             ],
-            tests: Vec::new(),
         };
 
         let result = BasicTypechecker::default().typecheck_module(&module, "sum(1);");
@@ -1401,8 +1403,7 @@ mod tests {
     #[test]
     fn rejects_non_numeric_arithmetic_operands() {
         let module = Module {
-            functions: Vec::new(),
-            tests: vec![TestItem {
+            items: vec![ModuleItem::Test(TestItem {
                 name: "non_numeric".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
@@ -1414,7 +1415,7 @@ mod tests {
                     span: Span::new(0, 13),
                 })],
                 span: Span::new(0, 13),
-            }],
+            })],
         };
 
         let result = BasicTypechecker::default().typecheck_module(&module, "assert(true + false);");
@@ -1436,8 +1437,7 @@ mod tests {
     #[test]
     fn rejects_float_modulo() {
         let module = Module {
-            functions: Vec::new(),
-            tests: vec![TestItem {
+            items: vec![ModuleItem::Test(TestItem {
                 name: "float_modulo".into(),
                 statements: vec![Statement::Assert(AssertStatement {
                     expression: Expr::binary(
@@ -1449,7 +1449,7 @@ mod tests {
                     span: Span::new(0, 16),
                 })],
                 span: Span::new(0, 16),
-            }],
+            })],
         };
 
         let result =
@@ -1465,7 +1465,7 @@ mod tests {
     #[test]
     fn reports_duplicate_parameter_with_both_spans() {
         let module = Module {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "dup_params".into(),
                 parameters: vec![
                     FunctionParameter {
@@ -1486,8 +1486,7 @@ mod tests {
                 })],
                 is_test: false,
                 span: Span::new(0, 48),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let result = BasicTypechecker::default().typecheck_module(
@@ -1508,7 +1507,7 @@ mod tests {
     #[test]
     fn rejects_if_branch_type_mismatch() {
         let module = Module {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "branch".into(),
                 parameters: Vec::new(),
                 return_type: TypeRef::Unit,
@@ -1531,8 +1530,7 @@ mod tests {
                 })],
                 is_test: false,
                 span: Span::new(0, 32),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let result = BasicTypechecker::default()
@@ -1545,7 +1543,7 @@ mod tests {
     #[test]
     fn rejects_non_bool_while_condition() {
         let module = Module {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "loop_bad".into(),
                 parameters: Vec::new(),
                 return_type: TypeRef::Unit,
@@ -1559,8 +1557,7 @@ mod tests {
                 })],
                 is_test: false,
                 span: Span::new(0, 9),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let result = BasicTypechecker::default().typecheck_module(&module, "while 1i64 { };");
@@ -1572,7 +1569,7 @@ mod tests {
     #[test]
     fn block_expression_scopes_locals() {
         let module = Module {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "block_scope".into(),
                 parameters: Vec::new(),
                 return_type: TypeRef::Unit,
@@ -1597,8 +1594,7 @@ mod tests {
                 ],
                 is_test: false,
                 span: Span::new(0, 28),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let result = BasicTypechecker::default()
@@ -1612,7 +1608,7 @@ mod tests {
     #[test]
     fn infers_unsuffixed_literal_from_let_annotation() {
         let module = Module {
-            functions: vec![FunctionItem {
+            items: vec![ModuleItem::Function(FunctionItem {
                 name: "typed_let".into(),
                 parameters: Vec::new(),
                 return_type: TypeRef::Unit,
@@ -1624,8 +1620,7 @@ mod tests {
                 })],
                 is_test: false,
                 span: Span::new(0, 2),
-            }],
-            tests: Vec::new(),
+            })],
         };
 
         let result = BasicTypechecker::default().typecheck_module(&module, "let value: u32 = 1;");
@@ -1641,8 +1636,8 @@ mod tests {
     #[test]
     fn infers_unsuffixed_literal_from_call_parameter_type() {
         let module = Module {
-            functions: vec![
-                FunctionItem {
+            items: vec![
+                ModuleItem::Function(FunctionItem {
                     name: "takes_u32".into(),
                     parameters: vec![FunctionParameter {
                         name: "x".into(),
@@ -1653,8 +1648,8 @@ mod tests {
                     statements: Vec::new(),
                     is_test: false,
                     span: Span::new(0, 1),
-                },
-                FunctionItem {
+                }),
+                ModuleItem::Function(FunctionItem {
                     name: "entry".into(),
                     parameters: Vec::new(),
                     return_type: TypeRef::Unit,
@@ -1668,9 +1663,8 @@ mod tests {
                     })],
                     is_test: false,
                     span: Span::new(0, 13),
-                },
+                }),
             ],
-            tests: Vec::new(),
         };
 
         let result = BasicTypechecker::default().typecheck_module(&module, "takes_u32(1);");
@@ -1682,8 +1676,8 @@ mod tests {
     #[test]
     fn keeps_no_implicit_coercion_for_non_literal_values() {
         let module = Module {
-            functions: vec![
-                FunctionItem {
+            items: vec![
+                ModuleItem::Function(FunctionItem {
                     name: "takes_u32".into(),
                     parameters: vec![FunctionParameter {
                         name: "x".into(),
@@ -1694,8 +1688,8 @@ mod tests {
                     statements: Vec::new(),
                     is_test: false,
                     span: Span::new(0, 1),
-                },
-                FunctionItem {
+                }),
+                ModuleItem::Function(FunctionItem {
                     name: "entry".into(),
                     parameters: Vec::new(),
                     return_type: TypeRef::Unit,
@@ -1717,9 +1711,8 @@ mod tests {
                     ],
                     is_test: false,
                     span: Span::new(0, 23),
-                },
+                }),
             ],
-            tests: Vec::new(),
         };
 
         let result = BasicTypechecker::default()
