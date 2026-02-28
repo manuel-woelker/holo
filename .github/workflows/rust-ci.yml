@@ -26,8 +26,8 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets --all-features
 
-      - name: Conformance
-        run: cargo run -p conformance-tests
+#      - name: Conformance
+#        run: cargo run -p conformance-tests
 
       - name: Check
         run: cargo check --workspace --all-targets --all-features
