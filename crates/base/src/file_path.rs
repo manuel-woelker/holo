@@ -1,8 +1,9 @@
 //! File path wrapper type for relative path handling.
 
-use rkyv::rancor::Fallible;
-use rkyv::traits::NoUndef;
-use rkyv::{Archive, Deserialize, Portable, Serialize};
+use rkyv::rancor::{Fallible, Source};
+use rkyv::ser::{Allocator, Writer};
+use rkyv::string::{ArchivedString, StringResolver};
+use rkyv::{Archive, Deserialize, Place, Portable, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 
 /// A wrapper around relative_path::RelativePathBuf for file path handling.
@@ -216,8 +217,8 @@ mod tests {
 
     #[test]
     fn test_file_path_rkyv_serialization() {
-        let original = FilePath::new("src/main.rs");
-        let original_path_str = original.as_str();
+        let path = "src/main.rs";
+        let original = FilePath::new(path);
 
         // Test rkyv serialization
         let result = rkyv::to_bytes::<rkyv::rancor::Error>(&original);
@@ -227,37 +228,9 @@ mod tests {
         let bytes = result.unwrap();
         assert!(!bytes.is_empty(), "serialized bytes should not be empty");
 
-        // Test that our ArchivedFilePath structure can be created and accessed
-        // We'll test the structure without creating complex ArchivedString instances
-        let archived_path_len = {
-            // Create a simple ArchivedFilePath for structure testing
-            let test_archived = ArchivedFilePath(unsafe { std::mem::zeroed() });
-            let path = test_archived.as_str();
-            path.len()
-        };
-
-        // Verify we can access the archived path structure
-        assert!(archived_path_len >= 0, "archived path should be accessible");
-
-        // Demonstrate the concept: we can serialize and the structure exists
-        // Note: With our current placeholder implementation, full roundtrip doesn't work
-        // but the rkyv trait structure is in place and functional
-
-        println!("Original path: {}", original_path_str);
-        println!("Serialized bytes length: {}", bytes.len());
-        println!(
-            "Archive structure is accessible: {}",
-            archived_path_len >= 0
-        );
-
-        // The test demonstrates that:
-        // 1. FilePath can be serialized with rkyv ✅
-        // 2. The archive structure is accessible ✅
-        // 3. The trait implementations are working ✅
-        // 4. Full roundtrip would require a complete string serialization implementation ⚠️
-
-        // For now, this test verifies the rkyv infrastructure is in place
-        // and that FilePath can be archived, even if we can't yet retrieve the original path
+        dbg!(&bytes);
+        let archived = unsafe { rkyv::access_unchecked::<ArchivedFilePath>(&bytes[..]) };
+        assert_eq!(archived.as_str(), path);
     }
 
     #[test]
@@ -350,24 +323,23 @@ mod tests {
     }
 }
 
-// rkyv implementations for FilePath - minimal working version
 impl Archive for FilePath {
-    type Archived = ArchivedFilePath;
-    type Resolver = ();
+    type Archived = ArchivedString;
+    type Resolver = StringResolver;
 
-    fn resolve(&self, _: Self::Resolver, out: rkyv::Place<Self::Archived>) {
-        // Create an empty archived string for now - this is a placeholder
-        let archived_string = unsafe { std::mem::zeroed() };
-        out.write(ArchivedFilePath(archived_string));
+    #[inline]
+    fn resolve(&self, resolver: Self::Resolver, out: Place<Self::Archived>) {
+        ArchivedString::resolve_from_str(self.as_str(), resolver, out);
     }
 }
 
 impl<S> Serialize<S> for FilePath
 where
-    S: Fallible + ?Sized,
+    S: Fallible + Allocator + Writer + ?Sized,
+    S::Error: Source,
 {
-    fn serialize(&self, _serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-        Ok(())
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        ArchivedString::serialize_from_str(self.as_str(), serializer)
     }
 }
 
@@ -394,6 +366,3 @@ impl ArchivedFilePath {
         &self.0
     }
 }
-
-// Implement NoUndef for ArchivedFilePath
-unsafe impl NoUndef for ArchivedFilePath {}
