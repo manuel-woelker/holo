@@ -1,10 +1,9 @@
-use crate::cycle::Cycle;
+use crate::cycle::{Cycle, CycleResult};
 use crate::observer::{CycleObserver, StdoutObserver};
-use holo_ast::Module;
-use holo_base::{FilePath, SharedString, SourceDiagnostic};
+use holo_base::{FilePath, Result, SharedString};
 use holo_db::Database;
 use holo_fs::{FileSystem, StdFileSystem};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub(crate) const FILE_HASH_TABLE: &str = "file_hash";
@@ -14,23 +13,11 @@ pub(crate) const FILE_HASH_TABLE: &str = "file_hash";
 /// This engine manages the project state and coordinates the 5-stage
 /// incremental compilation pipeline using a forward incremental approach.
 pub struct Engine {
-    /// Stage 1: Results of parsing source files into ASTs.
-    pub(crate) ast_cache: HashMap<FilePath, AstState>,
+    /// Stage 1: Files that have changed since the last cycle.
     pub(crate) dirty_files: HashSet<FilePath>,
     pub(crate) filesystem: Arc<dyn FileSystem>,
     pub(crate) database: Arc<dyn Database>,
     pub(crate) observer: Arc<dyn CycleObserver>,
-}
-
-/// Represents the cached result of parsing a single source file (Stage 1).
-#[derive(Debug, Default, Clone)]
-pub struct AstState {
-    /// Hash of the file content when last parsed.
-    pub content_hash: u64,
-    /// The successfully parsed AST module, if any.
-    pub ast: Option<Module>,
-    /// Parsing diagnostics (lexing and parsing errors).
-    pub diagnostics: Vec<SourceDiagnostic>,
 }
 
 impl Default for Engine {
@@ -38,7 +25,6 @@ impl Default for Engine {
         let table_names = vec![SharedString::from(FILE_HASH_TABLE)];
         let database = Arc::new(holo_db::RocksDbDatabase::new_in_memory(table_names).unwrap());
         Self {
-            ast_cache: HashMap::new(),
             dirty_files: HashSet::new(),
             filesystem: Arc::new(StdFileSystem::new_at_cwd()),
             database,
@@ -80,9 +66,9 @@ impl Engine {
     ///
     /// Each cycle progresses through the 5 stages of compilation, omitting
     /// work for components that haven't changed since the last pulse.
-    pub fn run_cycle(&mut self) {
+    pub fn run_cycle(&mut self) -> Result<CycleResult> {
         let mut cycle = Cycle::new(self);
-        cycle.run();
+        cycle.run()
     }
 
     /// Marks a file as dirty and needing re-processing in the next cycle.

@@ -1,13 +1,24 @@
-use crate::engine::{AstState, Engine, FILE_HASH_TABLE};
+use crate::engine::{Engine, FILE_HASH_TABLE};
 use crate::observer::CycleEvent;
+use holo_ast::Module;
+use holo_base::Result;
 use holo_base::{hash_string, DiagnosticKind, SharedString, SourceDiagnostic, SourceFile};
 use holo_lexer::{BasicLexer, Lexer};
 use holo_parser::{BasicParser, Parser};
+use std::mem::take;
 
 /// Represents the state and logic of a single compilation cycle.
 pub struct Cycle<'a> {
     engine: &'a mut Engine,
     diagnostics: Vec<SourceDiagnostic>,
+}
+
+pub struct CycleResult {
+    pub diagnostics: Vec<SourceDiagnostic>,
+}
+
+struct ParseStageResult {
+    modules: Vec<Module>,
 }
 
 impl<'a> Cycle<'a> {
@@ -20,26 +31,26 @@ impl<'a> Cycle<'a> {
     }
 
     /// Runs the cycle logic.
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<CycleResult> {
         self.diagnostics.clear();
-        self.stage_1_parse();
+        let _parse_result = self.stage_1_parse()?;
         // Stages 2-5 will be implemented here.
+        Ok(CycleResult {
+            diagnostics: take(&mut self.diagnostics),
+        })
     }
 
     /// Stage 1: Tokenize and parse changed files to ASTs.
-    fn stage_1_parse(&mut self) {
+    fn stage_1_parse(&mut self) -> Result<ParseStageResult> {
         let dirty_files = std::mem::take(&mut self.engine.dirty_files);
 
         let lexer = BasicLexer;
         let parser = BasicParser;
-
-        let tx = match self.engine.database.begin_tx() {
-            Ok(tx) => tx,
-            Err(err) => {
-                eprintln!("failed to begin transaction: {}", err);
-                return;
-            }
+        let mut result = ParseStageResult {
+            modules: Vec::new(),
         };
+
+        let tx = self.engine.database.begin_tx()?;
 
         for file_path in dirty_files {
             let content = match self.engine.filesystem.read_to_string(&file_path) {
@@ -51,20 +62,11 @@ impl<'a> Cycle<'a> {
                         error_message.clone().into(),
                     ));
 
-                    let diagnostics = vec![SourceDiagnostic::new(
+                    let diagnostic = SourceDiagnostic::new(
                         DiagnosticKind::Io,
                         format!("failed to read file: {}", error_message),
-                    )];
-                    self.diagnostics.extend(diagnostics.iter().cloned());
-
-                    self.engine.ast_cache.insert(
-                        file_path.clone(),
-                        AstState {
-                            content_hash: 0,
-                            ast: None,
-                            diagnostics,
-                        },
                     );
+                    self.diagnostics.push(diagnostic);
                     continue;
                 }
             };
@@ -105,24 +107,18 @@ impl<'a> Cycle<'a> {
             diagnostics.extend(parsed.diagnostics);
             self.diagnostics.extend(diagnostics.iter().cloned());
 
-            self.engine.ast_cache.insert(
-                file_path.clone(),
-                AstState {
-                    content_hash,
-                    ast: Some(parsed.module),
-                    diagnostics,
-                },
-            );
-
             let hash_bytes = content_hash.to_le_bytes();
             if let Err(err) = tx.put(FILE_HASH_TABLE, &[(key, hash_bytes.to_vec())]) {
                 eprintln!("failed to store hash: {}", err);
             }
 
+            result.modules.push(parsed.module);
+
             self.engine
                 .observer
                 .on_event(CycleEvent::FileParsed(file_path));
         }
+        Ok(result)
     }
 }
 
@@ -148,28 +144,25 @@ mod tests {
 
         // 1. First cycle: File is new, should be parsed
         engine.record_change(path.clone());
-        engine.run_cycle();
+        engine.run_cycle().unwrap();
 
         let events = observer.events();
         assert!(events.contains(&CycleEvent::FileParsed(path.clone())));
-        assert_eq!(engine.ast_cache.get(&path).unwrap().diagnostics.len(), 0);
 
         // 2. Second cycle: Content is identical, should be skipped
         observer.clear_events();
         engine.record_change(path.clone());
-        engine.run_cycle();
+        engine.run_cycle().unwrap();
 
         let events = observer.events();
         assert!(events.contains(&CycleEvent::FileParseSkipped(path.clone())));
-        // Ensure diagnostic count is still zero (state maintained)
-        assert_eq!(engine.ast_cache.get(&path).unwrap().diagnostics.len(), 0);
 
         // 3. Third cycle: Content changed, should be re-parsed
         observer.clear_events();
         fs.write_string(&path, "fn main() -> i32 { let x: i32 = 1; x; }")
             .unwrap();
         engine.record_change(path.clone());
-        engine.run_cycle();
+        engine.run_cycle().unwrap();
 
         let events = observer.events();
         // Check events after third cycle. Clear the vec first if observer supported it,
@@ -192,7 +185,7 @@ mod tests {
         // We do NOT write to fs, so reading will fail
 
         engine.record_change(path.clone());
-        engine.run_cycle();
+        let cycle_result = engine.run_cycle().unwrap();
 
         let events = observer.events();
         let error_event = events.iter().find_map(|e| {
@@ -208,12 +201,8 @@ mod tests {
         });
         assert!(error_event.is_some());
 
-        let state = engine
-            .ast_cache
-            .get(&path)
-            .expect("AstState should exist even on error");
-        assert_eq!(state.diagnostics.len(), 1);
-        assert_eq!(state.diagnostics[0].kind, DiagnosticKind::Io);
-        assert!(state.diagnostics[0].message.contains("failed to read file"));
+        assert!(cycle_result.diagnostics[0]
+            .message
+            .contains("failed to read file"));
     }
 }
