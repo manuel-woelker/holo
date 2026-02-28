@@ -146,6 +146,7 @@ impl std::ops::Deref for FilePath {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use speedy::{Readable, Writable};
 
     #[test]
     fn test_file_path_creation() {
@@ -323,6 +324,53 @@ mod tests {
             assert!(!bytes.is_empty(), "should produce non-empty bytes");
         }
     }
+
+    #[test]
+    fn test_file_path_speedy_serialization() {
+        let original = FilePath::new("src/main.rs");
+
+        // Test writing
+        let buffer = original.write_to_vec().unwrap();
+        assert!(!buffer.is_empty());
+
+        // Test reading
+        let deserialized = FilePath::read_from_buffer(&buffer).unwrap();
+        assert_eq!(original, deserialized);
+        assert_eq!(deserialized.as_str(), "src/main.rs");
+    }
+
+    #[test]
+    fn test_file_path_speedy_empty_path() {
+        let original = FilePath::default();
+
+        let buffer = original.write_to_vec().unwrap();
+        let deserialized = FilePath::read_from_buffer(&buffer).unwrap();
+
+        assert_eq!(original, deserialized);
+        assert!(deserialized.as_str().is_empty());
+    }
+
+    #[test]
+    fn test_file_path_speedy_complex_path() {
+        let original = FilePath::new("src/components/ui/button.rs");
+
+        let buffer = original.write_to_vec().unwrap();
+        let deserialized = FilePath::read_from_buffer(&buffer).unwrap();
+
+        assert_eq!(original, deserialized);
+        assert_eq!(deserialized.as_str(), "src/components/ui/button.rs");
+    }
+
+    #[test]
+    fn test_file_path_speedy_special_characters() {
+        let original = FilePath::new("path-with_dashes/123_file.holo");
+
+        let buffer = original.write_to_vec().unwrap();
+        let deserialized = FilePath::read_from_buffer(&buffer).unwrap();
+
+        assert_eq!(original, deserialized);
+        assert_eq!(deserialized.as_str(), "path-with_dashes/123_file.holo");
+    }
 }
 
 impl Archive for FilePath {
@@ -372,5 +420,27 @@ impl ArchivedFilePath {
 impl<D: Fallible + ?Sized> Deserialize<FilePath, D> for ArchivedString {
     fn deserialize(&self, _deserializer: &mut D) -> Result<FilePath, D::Error> {
         Ok(FilePath::new(self.as_str()))
+    }
+}
+
+impl<'a, C> speedy::Readable<'a, C> for FilePath
+where
+    C: speedy::Context,
+{
+    fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let string = String::read_from(reader)?;
+        Ok(FilePath::from(string))
+    }
+}
+
+impl<C> speedy::Writable<C> for FilePath
+where
+    C: speedy::Context,
+{
+    fn write_to<W>(&self, writer: &mut W) -> Result<(), C::Error>
+    where
+        W: speedy::Writer<C> + ?Sized,
+    {
+        self.as_str().write_to(writer)
     }
 }
