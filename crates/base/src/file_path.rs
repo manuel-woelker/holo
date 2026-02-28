@@ -217,6 +217,7 @@ mod tests {
 
     #[test]
     fn test_file_path_rkyv_serialization() {
+        use rkyv::{from_bytes, rancor::Error};
         let path = "src/main.rs";
         let original = FilePath::new(path);
 
@@ -228,9 +229,9 @@ mod tests {
         let bytes = result.unwrap();
         assert!(!bytes.is_empty(), "serialized bytes should not be empty");
 
-        dbg!(&bytes);
-        let archived = unsafe { rkyv::access_unchecked::<ArchivedFilePath>(&bytes[..]) };
-        assert_eq!(archived.as_str(), path);
+        let deserialized = from_bytes::<FilePath, Error>(&bytes).unwrap();
+
+        assert_eq!(deserialized.as_str(), path);
     }
 
     #[test]
@@ -364,5 +365,11 @@ impl ArchivedFilePath {
     /// Returns the path as a string slice
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl<D: Fallible + ?Sized> Deserialize<FilePath, D> for ArchivedString {
+    fn deserialize(&self, _deserializer: &mut D) -> Result<FilePath, D::Error> {
+        Ok(FilePath::new(self.as_str()))
     }
 }
