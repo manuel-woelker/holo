@@ -4,6 +4,7 @@ pub mod error;
 pub mod file_path;
 pub mod hash;
 pub mod logging;
+pub mod qualified_name;
 pub mod shared_string;
 pub mod source_diagnostic;
 pub mod source_file;
@@ -14,6 +15,7 @@ pub use error::{ErrorKind, HoloError, Result};
 pub use file_path::FilePath;
 pub use hash::hash_string;
 pub use parking_lot::Mutex;
+pub use qualified_name::QualifiedName;
 pub use shared_string::SharedString;
 pub use source_diagnostic::{
     display_source_diagnostics, AnnotatedSpan, DiagnosticKind, SourceDiagnostic, SourceExcerpt,
