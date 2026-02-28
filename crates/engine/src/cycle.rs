@@ -1,6 +1,6 @@
-use crate::engine::{AstState, Engine};
+use crate::engine::{AstState, Engine, FILE_HASH_TABLE};
 use crate::observer::CycleEvent;
-use holo_base::{hash_string, DiagnosticKind, SourceDiagnostic, SourceFile};
+use holo_base::{hash_string, DiagnosticKind, SharedString, SourceDiagnostic, SourceFile};
 use holo_lexer::{BasicLexer, Lexer};
 use holo_parser::{BasicParser, Parser};
 
@@ -28,6 +28,14 @@ impl<'a> Cycle<'a> {
         let lexer = BasicLexer;
         let parser = BasicParser;
 
+        let tx = match self.engine.database.begin_tx() {
+            Ok(tx) => tx,
+            Err(err) => {
+                eprintln!("failed to begin transaction: {}", err);
+                return;
+            }
+        };
+
         for file_path in dirty_files {
             let content = match self.engine.filesystem.read_to_string(&file_path) {
                 Ok(content) => content,
@@ -38,7 +46,6 @@ impl<'a> Cycle<'a> {
                         error_message.clone().into(),
                     ));
 
-                    // Emit diagnostic for file read error
                     self.engine.ast_cache.insert(
                         file_path.clone(),
                         AstState {
@@ -55,25 +62,37 @@ impl<'a> Cycle<'a> {
             };
 
             let content_hash = hash_string(&content);
+            let key = SharedString::from(file_path.as_str());
 
-            // Omission logic: Skip if content hash hasn't changed
-            if let Some(state) = self.engine.ast_cache.get(&file_path) {
-                if state.content_hash == content_hash {
-                    self.engine
-                        .observer
-                        .on_event(CycleEvent::FileParseSkipped(file_path));
-                    continue;
+            let stored_hash = tx.get(FILE_HASH_TABLE, &[key.clone()]);
+            let should_parse = match stored_hash {
+                Ok(results) if results.len() == 1 => {
+                    let stored = results[0].as_ref();
+                    match stored {
+                        Some(bytes) => {
+                            let stored_hash = u64::from_le_bytes(
+                                bytes.as_slice().try_into().expect("hash should be 8 bytes"),
+                            );
+                            stored_hash != content_hash
+                        }
+                        None => true,
+                    }
                 }
+                _ => true,
+            };
+
+            if !should_parse {
+                self.engine
+                    .observer
+                    .on_event(CycleEvent::FileParseSkipped(file_path));
+                continue;
             }
 
-            // Perform tokenization
             let lexed = lexer.lex(&content);
 
-            // Perform parsing
             let source_file = SourceFile::new(&content, file_path.clone());
             let parsed = parser.parse_module(&lexed.tokens, &source_file);
 
-            // Update file state
             let mut diagnostics = lexed.diagnostics;
             diagnostics.extend(parsed.diagnostics);
 
@@ -85,6 +104,11 @@ impl<'a> Cycle<'a> {
                     diagnostics,
                 },
             );
+
+            let hash_bytes = content_hash.to_le_bytes();
+            if let Err(err) = tx.put(FILE_HASH_TABLE, &[(key, hash_bytes.to_vec())]) {
+                eprintln!("failed to store hash: {}", err);
+            }
 
             self.engine
                 .observer
