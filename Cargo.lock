@@ -665,6 +665,7 @@ version = "0.1.0"
 dependencies = [
  "holo-ast",
  "holo-base",
+ "holo-db",
  "holo-fs",
  "holo-lexer",
  "holo-parser",
