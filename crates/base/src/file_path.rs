@@ -213,6 +213,108 @@ mod tests {
         let path = FilePath::default();
         assert!(path.as_str().is_empty());
     }
+
+    #[test]
+    fn test_file_path_serde_serialization() {
+        let original = FilePath::new("src/main.rs");
+
+        // Test serde serialization
+        let serialized = serde_json::to_string(&original).expect("Failed to serialize");
+        let deserialized: FilePath =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(original, deserialized);
+        assert_eq!(original.as_str(), "src/main.rs");
+        assert_eq!(deserialized.as_str(), "src/main.rs");
+    }
+
+    #[test]
+    fn test_file_path_serde_bincode() {
+        let original = FilePath::from("lib/core.holo");
+
+        // Test bincode serialization
+        let serialized = bincode::serialize(&original).expect("Failed to serialize");
+        let deserialized: FilePath =
+            bincode::deserialize(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(original, deserialized);
+        assert_eq!(original.as_str(), "lib/core.holo");
+    }
+
+    #[test]
+    fn test_file_path_rkyv_basic_structure() {
+        let original = FilePath::new("test/path/file.holo");
+
+        // Test rkyv serialization - just verify it can serialize
+        let result = rkyv::to_bytes::<rkyv::rancor::Error>(&original);
+        assert!(result.is_ok(), "rkyv serialization should work");
+
+        // Verify we got some bytes
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty());
+
+        // Basic verification - the fact that serialization works is the main test
+        // Full rkyv testing would require more complex setup with proper ArchivedString handling
+    }
+
+    #[test]
+    fn test_file_path_serialization_roundtrip_complex() {
+        let paths = vec![
+            FilePath::new("src/main.rs"),
+            FilePath::from("lib/core.holo"),
+            FilePath::from("examples/demo.holo"),
+            FilePath::new("tests/integration/test.holo"),
+            FilePath::default(),
+        ];
+
+        for original in paths {
+            // Test serde roundtrip
+            let serialized = serde_json::to_string(&original).expect("Failed to serialize");
+            let deserialized: FilePath =
+                serde_json::from_str(&serialized).expect("Failed to deserialize");
+            assert_eq!(original, deserialized);
+            assert_eq!(original.as_str(), deserialized.as_str());
+
+            // Test rkyv serialization (structure verification)
+            let result = rkyv::to_bytes::<rkyv::rancor::Error>(&original);
+            assert!(
+                result.is_ok(),
+                "rkyv serialization should work for path: {}",
+                original.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn test_file_path_serialization_edge_cases() {
+        // Test empty path
+        let empty = FilePath::default();
+        let serialized = serde_json::to_string(&empty).expect("Failed to serialize empty");
+        let deserialized: FilePath =
+            serde_json::from_str(&serialized).expect("Failed to deserialize empty");
+        assert_eq!(empty, deserialized);
+        assert!(deserialized.as_str().is_empty());
+
+        // Test path with special characters
+        let special = FilePath::new("path/with-dashes_and_underscores/123.holo");
+        let serialized = serde_json::to_string(&special).expect("Failed to serialize special");
+        let deserialized: FilePath =
+            serde_json::from_str(&serialized).expect("Failed to deserialize special");
+        assert_eq!(special, deserialized);
+        assert_eq!(
+            special.as_str(),
+            "path/with-dashes_and_underscores/123.holo"
+        );
+
+        // Test very long path
+        let long_path = "a".repeat(100) + ".holo";
+        let long = FilePath::from(long_path.as_str()); // Fix: use .as_str() to convert String to &str
+        let serialized = serde_json::to_string(&long).expect("Failed to serialize long");
+        let deserialized: FilePath =
+            serde_json::from_str(&serialized).expect("Failed to deserialize long");
+        assert_eq!(long, deserialized);
+        assert_eq!(long.as_str(), deserialized.as_str());
+    }
 }
 
 // rkyv implementations for FilePath - minimal working version
