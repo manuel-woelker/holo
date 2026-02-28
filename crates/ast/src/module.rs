@@ -9,7 +9,7 @@ pub struct Module {
     pub items: Vec<ModuleItem>,
 }
 
-/// A function item in a module.
+/// A function or test item in a module.
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub enum ModuleItem {
     /// A `fn name(...) -> type { ... }` item.

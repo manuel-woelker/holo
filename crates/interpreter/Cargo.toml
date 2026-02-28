@@ -8,5 +8,6 @@ publish = false
 
 [dependencies]
 holo-base = { path = "../base" }
+holo-ast = { path = "../ast" }
 holo-ir = { path = "../ir" }
 tracing = "0.1"

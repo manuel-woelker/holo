@@ -7,6 +7,14 @@ pub struct Module {
     pub functions: Vec<FunctionItem>,
 }
 
+
+impl Module {
+    /// Returns all test functions declared in this module.
+    pub fn get_test_functions(&self) -> impl Iterator<Item = &FunctionItem> {
+        self.functions.iter().filter(|f| f.is_test)
+    }
+}
+
 /// A typed function item.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionItem {

@@ -225,13 +225,8 @@ pub trait Interpreter {
     /// Executes one test function using functions from a typed module.
     fn run_test_in_module(&self, module: &Module, test: &FunctionItem) -> TestResult;
     /// Executes a collected test set and returns run summary details.
-    fn run_collected_tests(&self, tests: &[&FunctionItem]) -> TestRunSummary;
-    /// Executes tests in a module and returns run summary details.
-    fn run_tests(&self, module: &Module) -> TestRunSummary {
-        let test_functions: Vec<&FunctionItem> =
-            module.functions.iter().filter(|f| f.is_test).collect();
-        self.run_collected_tests(&test_functions)
-    }
+    fn run_module_tests(&self, module: &Module) -> TestRunSummary;
+
 }
 
 /// Basic interpreter for boolean expressions and assertions.
@@ -941,39 +936,18 @@ impl Interpreter for BasicInterpreter {
         self.run_test_with_functions(test, &functions)
     }
 
-    fn run_collected_tests(&self, tests: &[&FunctionItem]) -> TestRunSummary {
-        let mut summary = TestRunSummary::default();
-
-        for test in Self::ordered_tests(tests) {
-            let timer = TaskTimer::start(format!("run test `{}`", test.name));
-            let result = self.run_test(test);
-            let timing = timer.finish();
-            summary.timings.push(timing.clone());
-            info!(
-                test_name = %test.name,
-                stage = "run_test",
-                elapsed_ms = timing.elapsed.as_secs_f64() * 1000.0,
-                status = ?result.status,
-                "test timing"
-            );
-            summary.executed += 1;
-            match result.status {
-                TestStatus::Passed => summary.passed += 1,
-                TestStatus::Failed => summary.failed += 1,
-            }
-            summary.results.push(result);
-        }
-
-        summary
+    fn run_test_in_module(&self, module: &Module, test: &FunctionItem) -> TestResult {
+        let functions = Self::function_map_from_module(module);
+        self.run_test_with_functions(test, &functions)
     }
 
-    fn run_tests(&self, module: &Module) -> TestRunSummary {
+
+    fn run_module_tests(&self, module: &Module) -> TestRunSummary {
         let mut summary = TestRunSummary::default();
         let functions = Self::function_map_from_module(module);
-
-        let test_functions: Vec<&FunctionItem> =
-            module.functions.iter().filter(|f| f.is_test).collect();
-        for test in Self::ordered_tests(&test_functions) {
+        let mut tests: Vec<&FunctionItem> = module.get_test_functions().collect();
+        tests.sort_by_key(|function| &function.name);
+        for test in tests {
             let timer = TaskTimer::start(format!("run test `{}`", test.name));
             let result = self.run_test_with_functions(test, &functions);
             let timing = timer.finish();
@@ -994,11 +968,6 @@ impl Interpreter for BasicInterpreter {
         }
 
         summary
-    }
-
-    fn run_test_in_module(&self, module: &Module, test: &FunctionItem) -> TestResult {
-        let functions = Self::function_map_from_module(module);
-        self.run_test_with_functions(test, &functions)
     }
 }
 
@@ -1031,7 +1000,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.executed, 1);
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.results[0].status, TestStatus::Failed);
@@ -1040,7 +1009,7 @@ mod tests {
 
     #[test]
     fn runs_collected_tests_slice() {
-        let tests = vec![
+        let functions = vec![
             FunctionItem {
                 name: "pass".into(),
                 parameters: Vec::new(),
@@ -1066,8 +1035,10 @@ mod tests {
         ];
 
         let interpreter = BasicInterpreter::default();
-        let test_refs: Vec<&FunctionItem> = tests.iter().collect();
-        let summary = interpreter.run_collected_tests(&test_refs);
+        let module = Module {
+            functions,
+        };
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.executed, 2);
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.failed, 1);
@@ -1146,7 +1117,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.executed, 1);
         assert_eq!(summary.passed, 0);
         assert_eq!(summary.failed, 1);
@@ -1174,7 +1145,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.executed, 1);
         assert_eq!(summary.failed, 1);
         assert_eq!(summary.results[0].failure_span, Some(Span::new(0, 11)));
@@ -1263,7 +1234,7 @@ mod tests {
             };
 
             let interpreter = BasicInterpreter::default();
-            let summary = interpreter.run_tests(&module);
+            let summary = interpreter.run_module_tests(&module);
             assert_eq!(summary.executed, 1, "{name}");
             assert_eq!(summary.passed, 1, "{name}");
             assert_eq!(summary.failed, 0, "{name}");
@@ -1306,7 +1277,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.failed, 0);
     }
 
@@ -1341,7 +1312,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.failed, 0);
     }
 
@@ -1375,7 +1346,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.failed, 1);
         assert!(summary.results[0]
             .failure_reason
@@ -1415,7 +1386,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.failed, 0);
     }
 
@@ -1463,7 +1434,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.failed, 0);
     }
 
@@ -1528,7 +1499,7 @@ mod tests {
         };
 
         let interpreter = BasicInterpreter::default();
-        let summary = interpreter.run_tests(&module);
+        let summary = interpreter.run_module_tests(&module);
         assert_eq!(summary.executed, 2);
         assert_eq!(summary.passed, 1);
         assert_eq!(summary.failed, 1);
