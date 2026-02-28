@@ -139,8 +139,6 @@ impl std::ops::Deref for FilePath {
     }
 }
 
-use speedy::{Readable, Writable};
-
 impl<'a, C> speedy::Readable<'a, C> for FilePath
 where
     C: speedy::Context,

@@ -2,7 +2,6 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use holo_base::shared_string::SharedString;
-use serde_json::{self, from_str, to_string};
 use speedy::{Readable, Writable};
 
 fn create_test_data(size: usize) -> Vec<SharedString> {

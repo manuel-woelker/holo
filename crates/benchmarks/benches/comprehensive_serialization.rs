@@ -3,7 +3,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use holo_base::file_path::FilePath;
 use holo_base::shared_string::SharedString;
-use serde_json::{self, from_str, to_string};
 use speedy::{Readable, Writable};
 
 fn create_shared_strings(size: usize) -> Vec<SharedString> {
