@@ -14,7 +14,7 @@ use holo_base::SharedString;
 /// Transactions provide atomic operations on tables. Changes made
 /// within a transaction are not visible until the transaction is
 /// committed.
-pub trait Transaction {
+pub trait DynTransaction {
     /// Retrieves values for the given keys from a table.
     ///
     /// Returns a vector of optional values. Each entry corresponds
@@ -30,14 +30,17 @@ pub trait Transaction {
     fn remove(&self, table: &str, keys: &[SharedString]) -> Result<()>;
 }
 
-/// Wrapper around a transaction that hides the underlying type.
-pub struct TransactionWrapper {
-    tx: Box<dyn Transaction>,
+/// A transaction handle for database operations.
+///
+/// This type wraps the underlying transaction implementation and provides
+/// a type-safe interface for interacting with database tables.
+pub struct Transaction {
+    tx: Box<dyn DynTransaction>,
 }
 
-impl TransactionWrapper {
-    /// Creates a new transaction wrapper from a boxed transaction.
-    pub fn new(tx: Box<dyn Transaction>) -> Self {
+impl Transaction {
+    /// Creates a new transaction from a boxed transaction.
+    pub fn new(tx: Box<dyn DynTransaction>) -> Self {
         Self { tx }
     }
 
@@ -56,10 +59,6 @@ impl TransactionWrapper {
         self.tx.remove(table, keys)
     }
 }
-
-/// Alias for the old trait name (deprecated, use Transaction instead).
-#[deprecated(since = "0.1.0", note = "use Transaction instead")]
-pub trait DatabaseTransaction: Transaction {}
 
 /// Database trait for managing table storage.
 ///
@@ -94,5 +93,5 @@ pub trait Database {
     ///
     /// Transactions may be read-only or read-write depending on
     /// the implementation.
-    fn begin_tx(&self) -> Result<TransactionWrapper>;
+    fn begin_tx(&self) -> Result<Transaction>;
 }
