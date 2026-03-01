@@ -1,12 +1,24 @@
 use super::types::TypeRef;
-use holo_base::{SharedString, Span};
+use holo_base::{QualifiedName, SharedString, Span};
 use speedy::{Readable, Writable};
 
 /// Full file-level syntax tree.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Readable, Writable)]
+#[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct Module {
+    /// Module name.
+    pub name: QualifiedName,
+
     /// Items declared in this source file.
     pub items: Vec<ModuleItem>,
+}
+
+impl Module {
+    pub fn empty(name: impl Into<QualifiedName>) -> Self {
+        Self {
+            name: name.into(),
+            items: Vec::new(),
+        }
+    }
 }
 
 /// A function or test item in a module.
@@ -28,7 +40,7 @@ impl ModuleItem {
 #[derive(Debug, Clone, PartialEq, Eq, Readable, Writable)]
 pub struct FunctionItem {
     /// Function name.
-    pub name: SharedString,
+    pub name: QualifiedName,
     /// Ordered parameter list.
     pub parameters: Vec<FunctionParameter>,
     /// Declared return type.

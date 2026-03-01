@@ -11,7 +11,7 @@ pub trait Parser {
 }
 
 /// Result payload produced by parsing.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseResult {
     /// Produced module AST.
     pub module: Module,

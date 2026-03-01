@@ -13,14 +13,8 @@ pub use types::{BinaryOperator, TypeRef};
 #[cfg(test)]
 mod tests {
     use super::{BinaryOperator, Expr, ExprKind, Module, ModuleItem};
-    use holo_base::{SharedString, Span};
+    use holo_base::Span;
     use speedy::{Readable, Writable};
-
-    #[test]
-    fn module_defaults_to_empty_items() {
-        let module = Module::default();
-        assert!(module.items.is_empty());
-    }
 
     #[test]
     fn creates_negation_expression() {
@@ -39,10 +33,10 @@ mod tests {
 
     #[test]
     fn test_module_speedy_serialization() {
-        let mut module = Module::default();
+        let mut module = Module::empty("test_module");
 
         let func = super::FunctionItem {
-            name: SharedString::from("test_func"),
+            name: "test_func".into(),
             parameters: vec![],
             return_type: super::TypeRef::Unit,
             statements: vec![],
@@ -58,6 +52,6 @@ mod tests {
         assert_eq!(module, deserialized);
         assert_eq!(deserialized.items.len(), 1);
         let ModuleItem::Function(func) = &deserialized.items[0];
-        assert_eq!(func.name.as_str(), "test_func");
+        assert_eq!(func.name.to_string(), "test_func");
     }
 }

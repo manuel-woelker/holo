@@ -30,6 +30,12 @@ impl<'a> ParserState<'a> {
     }
 
     pub(crate) fn parse_module(&mut self) -> ParseResult {
+        let module_name = self
+            .source
+            .path
+            .file_stem()
+            .expect("Expected file stem")
+            .into();
         let mut items = Vec::new();
         while self.peek().is_some() {
             if !self.check(TokenKind::Hash) && !self.check(TokenKind::Fn) {
@@ -49,7 +55,10 @@ impl<'a> ParserState<'a> {
             }
         }
         ParseResult {
-            module: Module { items },
+            module: Module {
+                name: module_name,
+                items,
+            },
             diagnostics: std::mem::take(&mut self.diagnostics),
         }
     }
