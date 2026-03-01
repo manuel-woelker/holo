@@ -6,6 +6,7 @@ use holo_fs::{FileSystem, StdFileSystem};
 use std::collections::HashSet;
 use std::sync::Arc;
 
+// file path -> content hash
 pub(crate) const FILE_HASH_TABLE: &str = "file_hash";
 
 /// The core incremental compilation engine.

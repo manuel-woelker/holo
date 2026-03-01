@@ -56,25 +56,19 @@ pub struct TypecheckResult {
     pub function_types: HashMap<holo_base::SharedString, FunctionType>,
 }
 
-/// Typechecking abstraction used by the core compiler crate.
-pub trait Typechecker {
-    /// Validates semantic and type rules for a module.
-    fn typecheck_module(&self, module: &Module, source: &str) -> TypecheckResult;
-}
-
 /// Minimal typechecker for boolean expressions and assert statements.
 #[derive(Debug)]
-pub struct BasicTypechecker {
+pub struct Typechecker {
     native_functions: Arc<NativeFunctionRegistry>,
 }
 
-impl Default for BasicTypechecker {
+impl Default for Typechecker {
     fn default() -> Self {
         Self::new(Arc::new(NativeFunctionRegistry::default()))
     }
 }
 
-impl BasicTypechecker {
+impl Typechecker {
     /// Creates a new typechecker with the given native function registry.
     pub fn new(native_functions: Arc<NativeFunctionRegistry>) -> Self {
         Self { native_functions }
@@ -139,7 +133,7 @@ impl ScopeStack {
     }
 }
 
-impl BasicTypechecker {
+impl Typechecker {
     fn has_explicit_numeric_suffix(literal: &str) -> bool {
         ["u32", "u64", "i32", "i64", "f32", "f64"]
             .iter()
@@ -960,7 +954,7 @@ impl BasicTypechecker {
     }
 }
 
-impl Typechecker for BasicTypechecker {
+impl Typechecker for Typechecker {
     fn typecheck_module(&self, module: &Module, source: &str) -> TypecheckResult {
         let mut seen_test_names = HashMap::new();
         let mut assertion_count = 0usize;
@@ -1138,7 +1132,7 @@ impl Typechecker for BasicTypechecker {
 
 #[cfg(test)]
 mod tests {
-    use super::{BasicTypechecker, Typechecker};
+    use super::{Typechecker, Typechecker};
     use holo_ast::{
         AssertStatement, BinaryOperator, Expr, FunctionItem, FunctionParameter, Module, ModuleItem,
         Statement, TypeRef,
@@ -1162,7 +1156,7 @@ mod tests {
         };
 
         let result =
-            BasicTypechecker::default().typecheck_module(&module, "#[test] fn sample() { ... }");
+            Typechecker::default().typecheck_module(&module, "#[test] fn sample() { ... }");
         assert_eq!(result.summary.test_count, 1);
         assert_eq!(result.summary.assertion_count, 1);
         assert!(result.diagnostics.is_empty());
@@ -1198,7 +1192,7 @@ mod tests {
         };
 
         let result =
-            BasicTypechecker::default().typecheck_module(&module, "#[test] fn same_name() { ... }");
+            Typechecker::default().typecheck_module(&module, "#[test] fn same_name() { ... }");
         assert_eq!(result.summary.test_count, 2);
         assert_eq!(result.summary.assertion_count, 2);
         assert_eq!(result.diagnostics.len(), 1);
@@ -1228,7 +1222,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(&module, "assert(1 + 2);");
+        let result = Typechecker::default().typecheck_module(&module, "assert(1 + 2);");
         assert!(!result.diagnostics.is_empty());
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
@@ -1257,7 +1251,7 @@ mod tests {
         };
 
         let result =
-            BasicTypechecker::default().typecheck_module(&module, "assert(1i64 + 2.0f64);");
+            Typechecker::default().typecheck_module(&module, "assert(1i64 + 2.0f64);");
         let mismatch = result
             .diagnostics
             .iter()
@@ -1292,7 +1286,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(&module, "missing;");
+        let result = Typechecker::default().typecheck_module(&module, "missing;");
         assert!(result
             .diagnostics
             .iter()
@@ -1327,7 +1321,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(
+        let result = Typechecker::default().typecheck_module(
             &module,
             "fn shadow(value: i64) -> i64 { let value: i64 = 1i64; value; }",
         );
@@ -1361,7 +1355,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(&module, "unknown_fn();");
+        let result = Typechecker::default().typecheck_module(&module, "unknown_fn();");
         assert!(result
             .diagnostics
             .iter()
@@ -1409,7 +1403,7 @@ mod tests {
             ],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(&module, "sum(1);");
+        let result = Typechecker::default().typecheck_module(&module, "sum(1);");
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
             .contains("expects 2 argument(s) but got 1")));
@@ -1441,7 +1435,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(&module, "assert(true + false);");
+        let result = Typechecker::default().typecheck_module(&module, "assert(true + false);");
         assert!(result
             .diagnostics
             .iter()
@@ -1479,7 +1473,7 @@ mod tests {
         };
 
         let result =
-            BasicTypechecker::default().typecheck_module(&module, "assert(1.0f64 % 2.0f64);");
+            Typechecker::default().typecheck_module(&module, "assert(1.0f64 % 2.0f64);");
         assert!(result
             .diagnostics
             .iter()
@@ -1515,7 +1509,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(
+        let result = Typechecker::default().typecheck_module(
             &module,
             "fn dup_params(value: i64, value: i64) -> i64 { value; }",
         );
@@ -1559,7 +1553,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default()
+        let result = Typechecker::default()
             .typecheck_module(&module, "if true { 1i64 } else { false };");
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
@@ -1586,7 +1580,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(&module, "while 1i64 { };");
+        let result = Typechecker::default().typecheck_module(&module, "while 1i64 { };");
         assert!(result.diagnostics.iter().any(|diagnostic| diagnostic
             .message
             .contains("while condition must evaluate to `bool`")));
@@ -1623,7 +1617,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default()
+        let result = Typechecker::default()
             .typecheck_module(&module, "{ let inner: i64 = 1i64; inner }; inner;");
         assert!(result
             .diagnostics
@@ -1649,7 +1643,7 @@ mod tests {
             })],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(&module, "let value: u32 = 1;");
+        let result = Typechecker::default().typecheck_module(&module, "let value: u32 = 1;");
         assert!(
             result.diagnostics.iter().all(|diagnostic| !diagnostic
                 .message
@@ -1693,7 +1687,7 @@ mod tests {
             ],
         };
 
-        let result = BasicTypechecker::default().typecheck_module(&module, "takes_u32(1);");
+        let result = Typechecker::default().typecheck_module(&module, "takes_u32(1);");
         assert!(result.diagnostics.iter().all(|diagnostic| !diagnostic
             .message
             .contains("call argument type does not match")));
@@ -1741,7 +1735,7 @@ mod tests {
             ],
         };
 
-        let result = BasicTypechecker::default()
+        let result = Typechecker::default()
             .typecheck_module(&module, "let value: i64 = 1i64; takes_u32(value);");
         let diagnostic = result
             .diagnostics
