@@ -7,6 +7,6 @@ mod parser;
 mod parser_state;
 
 #[cfg(test)]
-mod tests;
+mod parser_tests;
 
 pub use parser::{ParseResult, Parser};

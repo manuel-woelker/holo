@@ -9,6 +9,7 @@ use crate::parser::ParseResult;
 
 #[derive(Debug)]
 pub(crate) struct ParserState<'a> {
+    module_name: QualifiedName,
     tokens: &'a [Token],
     source: &'a SourceFile,
     index: usize,
@@ -16,8 +17,13 @@ pub(crate) struct ParserState<'a> {
 }
 
 impl<'a> ParserState<'a> {
-    pub(crate) fn new(tokens: &'a [Token], source: &'a SourceFile) -> Self {
+    pub(crate) fn new(
+        module_name: QualifiedName,
+        tokens: &'a [Token],
+        source: &'a SourceFile,
+    ) -> Self {
         Self {
+            module_name,
             tokens,
             source,
             index: 0,
@@ -30,12 +36,6 @@ impl<'a> ParserState<'a> {
     }
 
     pub(crate) fn parse_module(&mut self) -> ParseResult {
-        let module_name = self
-            .source
-            .path
-            .file_stem()
-            .expect("Expected file stem")
-            .into();
         let mut items = Vec::new();
         while self.peek().is_some() {
             if !self.check(TokenKind::Hash) && !self.check(TokenKind::Fn) {
@@ -56,7 +56,7 @@ impl<'a> ParserState<'a> {
         }
         ParseResult {
             module: Module {
-                name: module_name,
+                name: self.module_name.clone(),
                 items,
             },
             diagnostics: std::mem::take(&mut self.diagnostics),
@@ -131,7 +131,7 @@ impl<'a> ParserState<'a> {
         let close_brace = self.expect(TokenKind::CloseBrace, "expected `}` after function body")?;
 
         Some(FunctionItem {
-            name: self.lexeme(name).into(),
+            name: self.module_name.join(self.lexeme(name)),
             parameters,
             return_type,
             statements,
@@ -260,7 +260,7 @@ impl<'a> ParserState<'a> {
         let mut current_literal = String::new();
         let bytes = contents.as_bytes();
         let mut i = 1; // Skip opening backtick
-
+                       // TODO: Tokenize template string in lexer
         while i < bytes.len() {
             if bytes[i] == b'{' {
                 if !current_literal.is_empty() {
@@ -292,7 +292,8 @@ impl<'a> ParserState<'a> {
                     })
                     .collect();
                 let expr_source_file = SourceFile::new(expr_source, "");
-                let mut parser = ParserState::new(&tokens, &expr_source_file);
+                let mut parser =
+                    ParserState::new(QualifiedName::new(vec![]), &tokens, &expr_source_file);
                 if let Some(expr) = parser.parse_expression() {
                     parts.push(TemplatePart::Expression(expr));
                 }

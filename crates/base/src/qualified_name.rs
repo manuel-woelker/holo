@@ -63,6 +63,13 @@ impl QualifiedName {
     pub fn segments(&self) -> &[SharedString] {
         &self.segments
     }
+
+    /// Joins a new segment to create a new QualifiedName
+    pub fn join(&self, segment: impl Into<SharedString>) -> Self {
+        let mut segments = self.segments.clone();
+        segments.push(segment.into());
+        Self { segments }
+    }
 }
 
 impl std::fmt::Display for QualifiedName {

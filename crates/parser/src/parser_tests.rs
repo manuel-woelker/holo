@@ -50,7 +50,7 @@ fn parses_function_signature_and_let_statement() {
     assert_eq!(module.items.len(), 1);
     let func = &module.items[0];
     if let ModuleItem::Function(function) = func {
-        assert_eq!(function.name.to_string(), "add");
+        assert_eq!(function.name.to_string(), "test::add");
         assert_eq!(function.parameters.len(), 2);
         assert_eq!(function.parameters[0].ty, TypeRef::I64);
         assert_eq!(function.return_type, TypeRef::I64);
@@ -119,7 +119,7 @@ fn continues_after_statement_error() {
     assert!(!result.diagnostics.is_empty());
     assert_eq!(result.module.items.len(), 1);
     if let ModuleItem::Function(t) = &result.module.items[0] {
-        assert_eq!(t.name.to_string(), "sample");
+        assert_eq!(t.name.to_string(), "test::sample");
         assert_eq!(t.statements.len(), 1);
     } else {
         panic!("Expected Test variant");
@@ -159,7 +159,7 @@ fn recovers_to_next_top_level_definition_after_broken_function() {
     assert!(!result.diagnostics.is_empty());
     assert_eq!(result.module.items.len(), 1);
     if let ModuleItem::Function(t) = &result.module.items[0] {
-        assert_eq!(t.name.to_string(), "ok");
+        assert_eq!(t.name.to_string(), "test::ok");
     } else {
         panic!("Expected Test variant");
     }
