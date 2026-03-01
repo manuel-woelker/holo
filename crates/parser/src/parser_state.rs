@@ -280,8 +280,7 @@ impl<'a> ParserState<'a> {
                 }
                 let end = i - 1;
                 let expr_source = &contents[start..end];
-                use holo_lexer::Lexer as _;
-                let lexer = holo_lexer::BasicLexer;
+                let lexer = holo_lexer::Lexer;
                 let result = lexer.lex(expr_source);
                 let tokens: Vec<_> = result
                     .tokens

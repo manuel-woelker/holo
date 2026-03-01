@@ -3,4 +3,5 @@
 pub mod lexer;
 pub mod types;
 
-pub use types::{BasicLexer, LexResult, Lexer, Token, TokenKind};
+pub use lexer::Lexer;
+pub use types::{LexResult, Token, TokenKind};

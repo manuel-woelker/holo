@@ -1,7 +1,7 @@
 use crate::Parser;
 use holo_ast::{expression::BinaryExpr, BinaryOperator, ExprKind, ModuleItem, Statement, TypeRef};
 use holo_base::SourceFile;
-use holo_lexer::{BasicLexer, Lexer};
+use holo_lexer::Lexer;
 
 #[test]
 fn parses_empty_token_stream_to_empty_module() {
@@ -16,7 +16,7 @@ fn parses_empty_token_stream_to_empty_module() {
 #[test]
 fn parses_test_with_assertion_and_negation() {
     let source = "#[test] fn sample() { assert(!false); }";
-    let lexed = BasicLexer.lex(source);
+    let lexed = Lexer.lex(source);
     assert!(lexed.diagnostics.is_empty());
     let source_file = SourceFile::new(source, "test.holo");
     let parsed = Parser.parse_module(&lexed.tokens, &source_file);
@@ -42,7 +42,7 @@ fn parses_test_with_assertion_and_negation() {
 #[test]
 fn parses_function_signature_and_let_statement() {
     let source = "fn add(a: i64, b: i64) -> i64 { let result: i64 = a + b; result; }";
-    let lexed = BasicLexer.lex(source);
+    let lexed = Lexer.lex(source);
     let source_file = SourceFile::new(source, "test.holo");
     let parsed = Parser.parse_module(&lexed.tokens, &source_file);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
@@ -63,7 +63,7 @@ fn parses_function_signature_and_let_statement() {
 #[test]
 fn parses_arithmetic_precedence() {
     let source = "fn calc() -> i64 { assert(1 + 2 * 3); }";
-    let lexed = BasicLexer.lex(source);
+    let lexed = Lexer.lex(source);
     let source_file = SourceFile::new(source, "test.holo");
     let parsed = Parser.parse_module(&lexed.tokens, &source_file);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
@@ -95,7 +95,7 @@ fn parses_arithmetic_precedence() {
 #[test]
 fn rejects_non_test_attribute() {
     let source = "#[bench] fn sample() { assert(true); }";
-    let lexed = BasicLexer.lex(source);
+    let lexed = Lexer.lex(source);
     let source_file = SourceFile::new(source, "test.holo");
     let result = Parser.parse_module(&lexed.tokens, &source_file);
     assert!(
@@ -113,7 +113,7 @@ fn rejects_non_test_attribute() {
 #[test]
 fn continues_after_statement_error() {
     let source = "#[test] fn sample() { assert(); assert(true); }";
-    let lexed = BasicLexer.lex(source);
+    let lexed = Lexer.lex(source);
     let source_file = SourceFile::new(source, "test.holo");
     let result = Parser.parse_module(&lexed.tokens, &source_file);
     assert!(!result.diagnostics.is_empty());
@@ -136,7 +136,7 @@ fn parses_numeric_suffix_literals_and_arithmetic_operators() {
     ];
 
     for source in cases {
-        let lexed = BasicLexer.lex(source);
+        let lexed = Lexer.lex(source);
         assert!(lexed.diagnostics.is_empty(), "{source}");
         let source_file = SourceFile::new(source, "test.holo");
         let parsed = Parser.parse_module(&lexed.tokens, &source_file);
@@ -152,7 +152,7 @@ fn parses_numeric_suffix_literals_and_arithmetic_operators() {
 #[test]
 fn recovers_to_next_top_level_definition_after_broken_function() {
     let source = "fn broken(a i64) -> i64 { a + ; } #[test] fn ok() { assert(true); }";
-    let lexed = BasicLexer.lex(source);
+    let lexed = Lexer.lex(source);
     let source_file = SourceFile::new(source, "test.holo");
     let result = Parser.parse_module(&lexed.tokens, &source_file);
 
@@ -168,7 +168,7 @@ fn recovers_to_next_top_level_definition_after_broken_function() {
 #[test]
 fn parses_if_else_and_block_result_expression() {
     let source = "fn pick() -> i64 { if true { let a: i64 = 1i64; a } else { 2i64 }; }";
-    let lexed = BasicLexer.lex(source);
+    let lexed = Lexer.lex(source);
     let source_file = SourceFile::new(source, "test.holo");
     let parsed = Parser.parse_module(&lexed.tokens, &source_file);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
@@ -190,7 +190,7 @@ fn parses_if_else_and_block_result_expression() {
 #[test]
 fn parses_while_expression_statement() {
     let source = "fn loop_test() -> () { while false { assert(true); }; }";
-    let lexed = BasicLexer.lex(source);
+    let lexed = Lexer.lex(source);
     let source_file = SourceFile::new(source, "test.holo");
     let parsed = Parser.parse_module(&lexed.tokens, &source_file);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);

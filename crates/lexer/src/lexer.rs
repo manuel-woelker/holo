@@ -1,8 +1,12 @@
-use crate::types::{BasicLexer, LexResult, Lexer, Token, TokenKind};
+use crate::types::{LexResult, Token, TokenKind};
 use holo_base::{DiagnosticKind, SourceDiagnostic, SourceExcerpt, Span};
 
-impl Lexer for BasicLexer {
-    fn lex(&self, source: &str) -> LexResult {
+/// Minimal lexer implementation used for initial pipeline wiring.
+#[derive(Debug, Default)]
+pub struct Lexer;
+
+impl Lexer {
+    pub fn lex(&self, source: &str) -> LexResult {
         let mut tokens = Vec::new();
         let mut diagnostics = Vec::new();
         let bytes = source.as_bytes();
@@ -287,11 +291,11 @@ fn display_byte(byte: u8) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{BasicLexer, Lexer, TokenKind};
+    use super::{Lexer, TokenKind};
 
     #[test]
     fn lexes_keywords_and_symbols() {
-        let lexer = BasicLexer;
+        let lexer = Lexer;
         let result = lexer.lex("#[test] fn demo(x: i64) -> i64 { let y = 1 + x; assert(!false); }");
         assert!(result.diagnostics.is_empty());
         let tokens = result.tokens;
@@ -308,7 +312,7 @@ mod tests {
 
     #[test]
     fn reports_unsupported_character_and_continues() {
-        let lexer = BasicLexer;
+        let lexer = Lexer;
         let result = lexer.lex("#[test] fn demo() { assert(@true); }");
         assert_eq!(result.diagnostics.len(), 1);
         assert!(result.diagnostics[0]
@@ -322,7 +326,7 @@ mod tests {
 
     #[test]
     fn lexes_control_flow_keywords() {
-        let lexer = BasicLexer;
+        let lexer = Lexer;
         let result = lexer.lex("fn f() -> () { if true { while false { } } else { } }");
         assert!(result.diagnostics.is_empty());
         assert!(result

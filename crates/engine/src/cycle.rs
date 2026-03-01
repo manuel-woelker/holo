@@ -3,7 +3,7 @@ use crate::observer::CycleEvent;
 use holo_ast::Module;
 use holo_base::Result;
 use holo_base::{hash_string, DiagnosticKind, SharedString, SourceDiagnostic, SourceFile};
-use holo_lexer::{BasicLexer, Lexer};
+use holo_lexer::lexer::Lexer;
 use holo_parser::Parser;
 use std::mem::take;
 
@@ -44,7 +44,7 @@ impl<'a> Cycle<'a> {
     fn stage_1_parse(&mut self) -> Result<ParseStageResult> {
         let dirty_files = std::mem::take(&mut self.engine.dirty_files);
 
-        let lexer = BasicLexer;
+        let lexer = Lexer;
         let parser = Parser;
         let mut result = ParseStageResult {
             modules: Vec::new(),
