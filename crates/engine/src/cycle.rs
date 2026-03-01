@@ -4,7 +4,7 @@ use holo_ast::Module;
 use holo_base::Result;
 use holo_base::{hash_string, DiagnosticKind, SharedString, SourceDiagnostic, SourceFile};
 use holo_lexer::{BasicLexer, Lexer};
-use holo_parser::{BasicParser, Parser};
+use holo_parser::Parser;
 use std::mem::take;
 
 /// Represents the state and logic of a single compilation cycle.
@@ -45,7 +45,7 @@ impl<'a> Cycle<'a> {
         let dirty_files = std::mem::take(&mut self.engine.dirty_files);
 
         let lexer = BasicLexer;
-        let parser = BasicParser;
+        let parser = Parser;
         let mut result = ParseStageResult {
             modules: Vec::new(),
         };

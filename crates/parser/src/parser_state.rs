@@ -5,7 +5,7 @@ use holo_ast::{
 use holo_base::{DiagnosticKind, SharedString, SourceDiagnostic, SourceExcerpt, SourceFile, Span};
 use holo_lexer::{Token, TokenKind};
 
-use crate::api::ParseResult;
+use crate::parser::ParseResult;
 
 #[derive(Debug)]
 pub(crate) struct ParserState<'a> {
